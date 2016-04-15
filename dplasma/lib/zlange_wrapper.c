@@ -20,7 +20,7 @@
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zlange_New - Generates the object that computes the value
+ *  dplasma_zlange_New - Generates the handle that computes the value
  *
  *     zlange = ( max(abs(A(i,j))), NORM = PlasmaMaxNorm
  *              (
@@ -57,7 +57,7 @@
  *
  * @return
  *          \retval NULL if incorrect parameters are given.
- *          \retval The dague object describing the operation that can be
+ *          \retval The dague handle describing the operation that can be
  *          enqueued in the runtime with dague_enqueue(). It, then, needs to be
  *          destroy with dplasma_zlange_Destruct();
  *
@@ -138,7 +138,8 @@ dplasma_zlange_New( PLASMA_enum ntype,
         0, 0, /* Starting points (not important here) */
         m, n, /* Dimensions of the submatrix          */
         1, 1, P);
-    Tdist->super.super.data_of = fake_data_of;
+    Tdist->super.super.data_of = NULL;
+    Tdist->super.super.data_of_key = NULL;
 
     /* Create the DAG */
     switch( ntype ) {
@@ -175,14 +176,14 @@ dplasma_zlange_New( PLASMA_enum ntype,
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zlange_Destruct - Free the data structure associated to an object
+ *  dplasma_zlange_Destruct - Free the data structure associated to an handle
  *  created with dplasma_zlange_New().
  *
  *******************************************************************************
  *
- * @param[in,out] o
- *          On entry, the object to destroy.
- *          On exit, the object cannot be used anymore.
+ * @param[in,out] handle
+ *          On entry, the handle to destroy.
+ *          On exit, the handle cannot be used anymore.
  *
  *******************************************************************************
  *
@@ -191,9 +192,9 @@ dplasma_zlange_New( PLASMA_enum ntype,
  *
  ******************************************************************************/
 void
-dplasma_zlange_Destruct( dague_handle_t *o )
+dplasma_zlange_Destruct( dague_handle_t *handle )
 {
-    dague_zlange_frb_cyclic_handle_t *dague_zlange = (dague_zlange_frb_cyclic_handle_t *)o;
+    dague_zlange_frb_cyclic_handle_t *dague_zlange = (dague_zlange_frb_cyclic_handle_t *)handle;
 
     tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(dague_zlange->Tdist) );
     free( dague_zlange->Tdist );
@@ -202,7 +203,7 @@ dplasma_zlange_Destruct( dague_handle_t *o )
     dague_matrix_del2arena( dague_zlange->arenas[DAGUE_zlange_frb_cyclic_COL_ARENA] );
     dague_matrix_del2arena( dague_zlange->arenas[DAGUE_zlange_frb_cyclic_ELT_ARENA] );
 
-    DAGUE_INTERNAL_HANDLE_DESTRUCT(o);
+    dague_handle_free(handle);
 }
 
 /**

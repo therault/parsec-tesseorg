@@ -10,6 +10,8 @@
  */
 
 #include "dplasma.h"
+#include "dague/vpmap.h"
+#include "dplasma/lib/dplasmajdf.h"
 #include "dplasma/lib/dplasmatypes.h"
 
 #include "zgetrf.h"
@@ -19,7 +21,7 @@
  *
  * @ingroup dplasma_complex64
  *
- * dplasma_zgetrf_New - Generates the object that computes the LU factorization
+ * dplasma_zgetrf_New - Generates the handle that computes the LU factorization
  * of a M-by-N matrix A: A = P * L * U by partial pivoting algorithm.
  *
  * This algorithm exploits the multi-threaded recursive kernels of the PLASMA
@@ -60,7 +62,7 @@
  *
  * @return
  *          \retval NULL if incorrect parameters are given.
- *          \retval The dague object describing the operation that can be
+ *          \retval The dague handle describing the operation that can be
  *          enqueued in the runtime with dague_enqueue(). It, then, needs to be
  *          destroy with dplasma_zgetrf_Destruct();
  *
@@ -79,21 +81,36 @@ dplasma_zgetrf_New( tiled_matrix_desc_t *A,
                     int *INFO )
 {
     dague_zgetrf_handle_t *dague_getrf;
+    int nbthreads = dplasma_imax( 1, vpmap_get_nb_threads_in_vp(0) - 1 );
 
     if ( (IPIV->mt != 1) || (dplasma_imin(A->nt, A->mt) > IPIV->nt)) {
         dplasma_error("dplasma_zgetrf_New", "IPIV doesn't have the correct number of tiles (1-by-min(A->mt,A->nt)");
         return NULL;
     }
 
+    dague_getrf = dague_zgetrf_new( (dague_ddesc_t*)A,
+                                    (dague_ddesc_t*)IPIV,
+                                    INFO );
+
+#if defined(CORE_GETRF_270)
+
     if ( A->storage == matrix_Tile ) {
         CORE_zgetrf_rectil_init();
     } else {
         CORE_zgetrf_reclap_init();
     }
+    dague_getrf->nbmaxthrd = dplasma_imin( nbthreads, 48 );
 
-    dague_getrf = dague_zgetrf_new( (dague_ddesc_t*)A,
-                                    (dague_ddesc_t*)IPIV,
-                                    INFO );
+#else
+
+    if ( A->storage == matrix_Tile ) {
+        dague_getrf->getrfdata = CORE_zgetrf_rectil_init(nbthreads);
+    } else {
+        dague_getrf->getrfdata = CORE_zgetrf_reclap_init(nbthreads);
+    }
+    dague_getrf->nbmaxthrd = nbthreads;
+
+#endif
 
     /* A */
     dplasma_add2arena_tile( dague_getrf->arenas[DAGUE_zgetrf_DEFAULT_ARENA],
@@ -115,14 +132,14 @@ dplasma_zgetrf_New( tiled_matrix_desc_t *A,
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zgetrf_Destruct - Free the data structure associated to an object
+ *  dplasma_zgetrf_Destruct - Free the data structure associated to an handle
  *  created with dplasma_zgetrf_New().
  *
  *******************************************************************************
  *
- * @param[in,out] o
- *          On entry, the object to destroy.
- *          On exit, the object cannot be used anymore.
+ * @param[in,out] handle
+ *          On entry, the handle to destroy.
+ *          On exit, the handle cannot be used anymore.
  *
  *******************************************************************************
  *
@@ -131,14 +148,17 @@ dplasma_zgetrf_New( tiled_matrix_desc_t *A,
  *
  ******************************************************************************/
 void
-dplasma_zgetrf_Destruct( dague_handle_t *o )
+dplasma_zgetrf_Destruct( dague_handle_t *handle )
 {
-    dague_zgetrf_handle_t *dague_zgetrf = (dague_zgetrf_handle_t *)o;
+    dague_zgetrf_handle_t *dague_zgetrf = (dague_zgetrf_handle_t *)handle;
 
     dague_matrix_del2arena( dague_zgetrf->arenas[DAGUE_zgetrf_DEFAULT_ARENA] );
     dague_matrix_del2arena( dague_zgetrf->arenas[DAGUE_zgetrf_PIVOT_ARENA  ] );
 
-    DAGUE_INTERNAL_HANDLE_DESTRUCT(dague_zgetrf);
+    if ( dague_zgetrf->getrfdata != NULL )
+        free( dague_zgetrf->getrfdata );
+
+    dague_handle_free(handle);
 }
 
 /**

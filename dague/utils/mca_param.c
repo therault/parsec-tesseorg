@@ -2,7 +2,7 @@
  * Copyright (c) 2004-2008 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2014 The University of Tennessee and The University
+ * Copyright (c) 2004-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -25,16 +25,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#ifdef HAVE_UNISTD_H
+#ifdef DAGUE_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_SYS_PARAM_H
+#ifdef DAGUE_HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
-#ifdef HAVE_STDBOOL_H
+#ifdef DAGUE_HAVE_STDBOOL_H
 #include <stdbool.h>
 #endif
-#ifdef HAVE_CTYPE_H
+#ifdef DAGUE_HAVE_CTYPE_H
 #include <ctype.h>
 #endif
 
@@ -49,6 +49,7 @@
 #include <dague/utils/argv.h>
 #include <dague/utils/show_help.h>
 #include <dague/utils/dague_environ.h>
+#include <dague/utils/keyval_parse.h>
 
 /*
  * Local types
@@ -180,20 +181,24 @@ int dague_mca_param_init(void)
 
 int dague_mca_param_recache_files(void)
 {
+    int rc;
     char *files, *new_files = NULL;
 
     /* We may need this later */
     home = (char*)dague_home_directory();
 
 #if defined(DAGUE_WANT_HOME_CONFIG_FILES)
-    asprintf(&files,
-             "%s"DAGUE_PATH_SEP".dague"DAGUE_PATH_SEP"mca-params.conf%c%s"DAGUE_PATH_SEP"dague-mca-params.conf",
-             home, DAGUE_ENV_SEP, dague_install_dirs.sysconfdir);
+    rc = asprintf(&files,
+                  "%s"DAGUE_PATH_SEP".dague"DAGUE_PATH_SEP"mca-params.conf%c%s"DAGUE_PATH_SEP"dague-mca-params.conf",
+                  home, DAGUE_ENV_SEP, dague_install_dirs.sysconfdir);
 #else
-    asprintf(&files,
-             "%s"DAGUE_PATH_SEP"dague-mca-params.conf",
-             dague_install_dirs.sysconfdir);
+    rc = asprintf(&files,
+                  "%s"DAGUE_PATH_SEP"dague-mca-params.conf",
+                  dague_install_dirs.sysconfdir);
 #endif  /* defined(DAGUE_WANT_HOME_CONFIG_FILES) */
+    if (-1 == rc) {
+        return DAGUE_ERR_OUT_OF_RESOURCE;
+    }
 
     /* Initialize a parameter that says where MCA param files can
        be found */
@@ -472,9 +477,13 @@ int dague_mca_param_unset(int index)
 
 char *dague_mca_param_env_var(const char *param_name)
 {
+    int rc;
     char *name;
 
-    asprintf(&name, "%s%s", mca_prefix, param_name);
+    rc = asprintf(&name, "%s%s", mca_prefix, param_name);
+    if (-1 == rc) {
+        return NULL;
+    }
 
     return name;
 }
@@ -652,6 +661,7 @@ int dague_mca_param_dump(dague_list_t **info, bool internal)
  */
 int dague_mca_param_build_env(char ***env, int *num_env, bool internal)
 {
+    int rc;
     size_t i, len;
     dague_mca_param_t *array;
     char *str;
@@ -676,19 +686,28 @@ int dague_mca_param_build_env(char ***env, int *num_env, bool internal)
         if (array[i].mbp_internal == internal || internal) {
             if (param_lookup(i, &storage, NULL, NULL)) {
                 if (DAGUE_MCA_PARAM_TYPE_INT == array[i].mbp_type) {
-                    asprintf(&str, "%s=%d", array[i].mbp_env_var_name,
-                             storage.intval);
+                    rc = asprintf(&str, "%s=%d", array[i].mbp_env_var_name,
+                                  storage.intval);
+                    if (-1 == rc) {
+                        return DAGUE_ERR_OUT_OF_RESOURCE;
+                    }
                     dague_argv_append(num_env, env, str);
                     free(str);
                 } else if (DAGUE_MCA_PARAM_TYPE_SIZET == array[i].mbp_type) {
-                    asprintf(&str, "%s=%lu", array[i].mbp_env_var_name,
-                             storage.sizetval);
+                    rc = asprintf(&str, "%s=%lu", array[i].mbp_env_var_name,
+                                  storage.sizetval);
+                    if (-1 == rc) {
+                        return DAGUE_ERR_OUT_OF_RESOURCE;
+                    }
                     dague_argv_append(num_env, env, str);
                     free(str);
                 } else if (DAGUE_MCA_PARAM_TYPE_STRING == array[i].mbp_type) {
                     if (NULL != storage.stringval) {
-                        asprintf(&str, "%s=%s", array[i].mbp_env_var_name,
-                                 storage.stringval);
+                        rc = asprintf(&str, "%s=%s", array[i].mbp_env_var_name,
+                                      storage.stringval);
+                        if (-1 == rc) {
+                            return DAGUE_ERR_OUT_OF_RESOURCE;
+                        }
                         free(storage.stringval);
                         dague_argv_append(num_env, env, str);
                         free(str);
@@ -714,6 +733,7 @@ int dague_mca_param_build_env(char ***env, int *num_env, bool internal)
         *num_env = 0;
         *env = NULL;
     }
+    (void)rc;
     return DAGUE_ERR_NOT_FOUND;
 }
 
@@ -783,9 +803,11 @@ static int read_files(char *file_list)
     files = dague_argv_split(file_list, DAGUE_ENV_SEP);
     count = dague_argv_count(files);
 
+    dague_util_keyval_parse_init();
     for (i = count - 1; i >= 0; --i) {
         dague_mca_parse_paramfile(files[i]);
     }
+    dague_util_keyval_parse_finalize();
     dague_argv_free(files);
 
     return DAGUE_SUCCESS;
@@ -822,6 +844,7 @@ static int read_keys_from_registry(HKEY hKey, char *sub_key, char *current_name)
     HKEY hTestKey;
     char *sub_sub_key;
     dague_mca_param_storage_t storage, override, lookup;
+    int rc;
 
     if( !RegOpenKeyEx( hKey, sub_key, 0, KEY_READ, &hTestKey) == ERROR_SUCCESS )
         return DAGUE_ERROR;
@@ -870,14 +893,17 @@ static int read_keys_from_registry(HKEY hKey, char *sub_key, char *current_name)
 
         if (strcmp(achValue,"")) {
             if (current_name!=NULL)
-                asprintf(&type_name, "%s_%s", current_name, achValue);
+                rc = asprintf(&type_name, "%s_%s", current_name, achValue);
             else
-                asprintf(&type_name, "%s", achValue);
+                rc = asprintf(&type_name, "%s", achValue);
         } else {
             if (current_name!=NULL)
-                asprintf(&type_name, "%s", current_name);
+                rc = asprintf(&type_name, "%s", current_name);
             else
-                asprintf(&type_name, "%s", achValue);
+                rc = asprintf(&type_name, "%s", achValue);
+        }
+        if (-1 == rc) {
+            return DAGUE_ERR_OUT_OF_RESOURCE;
         }
 
         type_len = strcspn(type_name, "_");
@@ -1161,7 +1187,7 @@ static int param_register(const char *type_name,
              is STRING and the new is INT, this is an developer error. */
 
             else if (param.mbp_type != array[i].mbp_type) {
-#if defined(DAGUE_DEBUG_ENABLE)
+#if defined(DAGUE_DEBUG)
                 dague_show_help("help-mca-param.txt",
                                 "re-register with different type",
                                 true, array[i].mbp_full_name);
@@ -1409,6 +1435,7 @@ static bool param_lookup(size_t index, dague_mca_param_storage_t *storage,
                          dague_mca_param_source_t *source_param,
                          char **source_file)
 {
+    int rc;
     size_t size;
     dague_mca_param_t *array;
     char *p, *q;
@@ -1477,7 +1504,7 @@ static bool param_lookup(size_t index, dague_mca_param_storage_t *storage,
             NULL != storage->stringval) {
             if (0 == strncmp(storage->stringval, "~/", 2)) {
                 if( NULL == home ) {
-                    asprintf(&p, "%s", storage->stringval + 2);
+                    rc = asprintf(&p, "%s", storage->stringval + 2);
                 } else {
                     p = dague_os_path( false, home, storage->stringval + 2, NULL );
                 }
@@ -1489,9 +1516,9 @@ static bool param_lookup(size_t index, dague_mca_param_storage_t *storage,
             while (NULL != p) {
                 *p = '\0';
                 if( NULL == home ) {
-                    asprintf(&q, "%s:%s", storage->stringval, p + 2);
+                    rc = asprintf(&q, "%s:%s", storage->stringval, p + 2);
                 } else {
-                    asprintf(&q, "%s:%s%s", storage->stringval, home, p + 2);
+                    rc = asprintf(&q, "%s:%s%s", storage->stringval, home, p + 2);
                 }
                 free(storage->stringval);
                 storage->stringval = q;
@@ -1503,7 +1530,7 @@ static bool param_lookup(size_t index, dague_mca_param_storage_t *storage,
     }
 
     /* Didn't find it.  Doh! */
-
+    (void)rc;
     return false;
 }
 
@@ -1843,7 +1870,7 @@ static void param_destructor(dague_mca_param_t *p)
     /* mark this parameter as invalid */
     p->mbp_type = DAGUE_MCA_PARAM_TYPE_MAX;
 
-#if defined(DAGUE_DEBUG_ENABLE)
+#if defined(DAGUE_DEBUG_PARANOID)
     /* Cheap trick to reset everything to NULL */
     param_constructor(p);
 #endif
@@ -1944,7 +1971,10 @@ int dague_mca_param_find_int_name(const char *type,
         return DAGUE_ERR_NOT_FOUND;
     }
 
-    asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name);
+    if ( asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name) == -1 ) {
+        return DAGUE_ERR_OUT_OF_RESOURCE;
+    }
+
     len = strlen(tmp);
     for (i=0; NULL != env[i]; i++) {
         if (0 == strncmp(tmp, env[i], len)) {
@@ -1972,7 +2002,9 @@ int dague_mca_param_find_sizet_name(const char *type,
         return DAGUE_ERR_NOT_FOUND;
     }
 
-    asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name);
+    if ( asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name) == -1 ) {
+        return DAGUE_ERR_OUT_OF_RESOURCE;
+    }
     len = strlen(tmp);
     for (i=0; NULL != env[i]; i++) {
         if (0 == strncmp(tmp, env[i], len)) {
@@ -2000,7 +2032,9 @@ int dague_mca_param_find_string_name(const char *type,
         return DAGUE_ERR_NOT_FOUND;
     }
 
-    asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name);
+    if ( asprintf(&tmp, "%s%s_%s", mca_prefix, type, param_name) == -1 ) {
+        return DAGUE_ERR_OUT_OF_RESOURCE;
+    }
     len = strlen(tmp);
     for (i=0; NULL != env[i]; i++) {
         if (0 == strncmp(tmp, env[i], len)) {
@@ -2019,6 +2053,7 @@ static char *source_name(dague_mca_param_source_t source,
                          const char *filename)
 {
     char *ret;
+    int rc;
 
     switch (source) {
     case MCA_PARAM_SOURCE_DEFAULT:
@@ -2030,7 +2065,7 @@ static char *source_name(dague_mca_param_source_t source,
         break;
 
     case MCA_PARAM_SOURCE_FILE:
-        asprintf(&ret, "file (%s)", filename);
+        rc = asprintf(&ret, "file (%s)", filename);
         return ret;
         break;
 
@@ -2042,6 +2077,7 @@ static char *source_name(dague_mca_param_source_t source,
         return strdup("unknown (!)");
         break;
     }
+    (void)rc;
 }
 
 int dague_mca_param_check_exclusive_string(const char *type_a,
@@ -2160,12 +2196,13 @@ static int dague_info_pretty = 0;
 static void
 dague_info_out(const char *pretty_message, const char *plain_message, const char *value)
 {
+    int rc;
     size_t i, len, max_value_width;
     char *spaces = NULL;
     char *filler = NULL;
     char *pos, *v, savev;
 
-#ifdef HAVE_ISATTY
+#ifdef DAGUE_HAVE_ISATTY
     /* If we have isatty(), if this is not a tty, then disable
      * wrapping for grep-friendly behavior
      */
@@ -2212,8 +2249,8 @@ dague_info_out(const char *pretty_message, const char *plain_message, const char
 
     if (dague_info_pretty && NULL != pretty_message) {
         if (centerpoint > (int)strlen(pretty_message)) {
-            asprintf(&spaces, "%*s", centerpoint -
-                     (int)strlen(pretty_message), " ");
+            rc = asprintf(&spaces, "%*s", centerpoint -
+                          (int)strlen(pretty_message), " ");
         } else {
             spaces = strdup("");
 #if DAGUE_ENABLE_DEBUG
@@ -2226,9 +2263,9 @@ dague_info_out(const char *pretty_message, const char *plain_message, const char
         }
         max_value_width = screen_width - strlen(spaces) - strlen(pretty_message) - 2;
         if (0 < strlen(pretty_message)) {
-            asprintf(&filler, "%s%s: ", spaces, pretty_message);
+            rc = asprintf(&filler, "%s%s: ", spaces, pretty_message);
         } else {
-            asprintf(&filler, "%s  ", spaces);
+            rc = asprintf(&filler, "%s  ", spaces);
         }
         free(spaces);
         spaces = NULL;
@@ -2238,7 +2275,7 @@ dague_info_out(const char *pretty_message, const char *plain_message, const char
                 printf("%s%s\n", filler, v);
                 break;
             } else {
-                asprintf(&spaces, "%*s", centerpoint + 2, " ");
+                rc = asprintf(&spaces, "%*s", centerpoint + 2, " ");
 
                 /* Work backwards to find the first space before
                  * max_value_width
@@ -2290,6 +2327,7 @@ dague_info_out(const char *pretty_message, const char *plain_message, const char
             printf("  %s\n", value);
         }
     }
+    (void)rc;
 }
 
 void dague_mca_show_mca_params(dague_list_t *info,
@@ -2303,6 +2341,7 @@ void dague_mca_show_mca_params(dague_list_t *info,
     int value_int, j;
     dague_mca_param_source_t source;
     char *src_file;
+    int rc;
 
     dague_info_pretty = pretty_print;
     for (i = DAGUE_LIST_ITERATOR_FIRST(info); i != DAGUE_LIST_ITERATOR_LAST(info);
@@ -2339,42 +2378,42 @@ void dague_mca_show_mca_params(dague_list_t *info,
                     }
                 } else {
                     dague_mca_param_lookup_int(p->mbpp_index, &value_int);
-                    asprintf(&value_string, "%d", value_int);
+                    rc = asprintf(&value_string, "%d", value_int);
                 }
 
                 /* Build up the strings for the output */
 
                 if (pretty_print) {
-                    asprintf(&message, "MCA %s", p->mbpp_type_name);
+                    rc = asprintf(&message, "MCA %s", p->mbpp_type_name);
 
                     /* Put in the real, full name (which may be
                      * different than the categorization).
                      */
-                    asprintf(&content, "%s \"%s\" (%s: <%s>, data source: ",
-                             p->mbpp_read_only ? "information" : "parameter",
-                             p->mbpp_full_name,
-                             p->mbpp_read_only ? "value" : "current value",
-                             (0 == strlen(value_string)) ? "none" : value_string);
+                    rc = asprintf(&content, "%s \"%s\" (%s: <%s>, data source: ",
+                                  p->mbpp_read_only ? "information" : "parameter",
+                                  p->mbpp_full_name,
+                                  p->mbpp_read_only ? "value" : "current value",
+                                  (0 == strlen(value_string)) ? "none" : value_string);
 
                     /* Indicate where the param was set from */
                     switch(source) {
                         case MCA_PARAM_SOURCE_DEFAULT:
-                            asprintf(&tmp, "%sdefault value", content);
+                            rc = asprintf(&tmp, "%sdefault value", content);
                             free(content);
                             content = tmp;
                             break;
                         case MCA_PARAM_SOURCE_ENV:
-                            asprintf(&tmp, "%senvironment or cmdline", content);
+                            rc = asprintf(&tmp, "%senvironment or cmdline", content);
                             free(content);
                             content = tmp;
                             break;
                         case MCA_PARAM_SOURCE_FILE:
-                            asprintf(&tmp, "%sfile [%s]", content, src_file);
+                            rc = asprintf(&tmp, "%sfile [%s]", content, src_file);
                             free(content);
                             content = tmp;
                             break;
                         case MCA_PARAM_SOURCE_OVERRIDE:
-                            asprintf(&tmp, "%sAPI override", content);
+                            rc = asprintf(&tmp, "%sAPI override", content);
                             free(content);
                             content = tmp;
                             break;
@@ -2384,23 +2423,23 @@ void dague_mca_show_mca_params(dague_list_t *info,
 
                     /* Is this parameter deprecated? */
                     if (p->mbpp_deprecated) {
-                        asprintf(&tmp, "%s, deprecated", content);
+                        rc = asprintf(&tmp, "%s, deprecated", content);
                         free(content);
                         content = tmp;
                     }
 
                     /* Does this parameter have any synonyms? */
                     if (p->mbpp_synonyms_len > 0) {
-                        asprintf(&tmp, "%s, synonyms: ", content);
+                        rc = asprintf(&tmp, "%s, synonyms: ", content);
                         free(content);
                         content = tmp;
                         for (j = 0; j < p->mbpp_synonyms_len; ++j) {
                             if (j > 0) {
-                                asprintf(&tmp, "%s, %s", content, p->mbpp_synonyms[j]->mbpp_full_name);
+                                rc = asprintf(&tmp, "%s, %s", content, p->mbpp_synonyms[j]->mbpp_full_name);
                                 free(content);
                                 content = tmp;
                             } else {
-                                asprintf(&tmp, "%s%s", content, p->mbpp_synonyms[j]->mbpp_full_name);
+                                rc = asprintf(&tmp, "%s%s", content, p->mbpp_synonyms[j]->mbpp_full_name);
                                 free(content);
                                 content = tmp;
                             }
@@ -2409,11 +2448,11 @@ void dague_mca_show_mca_params(dague_list_t *info,
 
                     /* Is this parameter a synonym of something else? */
                     else if (NULL != p->mbpp_synonym_parent) {
-                        asprintf(&tmp, "%s, synonym of: %s", content, p->mbpp_synonym_parent->mbpp_full_name);
+                        rc = asprintf(&tmp, "%s, synonym of: %s", content, p->mbpp_synonym_parent->mbpp_full_name);
                         free(content);
                         content = tmp;
                     }
-                    asprintf(&tmp, "%s)", content);
+                    rc = asprintf(&tmp, "%s)", content);
                     free(content);
                     content = tmp;
                     dague_info_out(message, message, content);
@@ -2426,18 +2465,18 @@ void dague_mca_show_mca_params(dague_list_t *info,
                     }
                 } else {
                     /* build the message*/
-                    asprintf(&tmp, "mca:%s:%s:param:%s:", p->mbpp_type_name,
+                    rc = asprintf(&tmp, "mca:%s:%s:param:%s:", p->mbpp_type_name,
                              (NULL == p->mbpp_component_name) ? "base" : p->mbpp_component_name,
                              p->mbpp_full_name);
 
                     /* Output the value */
-                    asprintf(&message, "%svalue", tmp);
+                    rc = asprintf(&message, "%svalue", tmp);
                     dague_info_out(message, message, value_string);
                     free(message);
 
                     /* Indicate where the param was set from */
 
-                    asprintf(&message, "%sdata_source", tmp);
+                    rc = asprintf(&message, "%sdata_source", tmp);
                     switch(source) {
                         case MCA_PARAM_SOURCE_DEFAULT:
                             content = strdup("default value");
@@ -2446,7 +2485,7 @@ void dague_mca_show_mca_params(dague_list_t *info,
                             content = strdup("environment-cmdline");
                             break;
                         case MCA_PARAM_SOURCE_FILE:
-                            asprintf(&content, "file: %s", src_file);
+                            rc = asprintf(&content, "file: %s", src_file);
                             break;
                         case MCA_PARAM_SOURCE_OVERRIDE:
                             content = strdup("API override");
@@ -2460,7 +2499,7 @@ void dague_mca_show_mca_params(dague_list_t *info,
 
                     /* Output whether it's read only or writable */
 
-                    asprintf(&message, "%sstatus", tmp);
+                    rc = asprintf(&message, "%sstatus", tmp);
                     content = p->mbpp_read_only ? "read-only" : "writable";
                     dague_info_out(message, message, content);
                     free(message);
@@ -2468,14 +2507,14 @@ void dague_mca_show_mca_params(dague_list_t *info,
                     /* If it has a help message, dague_info_output that */
 
                     if (NULL != p->mbpp_help_msg) {
-                        asprintf(&message, "%shelp", tmp);
+                        rc = asprintf(&message, "%shelp", tmp);
                         content = p->mbpp_help_msg;
                         dague_info_out(message, message, content);
                         free(message);
                     }
 
                     /* Is this parameter deprecated? */
-                    asprintf(&message, "%sdeprecated", tmp);
+                    rc = asprintf(&message, "%sdeprecated", tmp);
                     content = p->mbpp_deprecated ? "yes" : "no";
                     dague_info_out(message, message, content);
                     free(message);
@@ -2483,7 +2522,7 @@ void dague_mca_show_mca_params(dague_list_t *info,
                     /* Does this parameter have any synonyms? */
                     if (p->mbpp_synonyms_len > 0) {
                         for (j = 0; j < p->mbpp_synonyms_len; ++j) {
-                            asprintf(&message, "%ssynonym:name", tmp);
+                            rc = asprintf(&message, "%ssynonym:name", tmp);
                             content = p->mbpp_synonyms[j]->mbpp_full_name;
                             dague_info_out(message, message, content);
                             free(message);
@@ -2492,7 +2531,7 @@ void dague_mca_show_mca_params(dague_list_t *info,
 
                     /* Is this parameter a synonym of something else? */
                     else if (NULL != p->mbpp_synonym_parent) {
-                        asprintf(&message, "%ssynonym_of:name", tmp);
+                        rc = asprintf(&message, "%ssynonym_of:name", tmp);
                         content = p->mbpp_synonym_parent->mbpp_full_name;
                         dague_info_out(message, message, content);
                         free(message);
@@ -2507,4 +2546,18 @@ void dague_mca_show_mca_params(dague_list_t *info,
             }
         }
     }
+    (void)rc;
+}
+
+/*
+ * Set an MCA parameter in the environment provided.
+ * If environment is environ, the MCA parameter is into the global environment
+ * and can be accessed when the parameter is actually registered.
+ */
+void dague_setenv_mca_param( char *param, char *value, char ***env )
+{
+    char *name;
+    (void) dague_mca_var_env_name (param, &name);
+    dague_setenv(name, value, true, env);
+    free(name);
 }

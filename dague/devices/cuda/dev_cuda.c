@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2015 The University of Tennessee and The University
+ * Copyright (c) 2010-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -11,7 +11,7 @@
 #include "dague/utils/mca_param.h"
 #include "dague/constants.h"
 
-#if defined(HAVE_CUDA)
+#if defined(DAGUE_HAVE_CUDA)
 #include "dague.h"
 #include "dague/data_internal.h"
 #include "dague/devices/cuda/dev_cuda.h"
@@ -20,6 +20,7 @@
 #include "dague/arena.h"
 #include "dague/utils/output.h"
 #include "dague/utils/argv.h"
+#include "dague/scheduling.h"
 
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -32,7 +33,7 @@
  *                      DAGUE_PROFILE_CUDA_TRACK_OWN | DAGUE_PROFILE_CUDA_TRACK_EXEC
  */
 int dague_cuda_trackable_events = DAGUE_PROFILE_CUDA_TRACK_EXEC | DAGUE_PROFILE_CUDA_TRACK_DATA_OUT
-  | DAGUE_PROFILE_CUDA_TRACK_DATA_IN | DAGUE_PROFILE_CUDA_TRACK_OWN;
+    | DAGUE_PROFILE_CUDA_TRACK_DATA_IN | DAGUE_PROFILE_CUDA_TRACK_OWN;
 int dague_cuda_movein_key_start;
 int dague_cuda_movein_key_end;
 int dague_cuda_moveout_key_start;
@@ -72,8 +73,8 @@ static int dague_cuda_lookup_device_cudacores(int *cuda_cores, int major, int mi
     } else if (major == 3) {
         *cuda_cores = 192;
     } else {
-        fprintf(stderr, "Unsupporttd GPU, skip.\n");
-            return DAGUE_ERROR;
+        dague_debug_verbose(3, dague_debug_output, "Unsupporttd GPU %d, %d, skipping.", major, minor);
+        return DAGUE_ERROR;
     }
     return DAGUE_SUCCESS;
 }
@@ -81,11 +82,11 @@ static int dague_cuda_lookup_device_cudacores(int *cuda_cores, int major, int mi
 static int dague_cuda_device_fini(dague_device_t* device)
 {
     gpu_device_t* gpu_device = (gpu_device_t*)device;
-    CUresult status;
+    cudaError_t status;
     int j, k;
 
-    status = cuCtxPushCurrent( gpu_device->ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_device_fini) cuCtxPushCurrent ", status,
+    status = cudaSetDevice( gpu_device->cuda_index );
+    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_device_fini) cudaSetDevice ", status,
                             {continue;} );
 
     /* Release the registered memory */
@@ -105,8 +106,8 @@ static int dague_cuda_device_fini(dague_device_t* device)
 
         for( k = 0; k < exec_stream->max_events; k++ ) {
             assert( NULL == exec_stream->tasks[k] );
-            status = cuEventDestroy(exec_stream->events[k]);
-            DAGUE_CUDA_CHECK_ERROR( "(FINI) cuEventDestroy ", status,
+            status = cudaEventDestroy(exec_stream->events[k]);
+            DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_device_fini) cudaEventDestroy ", status,
                                     {continue;} );
         }
         free(exec_stream->events); exec_stream->events = NULL;
@@ -117,25 +118,18 @@ static int dague_cuda_device_fini(dague_device_t* device)
     }
     free(gpu_device->exec_stream); gpu_device->exec_stream = NULL;
 
-    status = cuCtxDestroy( gpu_device->ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_device_fini) cuCtxDestroy ", status,
-                                {continue;} );
-    gpu_device->ctx = NULL;
+    gpu_device->cuda_index = -1;
 
     /* Cleanup the GPU memory. */
     OBJ_DESTRUCT(&gpu_device->gpu_mem_lru);
     OBJ_DESTRUCT(&gpu_device->gpu_mem_owned_lru);
-
-    free(gpu_device);
 
     return DAGUE_SUCCESS;
 }
 
 static int dague_cuda_memory_register(dague_device_t* device, dague_ddesc_t* desc, void* ptr, size_t length)
 {
-    gpu_device_t* gpu_device = (gpu_device_t*)device;
-    CUresult status;
-    CUcontext ctx;
+    cudaError_t status;
     int rc = DAGUE_ERROR;
 
     if (desc->memory_registration_status == MEMORY_STATUS_REGISTERED) {
@@ -143,38 +137,27 @@ static int dague_cuda_memory_register(dague_device_t* device, dague_ddesc_t* des
         return rc;
     }
 
-    /* Atomically get the GPU context */
-    do {
-        ctx = gpu_device->ctx;
-        dague_atomic_cas( &(gpu_device->ctx), ctx, NULL );
-    } while( NULL == ctx );
-
-    status = cuCtxPushCurrent( ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_register) cuCtxPushCurrent ", status,
-                            {goto restore_and_return;} );
-
-    status = cuMemHostRegister(ptr, length, CU_MEMHOSTREGISTER_PORTABLE);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_register) cuMemHostRegister ", status,
+    /*
+     * We rely on the thread-safety of the CUDA interface to register the memory
+     * as another thread might be submiting tasks at the same time
+     * (cuda_scheduling.h), and we do not set a device since we register it for
+     * all devices.
+     */
+    status = cudaHostRegister(ptr, length, cudaHostRegisterPortable );
+    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_register) cudaHostRegister ", status,
                             { goto restore_and_return; } );
 
-    status = cuCtxPopCurrent(NULL);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_register) cuCtxPopCurrent ", status,
-                            {goto restore_and_return;} );
     rc = DAGUE_SUCCESS;
     desc->memory_registration_status = MEMORY_STATUS_REGISTERED;
 
   restore_and_return:
-    /* Restore the context so the others can steal it */
-    dague_atomic_cas( &(gpu_device->ctx), NULL, ctx );
-
+    (void)device;
     return rc;
 }
 
 static int dague_cuda_memory_unregister(dague_device_t* device, dague_ddesc_t* desc, void* ptr)
 {
-    gpu_device_t* gpu_device = (gpu_device_t*)device;
-    CUresult status;
-    CUcontext ctx;
+    cudaError_t status;
     int rc = DAGUE_ERROR;
 
     if (desc->memory_registration_status == MEMORY_STATUS_UNREGISTERED) {
@@ -182,30 +165,18 @@ static int dague_cuda_memory_unregister(dague_device_t* device, dague_ddesc_t* d
         return rc;
     }
 
-    /* Atomically get the GPU context */
-    do {
-        ctx = gpu_device->ctx;
-        dague_atomic_cas( &(gpu_device->ctx), ctx, NULL );
-    } while( NULL == ctx );
-
-    status = cuCtxPushCurrent( ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_unregister) cuCtxPushCurrent ", status,
-                            {goto restore_and_return;} );
-
-    status = cuMemHostUnregister(ptr);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_ununregister) cuMemHostUnregister ", status,
+    /*
+     * We rely on the thread-safety of the CUDA interface to unregister the memory
+     * as another thread might be submiting tasks at the same time (cuda_scheduling.h)
+     */
+    status = cudaHostUnregister(ptr);
+    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_ununregister) cudaHostUnregister ", status,
                             {continue;} );
 
-    status = cuCtxPopCurrent(NULL);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_unregister) cuCtxPopCurrent ", status,
-                            {goto restore_and_return;} );
     rc = DAGUE_SUCCESS;
     desc->memory_registration_status = MEMORY_STATUS_UNREGISTERED;
 
-  restore_and_return:
-    /* Restore the context so the others can use it */
-    dague_atomic_cas( &(gpu_device->ctx), NULL, ctx );
-
+    (void)device;
     return rc;
 }
 
@@ -216,12 +187,12 @@ void* cuda_solve_handle_dependencies(gpu_device_t* gpu_device,
 {
     char library_name[FILENAME_MAX], function_name[FILENAME_MAX], *env;
     int i, index, capability = gpu_device->major * 10 + gpu_device->minor;
-    CUresult status;
+    cudaError_t status;
     void *fn = NULL, *dlh = NULL;
     char** argv = NULL, **target;
 
-    status = cuCtxPushCurrent( gpu_device->ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(cuda_solve_handle_dependencies) cuCtxPushCurrent ", status, {continue;} );
+    status = cudaSetDevice( gpu_device->cuda_index );
+    DAGUE_CUDA_CHECK_ERROR( "(cuda_solve_handle_dependencies) cudaSetDevice ", status, {continue;} );
 
     for( i = 0, index = -1; i < (int)sizeof(cuda_legal_compute_capabilitites); i++ ) {
         if(cuda_legal_compute_capabilitites[i] == capability) {
@@ -258,8 +229,8 @@ void* cuda_solve_handle_dependencies(gpu_device_t* gpu_device,
     for( target = argv; (NULL != target) && (NULL != *target); target++ ) {
         struct stat status;
         if( 0 != stat(*target, &status) ) {
-            dague_output_verbose(5, dague_cuda_output_stream,
-                                 "Could not stat the %s path (%s)\n", *target, strerror(errno));
+            dague_debug_verbose(10, dague_cuda_output_stream,
+                                "Could not stat the %s path (%s)", *target, strerror(errno));
             continue;
         }
         if( S_ISDIR(status.st_mode) ) {
@@ -273,31 +244,31 @@ void* cuda_solve_handle_dependencies(gpu_device_t* gpu_device,
 
         dlh = dlopen(library_name, RTLD_NOW | RTLD_NODELETE );
         if(NULL == dlh) {
-            dague_output_verbose(5, dague_cuda_output_stream,
-                                 "Could not find %s dynamic library (%s)\n", library_name, dlerror());
+            dague_debug_verbose(10, dague_cuda_output_stream,
+                                "Could not find %s dynamic library (%s)", library_name, dlerror());
             continue;
         }
         fn = dlsym(dlh, function_name);
         dlclose(dlh);
         if( NULL != fn ) {
-            dague_output_verbose(10, dague_cuda_output_stream,
-                                 "Function %s found in shared object %s\n",
-                                 function_name, library_name);
+            dague_debug_verbose(4, dague_cuda_output_stream,
+                                "Function %s found in shared object %s",
+                                function_name, library_name);
             break;  /* we got one, stop here */
         }
     }
     /* Couldn't load from named dynamic libs, try linked/static */
     if(NULL == fn) {
-        dague_output_verbose(5, dague_cuda_output_stream,
+        dague_output_verbose(10, dague_cuda_output_stream,
                              "No dynamic function %s found, trying from compile time linked in\n",
                              function_name);
-        dlh = dlopen("", RTLD_NOW | RTLD_NODELETE);
+        dlh = dlopen(NULL, RTLD_NOW | RTLD_NODELETE);
         if(NULL != dlh) {
             fn = dlsym(dlh, function_name);
             if(NULL != fn) {
-                dague_output_verbose(10, dague_cuda_output_stream,
-                                     "Function %s found in the application object\n",
-                                     function_name);
+                dague_debug_verbose(4, dague_cuda_output_stream,
+                                    "Function %s found in the application object",
+                                    function_name);
             }
             dlclose(dlh);
         }
@@ -305,17 +276,14 @@ void* cuda_solve_handle_dependencies(gpu_device_t* gpu_device,
 
     /* Still not found?? skip this GPU */
     if(NULL == fn) {
-        dague_output_verbose(10, dague_cuda_output_stream,
-                             "No function %s found for CUDA device %s\n",
-                             function_name, gpu_device->super.name);
+        dague_debug_verbose(10, dague_cuda_output_stream,
+                            "No function %s found for CUDA device %s",
+                            function_name, gpu_device->super.name);
         index--;
         if(-1 <= index)
             goto retry_lesser_sm_version;
     }
 
-    status = cuCtxPopCurrent(NULL);
-    DAGUE_CUDA_CHECK_ERROR( "(INIT) cuCtxPopCurrent ", status,
-                            {continue;} );
     if( NULL != argv )
         dague_argv_free(argv);
 
@@ -340,12 +308,19 @@ dague_cuda_handle_register(dague_device_t* device, dague_handle_t* handle)
         __dague_chore_t* chores = (__dague_chore_t*)function->incarnations;
         for( dev_mask = j = 0; NULL != chores[j].hook; j++ ) {
             if( chores[j].type == device->type ) {
-                void* devf = cuda_solve_handle_dependencies(gpu_device,
-                                 (NULL == chores[j].dyld) ? function->name : chores[j].dyld);
-                if( NULL != devf ) {
-                    chores[gpu_device->cuda_index].dyld_fn = devf;
+                if ( NULL == chores[j].dyld ) {
+                    /* No dynamic load for this kernel */
+                    chores[gpu_device->cuda_index].dyld_fn = NULL;
                     rc = DAGUE_SUCCESS;
-                    dev_mask |= (1 << chores[j].type);
+                    dev_mask |= chores[j].type;
+                }
+                else {
+                    void* devf = cuda_solve_handle_dependencies(gpu_device, chores[j].dyld);
+                    if( NULL != devf ) {
+                        chores[gpu_device->cuda_index].dyld_fn = devf;
+                        rc = DAGUE_SUCCESS;
+                        dev_mask |= chores[j].type;
+                    }
                 }
             }
         }
@@ -372,7 +347,7 @@ int dague_gpu_init(dague_context_t *dague_context)
     int use_cuda_index, use_cuda;
     int cuda_mask, cuda_verbosity;
     int ndevices, i, j, k;
-    CUresult status;
+    cudaError_t cudastatus;
 
     use_cuda_index = dague_mca_param_reg_int_name("device_cuda", "enabled",
                                                   "The number of CUDA device to enable for the next PaRSEC context",
@@ -381,7 +356,7 @@ int dague_gpu_init(dague_context_t *dague_context)
                                        "The bitwise mask of CUDA devices to be enabled (default all)",
                                        false, false, 0xffffffff, &cuda_mask);
     (void)dague_mca_param_reg_int_name("device_cuda", "verbose",
-                                       "Set the verbosity level of the CUDA device (negative value turns all output off, higher is less verbose)\n",
+                                       "Set the verbosity level of the CUDA device (negative value: use debug verbosity), higher is less verbose)\n",
                                        false, false, -1, &cuda_verbosity);
     (void)dague_mca_param_reg_string_name("device_cuda", "path",
                                           "Path to the shared library files containing the CUDA version of the hooks. It is a ;-separated list of either directories or .so files.\n",
@@ -402,17 +377,18 @@ int dague_gpu_init(dague_context_t *dague_context)
     if( cuda_verbosity >= 0 ) {
         dague_cuda_output_stream = dague_output_open(NULL);
         dague_output_set_verbosity(dague_cuda_output_stream, cuda_verbosity);
+    } else {
+        dague_cuda_output_stream = dague_debug_output;
     }
 
-    status = cuInit(0);
-    DAGUE_CUDA_CHECK_ERROR( "cuInit ", status,
+    cudastatus = cudaGetDeviceCount( &ndevices );
+    DAGUE_CUDA_CHECK_ERROR( "cudaGetDeviceCount ", cudastatus,
                             {
                                 if( 0 < use_cuda_index )
                                     dague_mca_param_set_int(use_cuda_index, 0);
                                 return -1;
                             } );
 
-    cuDeviceGetCount( &ndevices );
 
     if( ndevices > use_cuda ) {
         if( 0 < use_cuda_index ) {
@@ -420,7 +396,7 @@ int dague_gpu_init(dague_context_t *dague_context)
         }
     } else if (ndevices < use_cuda ) {
         if( 0 < use_cuda_index ) {
-            fprintf(stderr, "There are only %d GPU available in this machine. PaRSEC will enable all of them.\n", ndevices);
+            dague_warning("User requested %d GPUs, but only %d are available in this machine. PaRSEC will enable all of them.", use_cuda, ndevices);
             dague_mca_param_set_int(use_cuda_index, ndevices);
         }
     }
@@ -448,64 +424,39 @@ int dague_gpu_init(dague_context_t *dague_context)
 #endif  /* defined(PROFILING) */
 
     for( i = 0; i < ndevices; i++ ) {
-#if CUDA_VERSION >= 3020
-        size_t total_mem;
-#else
-        unsigned int total_mem;
-#endif  /* CUDA_VERSION >= 3020 */
         gpu_device_t* gpu_device;
-        char szName[256];
+        char *szName;
         int major, minor, concurrency, computemode, streaming_multiprocessor, cuda_cores, clockRate;
-        CUdevice hcuDevice;
+        struct cudaDeviceProp prop;
 
         /* Allow fine grain selection of the GPU's */
         if( !((1 << i) & cuda_mask) ) continue;
 
-        status = cuDeviceGet( &hcuDevice, i );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGet ", status, {continue;} );
-        status = cuDeviceGetName( szName, 256, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetName ", status, {continue;} );
+        cudastatus = cudaSetDevice( i );
+        DAGUE_CUDA_CHECK_ERROR( "cudaSetDevice ", cudastatus, {continue;} );
+        cudastatus = cudaGetDeviceProperties( &prop, i );
+        DAGUE_CUDA_CHECK_ERROR( "cudaGetDeviceProperties ", cudastatus, {continue;} );
 
-        status = cuDeviceGetAttribute( &major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, hcuDevice);
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(MAJOR) ", status, {continue;} );
-        status = cuDeviceGetAttribute( &minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, hcuDevice);
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(MINOR) ", status, {continue;} );
-        status = cuDeviceGetAttribute( &clockRate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, hcuDevice);
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(CLOCK_RATE) ", status, {continue;} );
-        status = cuDeviceGetAttribute( &concurrency, CU_DEVICE_ATTRIBUTE_CONCURRENT_KERNELS, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(CONCURRENT) ", status, {continue;} );
-        status = cuDeviceGetAttribute( &streaming_multiprocessor, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(MULTIPROCESSOR) ", status, {continue;} );
-        status = cuDeviceGetAttribute( &computemode, CU_DEVICE_ATTRIBUTE_COMPUTE_MODE, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceGetAttribute(COMPUTE_MODE) ", status, {continue;} );
-
-        if( show_caps ) {
-            STATUS(("GPU Device %d (capability %d.%d): %s\n", i, major, minor, szName ));
-            STATUS(("\tSM                 : %d\n", streaming_multiprocessor ));
-            STATUS(("\tclockRate          : %d\n", clockRate ));
-            STATUS(("\tconcurrency        : %s\n", (concurrency == 1 ? "yes" : "no") ));
-            STATUS(("\tcomputeMode        : %d\n", computemode ));
-        }
-        status = cuDeviceTotalMem( &total_mem, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "cuDeviceTotalMem ", status, {continue;} );
+        szName    = prop.name;
+        major     = prop.major;
+        minor     = prop.minor;
+        clockRate = prop.clockRate;
+        concurrency = prop.concurrentKernels;
+        streaming_multiprocessor = prop.multiProcessorCount;
+        computemode = prop.computeMode;
 
         gpu_device = (gpu_device_t*)calloc(1, sizeof(gpu_device_t));
         OBJ_CONSTRUCT(gpu_device, dague_list_item_t);
-        gpu_device->major = (uint8_t)major;
-        gpu_device->minor = (uint8_t)minor;
+        gpu_device->cuda_index = (uint8_t)i;
+        gpu_device->major      = (uint8_t)major;
+        gpu_device->minor      = (uint8_t)minor;
         gpu_device->super.name = strdup(szName);
-
-        /* cuCtxCreate: Function works on floating contexts and current context */
-        status = cuCtxCreate( &(gpu_device->ctx), 0 /*CU_CTX_BLOCKING_SYNC*/, hcuDevice );
-        DAGUE_CUDA_CHECK_ERROR( "(INIT) cuCtxCreate ", status,
-                                {free(gpu_device); continue; } );
 
         gpu_device->max_exec_streams = DAGUE_MAX_STREAMS;
         gpu_device->exec_stream =
             (dague_gpu_exec_stream_t*)malloc(gpu_device->max_exec_streams
                                              * sizeof(dague_gpu_exec_stream_t));
         for( j = 0; j < gpu_device->max_exec_streams; j++ ) {
-            cudaError_t cudastatus;
             dague_gpu_exec_stream_t* exec_stream = &(gpu_device->exec_stream[j]);
 
             /* Allocate the stream */
@@ -521,17 +472,13 @@ int dague_gpu_init(dague_context_t *dague_context)
             OBJ_CONSTRUCT(exec_stream->fifo_pending, dague_list_t);
             exec_stream->tasks  = (dague_gpu_context_t**)malloc(exec_stream->max_events
                                                                 * sizeof(dague_gpu_context_t*));
-            exec_stream->events = (CUevent*)malloc(exec_stream->max_events * sizeof(CUevent));
+            exec_stream->events = (cudaEvent_t*)malloc(exec_stream->max_events * sizeof(cudaEvent_t));
             /* and the corresponding events */
             for( k = 0; k < exec_stream->max_events; k++ ) {
                 exec_stream->events[k] = NULL;
                 exec_stream->tasks[k]  = NULL;
-#if CUDA_VERSION >= 3020
-                status = cuEventCreate(&(exec_stream->events[k]), CU_EVENT_DISABLE_TIMING);
-#else
-                status = cuEventCreate(&(exec_stream->events[k]), CU_EVENT_DEFAULT);
-#endif  /* CUDA_VERSION >= 3020 */
-                DAGUE_CUDA_CHECK_ERROR( "(INIT) cuEventCreate ", (cudaError_t)status,
+                cudastatus = cudaEventCreate(&(exec_stream->events[k]));
+                DAGUE_CUDA_CHECK_ERROR( "(INIT) cudaEventCreate ", (cudaError_t)cudastatus,
                                         {break;} );
             }
 #if defined(DAGUE_PROF_TRACE)
@@ -552,11 +499,6 @@ int dague_gpu_init(dague_context_t *dague_context)
 #endif  /* defined(DAGUE_PROF_TRACE) */
         }
 
-        status = cuCtxPopCurrent(NULL);
-        DAGUE_CUDA_CHECK_ERROR( "(INIT) cuCtxPopCurrent ", status,
-                                {free(gpu_device); continue;} );
-
-        gpu_device->cuda_index                 = (uint8_t)i;
         gpu_device->super.type                 = DAGUE_DEV_CUDA;
         gpu_device->super.executed_tasks       = 0;
         gpu_device->super.transferred_data_in  = 0;
@@ -578,7 +520,18 @@ int dague_gpu_init(dague_context_t *dague_context)
         gpu_device->super.device_dweight = gpu_device->super.device_sweight / stod_rate[major-1];
 
         if( show_caps ) {
-            STATUS(("\tFlops capacity     : single %2.4f, double %2.4f\n", gpu_device->super.device_sweight, gpu_device->super.device_dweight));
+            dague_inform("GPU Device %d (capability %d.%d): %s\n"
+                         "\tSM                 : %d\n"
+                         "\tclockRate          : %d\n"
+                         "\tconcurrency        : %s\n"
+                         "\tcomputeMode        : %d\n"
+                         "\tFlops capacity     : single %2.4f, double %2.4f",
+                         i, major, minor,szName,
+                         streaming_multiprocessor,
+                         clockRate,
+                         (concurrency == 1)? "yes": "no",
+                         computemode,
+                         gpu_device->super.device_sweight, gpu_device->super.device_dweight);
         }
 
         if( DAGUE_SUCCESS != dague_cuda_memory_reserve(gpu_device,
@@ -609,34 +562,23 @@ int dague_gpu_init(dague_context_t *dague_context)
         if( DAGUE_DEV_CUDA != source_gpu->super.type ) continue;
 
         source_gpu->peer_access_mask = 0;
-        status = cuDeviceGet( &source, source_gpu->cuda_index );
-        DAGUE_CUDA_CHECK_ERROR( "No peer memory access: cuDeviceGet ", status, {continue;} );
-        status = cuCtxPushCurrent( source_gpu->ctx );
-        DAGUE_CUDA_CHECK_ERROR( "(dague_gpu_init) cuCtxPushCurrent ", status,
-                                {continue;} );
 
         for( j = 0; j < ndevices; j++ ) {
             if( (NULL == (target_gpu = (gpu_device_t*)dague_devices_get(j))) || (i == j) ) continue;
             /* Skip all non CUDA devices */
             if( DAGUE_DEV_CUDA != target_gpu->super.type ) continue;
 
-            status = cuDeviceGet( &target, target_gpu->cuda_index );
-            DAGUE_CUDA_CHECK_ERROR( "No peer memory access: cuDeviceGet ", status, {continue;} );
-
             /* Communication mask */
-            status = cuDeviceCanAccessPeer( &canAccessPeer, source, target );
-            DAGUE_CUDA_CHECK_ERROR( "cuDeviceCanAccessPeer ", status,
+            cudastatus = cudaDeviceCanAccessPeer( &canAccessPeer, source_gpu->cuda_index, target_gpu->cuda_index );
+            DAGUE_CUDA_CHECK_ERROR( "(dague_gpu_init) cudaDeviceCanAccessPeer ", cudastatus,
                                     {continue;} );
             if( 1 == canAccessPeer ) {
-                status = cuCtxEnablePeerAccess( target_gpu->ctx, 0 );
-                DAGUE_CUDA_CHECK_ERROR( "cuCtxEnablePeerAccess ", status,
+                cudastatus = cudaDeviceEnablePeerAccess( target_gpu->cuda_index, 0 );
+                DAGUE_CUDA_CHECK_ERROR( "(dague_gpu_init) cuCtxEnablePeerAccess ", cudastatus,
                                         {continue;} );
                 source_gpu->peer_access_mask = (int16_t)(source_gpu->peer_access_mask | (int16_t)(1 << target_gpu->cuda_index));
             }
         }
-        status = cuCtxPopCurrent(NULL);
-        DAGUE_CUDA_CHECK_ERROR( "(dague_gpu_init) cuCtxPopCurrent ", status,
-                                {continue;} );
     }
 #endif
 
@@ -652,11 +594,16 @@ int dague_gpu_fini(void)
         if( NULL == (gpu_device = (gpu_device_t*)dague_devices_get(i)) ) continue;
         if(DAGUE_DEV_CUDA != gpu_device->super.type) continue;
         dague_cuda_device_fini((dague_device_t*)gpu_device);
-        dague_device_remove((dague_device_t*)gpu_device);
+        dague_devices_remove((dague_device_t*)gpu_device);
+        free(gpu_device);
     }
 
-    dague_output_close(dague_cuda_output_stream);
+    if( dague_debug_output != dague_cuda_output_stream ) dague_output_close(dague_cuda_output_stream);
     dague_cuda_output_stream = -1;
+
+    if ( cuda_lib_path ) {
+        free(cuda_lib_path);
+    }
 
     return DAGUE_SUCCESS;
 }
@@ -672,23 +619,22 @@ dague_cuda_memory_reserve( gpu_device_t* gpu_device,
                            int           number_blocks,
                            size_t        eltsize )
 {
-    CUresult status;
-    cudaError_t cuda_status;
+    cudaError_t status;
     (void)eltsize;
 
     size_t how_much_we_allocate;
     size_t total_mem, initial_free_mem;
     uint32_t mem_elem_per_gpu = 0;
 
-    status = cuCtxPushCurrent( gpu_device->ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cuCtxPushCurrent ", status,
+    status = cudaSetDevice( gpu_device->cuda_index );
+    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cudaSetDevice ", status,
                             {continue;} );
 
     /* Determine how much memory we can allocate */
-    cuMemGetInfo( &initial_free_mem, &total_mem );
+    cudaMemGetInfo( &initial_free_mem, &total_mem );
     if( number_blocks != -1 ) {
         if( number_blocks == 0 ) {
-            WARNING(("**** Error: 0 bytes of memory requested on CUDA device %s\n", gpu_device->super.name));
+            dague_warning("CUDA: Invalid argument: requesting 0 bytes of memory on CUDA device %s", gpu_device->super.name);
             return DAGUE_ERROR;
         } else {
             how_much_we_allocate = number_blocks * eltsize;
@@ -702,15 +648,15 @@ dague_cuda_memory_reserve( gpu_device_t* gpu_device,
          *  and eleventh case of computer scientists who don't know how
          *  to divide a number by another
          */
-        WARNING(("**** Requested %d bytes on CUDA device %s, but only %d bytes are available -- reducing allocation to max available\n",
-                 how_much_we_allocate, initial_free_mem));
+        dague_warning("CUDA: Requested %d bytes on CUDA device %s, but only %d bytes are available -- reducing allocation to max available",
+                      how_much_we_allocate, initial_free_mem);
         how_much_we_allocate = initial_free_mem;
     }
     if( how_much_we_allocate < eltsize ) {
         /** Handle another kind of jokers entirely, and cases of
          *  not enough memory on the device
          */
-        WARNING(("**** Cannot allocate at least one element on CUDA device %s\n", gpu_device->super.name));
+        dague_warning("CUDA: Cannot allocate at least one element on CUDA device %s", gpu_device->super.name);
         return DAGUE_ERROR;
     }
 
@@ -723,66 +669,62 @@ dague_cuda_memory_reserve( gpu_device_t* gpu_device,
     while( (free_mem > eltsize )
            && ((total_mem - free_mem) < how_much_we_allocate) ) {
         dague_gpu_data_copy_t* gpu_elem;
-        CUdeviceptr device_ptr;
+        void *device_ptr;
 
-        cuda_status = (cudaError_t)cuMemAlloc( &device_ptr, eltsize);
-        DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cuMemAlloc ", cuda_status,
+        status = (cudaError_t)cudaMalloc( &device_ptr, eltsize);
+        DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cudaMemAlloc ", status,
                                 ({
                                     size_t _free_mem, _total_mem;
-                                    cuMemGetInfo( &_free_mem, &_total_mem );
-                                    WARNING(("Per context: free mem %zu total mem %zu (allocated tiles %u)\n",
-                                             _free_mem, _total_mem, mem_elem_per_gpu));
+                                    cudaMemGetInfo( &_free_mem, &_total_mem );
+                                    dague_inform("Per context: free mem %zu total mem %zu (allocated tiles %u)",
+                                                 _free_mem, _total_mem, mem_elem_per_gpu);
                                     break;
                                 }) );
         gpu_elem = OBJ_NEW(dague_data_copy_t);
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Allocate CUDA copy %p [ref_count %d] for data [%p]\n",
-                              gpu_elem, gpu_elem->super.obj_reference_count, NULL));
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "Allocate CUDA copy %p [ref_count %d] for data [%p]",
+                            gpu_elem, gpu_elem->super.obj_reference_count, NULL);
         gpu_elem->device_private = (void*)(long)device_ptr;
         gpu_elem->device_index = gpu_device->super.device_index;
         mem_elem_per_gpu++;
         OBJ_RETAIN(gpu_elem);
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Retain and insert CUDA copy %p [ref_count %d] in LRU in %s\n",
-                              gpu_elem, gpu_elem->super.obj_reference_count, __func__));
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "Retain and insert CUDA copy %p [ref_count %d] in LRU",
+                            gpu_elem, gpu_elem->super.obj_reference_count);
         dague_ulist_fifo_push( &gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_elem );
-        cuMemGetInfo( &free_mem, &total_mem );
+        cudaMemGetInfo( &free_mem, &total_mem );
     }
     if( 0 == mem_elem_per_gpu && dague_ulist_is_empty( &gpu_device->gpu_mem_lru ) ) {
-        WARNING(("GPU:\tRank %d Cannot allocate memory on GPU %d. Skip it!\n",
-                 gpu_device->super.context->my_rank, i));
+        dague_warning("GPU:\tRank %d Cannot allocate memory on GPU %d. Skip it!",
+                      gpu_device->super.context->my_rank, gpu_device->cuda_index);
     }
     else {
-        DEBUG3(( "GPU:\tAllocate %u tiles on the GPU memory\n", mem_elem_per_gpu ));
+        DAGUE_DEBUG_VERBOSE(20, dague_debug_output,  "GPU:\tAllocate %u tiles on the GPU memory", mem_elem_per_gpu );
     }
-    DAGUE_OUTPUT_VERBOSE((5, dague_cuda_output_stream,
-                          "GPU:\tAllocate %u tiles on the GPU memory\n", mem_elem_per_gpu ));
+    DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                        "GPU:\tAllocate %u tiles on the GPU memory", mem_elem_per_gpu);
 #else
     if( NULL == gpu_device->memory ) {
         void* base_ptr;
         /* We allocate all the memory on the GPU and we use our memory management */
         mem_elem_per_gpu = (how_much_we_allocate + eltsize - 1 ) / eltsize;
         size_t total_size = (size_t)mem_elem_per_gpu * eltsize;
-        cuda_status = (cudaError_t)cudaMalloc(&base_ptr, total_size);
-        DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cudaMalloc ", cuda_status,
-                                ({ WARNING(("Allocating memory on the GPU device failed\n")); }) );
+        status = (cudaError_t)cudaMalloc(&base_ptr, total_size);
+        DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cudaMalloc ", status,
+                                ({ dague_warning("Allocating memory on the GPU device failed"); }) );
 
         gpu_device->memory = zone_malloc_init( base_ptr, mem_elem_per_gpu, eltsize );
 
         if( gpu_device->memory == NULL ) {
-            WARNING(("GPU:\tRank %d Cannot allocate memory on GPU %d. Skip it!\n",
-                     gpu_device->super.context->my_rank, gpu_device->cuda_index));
+            dague_warning("GPU:\tRank %d Cannot allocate memory on GPU %d. Skip it!",
+                          gpu_device->super.context->my_rank, gpu_device->cuda_index);
             return DAGUE_ERROR;
         }
-        DAGUE_OUTPUT_VERBOSE((5, dague_cuda_output_stream,
-                              "GPU:\tAllocate %u segment of size %d on the GPU memory\n",
-                              mem_elem_per_gpu, eltsize ));
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "GPU:\tAllocate %u segment of size %d on the GPU memory",
+                            mem_elem_per_gpu, eltsize );
     }
 #endif
-
-    status = cuCtxPopCurrent(NULL);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_reserve) cuCtxPopCurrent ", status,
-                            {continue;} );
 
     return DAGUE_SUCCESS;
 }
@@ -796,17 +738,17 @@ static void dague_cuda_memory_release_list(gpu_device_t* gpu_device,
         dague_gpu_data_copy_t* gpu_copy = (dague_gpu_data_copy_t*)item;
         dague_data_t* original = gpu_copy->original;
 
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Release CUDA copy %p (device_ptr %p) [ref_count %d: must be 1], attached to %p, in map %p in %s",
-                              gpu_copy, gpu_copy->device_private, gpu_copy->super.super.obj_reference_count,
-                              original, (NULL != original ? original->ddesc : NULL), __func__));
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "Release CUDA copy %p (device_ptr %p) [ref_count %d: must be 1], attached to %p, in map %p",
+                            gpu_copy, gpu_copy->device_private, gpu_copy->super.super.obj_reference_count,
+                            original, (NULL != original ? original->ddesc : NULL));
         assert( gpu_copy->device_index == gpu_device->super.device_index );
         if( DATA_COHERENCY_OWNED == gpu_copy->coherency_state ) {
-            WARNING(("GPU[%d] still OWNS the master memory copy for data %d and it is discarding it!\n",
-                     gpu_device->cuda_index, original->key));
+            dague_warning("GPU[%d] still OWNS the master memory copy for data %d and it is discarding it!",
+                          gpu_device->cuda_index, original->key);
         }
 #if defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
-        cuMemFree( (CUdeviceptr)gpu_copy->device_private );
+        cudaFree( gpu_copy->device_private );
 #else
         zone_free( gpu_device->memory, (void*)gpu_copy->device_private );
 #endif
@@ -831,14 +773,15 @@ static void dague_cuda_memory_release_list(gpu_device_t* gpu_device,
 static int
 dague_cuda_memory_release( gpu_device_t* gpu_device )
 {
-    CUresult status;
+    cudaError_t status;
 
 #if 0
     dump_GPU_state(gpu_device); // debug only
 #endif
-    status = cuCtxPushCurrent( gpu_device->ctx );
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_release) cuCtxPushCurrent ", status,
+    status = cudaSetDevice( gpu_device->cuda_index );
+    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_release) cudaSetDevice ", status,
                             {continue;} );
+
     /* Free all memory on GPU */
     dague_cuda_memory_release_list(gpu_device, &gpu_device->gpu_mem_lru);
     dague_cuda_memory_release_list(gpu_device, &gpu_device->gpu_mem_owned_lru);
@@ -846,15 +789,11 @@ dague_cuda_memory_release( gpu_device_t* gpu_device )
 #if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
     if( gpu_device->memory ) {
         void* ptr = zone_malloc_fini(&gpu_device->memory);
-        status = (CUresult)cudaFree(ptr);
+        status = cudaFree(ptr);
         DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_release) cudaFree ", status,
-                                { WARNING(("Failed to free the GPU backend memory.\n")); } );
+                                { dague_warning("Failed to free the GPU backend memory."); } );
     }
 #endif
-
-    status = cuCtxPopCurrent(NULL);
-    DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_release) cuCtxPopCurrent ", status,
-                            {continue;} );
 
     return DAGUE_SUCCESS;
 }
@@ -869,12 +808,14 @@ dague_cuda_memory_release( gpu_device_t* gpu_device )
  *    0: All gpu_mem/mem_elem have been initialized
  *   -2: The task needs to rescheduled
  */
-int dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
-                                         dague_execution_context_t *this_task,
-                                         int  move_data_count )
+static inline int
+dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
+                                     dague_gpu_context_t *gpu_task )
 {
+    dague_execution_context_t *this_task = gpu_task->ec;
     dague_gpu_data_copy_t* temp_loc[MAX_PARAM_COUNT], *gpu_elem, *lru_gpu_elem;
-    dague_data_t* master;
+    dague_data_t* master, *oldmaster;
+    const dague_flow_t *flow;
     int i, j;
 
     /**
@@ -882,36 +823,56 @@ int dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
      * corresponding data on the GPU available.
      */
     for( i = 0; i < this_task->function->nb_flows; i++ ) {
-        if(NULL == this_task->function->in[i]) continue;
+        flow = gpu_task->flow[i];
+        assert( flow && (flow->flow_index == i) );
+
+        /* Skip CTL flows only */
+        if(!(flow->flow_flags)) continue;
 
         temp_loc[i] = NULL;
-        master = this_task->data[i].data_in->original;
+        master   = this_task->data[i].data_in->original;
         gpu_elem = DAGUE_DATA_GET_COPY(master, gpu_device->super.device_index);
+        this_task->data[i].data_out = gpu_elem;
+
         /* There is already a copy on the device */
         if( NULL != gpu_elem ) continue;
 
 #if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
         gpu_elem = OBJ_NEW(dague_data_copy_t);
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Allocate CUDA copy %p [ref_count %d] for data %p\n",
-                              gpu_elem, gpu_elem->super.super.obj_reference_count, master));
-    malloc_data:
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "Allocate CUDA copy %p [ref_count %d] for data %p",
+                            gpu_elem, gpu_elem->super.super.obj_reference_count, master);
+      malloc_data:
         gpu_elem->device_private = zone_malloc(gpu_device->memory, master->nb_elts);
         if( NULL == gpu_elem->device_private ) {
 #endif
 
-        find_another_data:
+          find_another_data:
+            /* Look for a data_copy to free */
             lru_gpu_elem = (dague_gpu_data_copy_t*)dague_ulist_fifo_pop(&gpu_device->gpu_mem_lru);
             if( NULL == lru_gpu_elem ) {
-                /* Make sure all remaining temporary locations are set to NULL */
-                for( ;  i < this_task->function->nb_flows; temp_loc[i++] = NULL );
-                break;  /* Go and cleanup */
+                /* We can't find enough room on the GPU. Insert the tiles in the begining of
+                 * the LRU (in order to be reused asap) and return without scheduling the task.
+                 */
+                dague_warning("GPU:\tRequest space on GPU failed for %d out of %d data",
+                              this_task->function->nb_flows - i,
+                              this_task->function->nb_flows);
+                for( j = 0; j < i; j++ ) {
+                    if( NULL != temp_loc[j] ) {
+                        dague_ulist_lifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)temp_loc[j]);
+                    }
+                }
+#if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
+                OBJ_RELEASE(gpu_elem);
+#endif
+                return -2;
             }
+
             DAGUE_LIST_ITEM_SINGLETON(lru_gpu_elem);
-            DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                  "Release LRU-retrieved CUDA copy %p [ref_count %d] in %s\n",
-                                  lru_gpu_elem, lru_gpu_elem->super.super.obj_reference_count, __func__));
-            OBJ_RELEASE(lru_gpu_elem);
+            DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                                "Release LRU-retrieved CUDA copy %p [ref_count %d]",
+                                lru_gpu_elem, lru_gpu_elem->super.super.obj_reference_count);
+            assert( NULL != lru_gpu_elem );
 
             /* If there are pending readers, let the gpu_elem loose. This is a weak coordination
              * protocol between here and the dague_gpu_data_stage_in, where the readers don't necessarily
@@ -920,67 +881,48 @@ int dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
             if( 0 != lru_gpu_elem->readers ) {
                 goto find_another_data; // TODO: add an assert of some sort to check for leaks here?
             }
+
             /* Make sure the new GPU element is clean and ready to be used */
             assert( master != lru_gpu_elem->original );
-#if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
-      //      assert(NULL != lru_gpu_elem->original);
-#endif
-            if( master != lru_gpu_elem->original ) {
-                if( NULL != lru_gpu_elem->original ) {
-                    dague_data_t* oldmaster = lru_gpu_elem->original;
-                    /* Let's check we're not trying to steal one of our own data */
-                    for( j = 0; j < this_task->function->nb_flows; j++ ) {
-                        if( NULL == this_task->data[j].data_in ) continue;
-                        if( this_task->data[j].data_in->original == oldmaster ) {
-                            temp_loc[j] = lru_gpu_elem;
-                            goto find_another_data;
-                        }
-                    }
+            assert( NULL   != lru_gpu_elem->original );
 
-                    dague_data_copy_detach(oldmaster, lru_gpu_elem, gpu_device->super.device_index);
-                    DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                          "GPU[%d]:\tRepurpose copy %p to mirror block %p (in task %s:i) instead of %p\n",
-                                          gpu_device->cuda_index, lru_gpu_elem, master, this_task->function->name, i, oldmaster));
-
-#if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
-                    zone_free( gpu_device->memory, (void*)(lru_gpu_elem->device_private) );
-                    DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                          "Release LRU-retrieved CUDA copy %p [ref_count %d: must be 0] in %s\n",
-                                          lru_gpu_elem, lru_gpu_elem->super.super.obj_reference_count, __func__));
-                    OBJ_RELEASE(lru_gpu_elem); assert( NULL == lru_gpu_elem );
-                    goto malloc_data;
-#endif
+            /* Let's check we're not trying to steal one of our own data */
+            oldmaster = lru_gpu_elem->original;
+            for( j = 0; j < this_task->function->nb_flows; j++ ) {
+                if( NULL == this_task->data[j].data_in ) continue;
+                if( this_task->data[j].data_in->original == oldmaster ) {
+                    goto find_another_data;
                 }
             }
-            gpu_elem = lru_gpu_elem;
+
+            /* The data is not used, and it's not one of ours: we can free it or reuse it */
+            dague_data_copy_detach(oldmaster, lru_gpu_elem, gpu_device->super.device_index);
+            DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                                "GPU[%d]:\tRepurpose copy %p to mirror block %p (in task %s:i) instead of %p",
+                                gpu_device->cuda_index, lru_gpu_elem, master, this_task->function->name, i, oldmaster);
 
 #if !defined(DAGUE_GPU_CUDA_ALLOC_PER_TILE)
+            /* Let's free this space, and try again to malloc some space */
+            zone_free( gpu_device->memory, (void*)(lru_gpu_elem->device_private) );
+            DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                                "Release LRU-retrieved CUDA copy %p [ref_count %d: must be 0]",
+                                lru_gpu_elem, lru_gpu_elem->super.super.obj_reference_count);
+            OBJ_RELEASE(lru_gpu_elem); assert( NULL == lru_gpu_elem );
+            goto malloc_data;
         }
+#else
+        gpu_elem = lru_gpu_elem;
 #endif
         assert( 0 == gpu_elem->readers );
         gpu_elem->coherency_state = DATA_COHERENCY_INVALID;
         gpu_elem->version = 0;
         dague_data_copy_attach(master, gpu_elem, gpu_device->super.device_index);
         this_task->data[i].data_out = gpu_elem;
-        move_data_count--;
         temp_loc[i] = gpu_elem;
-        OBJ_RETAIN(gpu_elem);
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Retain and insert CUDA copy %p [ref_count %d] in LRU in %s\n",
-                              gpu_elem, gpu_elem->super.super.obj_reference_count, __func__));
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "Retain and insert CUDA copy %p [ref_count %d] in LRU",
+                            gpu_elem, gpu_elem->super.super.obj_reference_count);
         dague_ulist_fifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_elem);
-    }
-    if( 0 != move_data_count ) {
-        WARNING(("GPU:\tRequest space on GPU failed for %d out of %d data\n",
-                 move_data_count, this_task->function->nb_flows));
-        /* We can't find enough room on the GPU. Insert the tiles in the begining of
-         * the LRU (in order to be reused asap) and return without scheduling the task.
-         */
-        for( i = 0; i < this_task->function->nb_flows; i++ ) {
-            if( NULL == temp_loc[i] ) continue;
-            dague_ulist_lifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)temp_loc[i]);
-        }
-        return -2;
     }
     return 0;
 }
@@ -993,36 +935,37 @@ int dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
  *    1: A copy has been scheduled on the corresponding stream
  *   -1: A copy cannot be issued due to CUDA.
  */
-int dague_gpu_data_stage_in( gpu_device_t* gpu_device,
-                             int32_t type,
-                             dague_data_pair_t* task_data,
-                             dague_gpu_context_t *gpu_task,
-                             dague_gpu_exec_stream_t *gpu_stream )
+static inline int
+dague_gpu_data_stage_in( gpu_device_t* gpu_device,
+                         int32_t type,
+                         dague_data_pair_t* task_data,
+                         dague_gpu_context_t *gpu_task,
+                         dague_gpu_exec_stream_t *gpu_stream )
 {
     dague_data_copy_t* in_elem = task_data->data_in;
     dague_data_t* original = in_elem->original;
     dague_gpu_data_copy_t* gpu_elem = task_data->data_out;
     int transfer_from = -1;
 
-    /* If the data will be accessed in write mode, remove it from any lists
+    /**
+     * If the data will be accessed in write mode, remove it from any lists
      * until the task is completed.
      */
     if( FLOW_ACCESS_WRITE & type ) {
+        if (gpu_elem->readers > 0 ) {
+            dague_warning("GPU[%d]:\tWrite access to data with existing readers (Possible anti-dependency, or concurrent accesses), please prevent that with CTL dependencies\n", gpu_device->cuda_index);
+            return -86;
+        }
         dague_list_item_ring_chop((dague_list_item_t*)gpu_elem);
         DAGUE_LIST_ITEM_SINGLETON(gpu_elem);
     }
 
-    /* If the source and target data are on the same device then they should be
-     * identical and the only thing left to do is update the number of readers.
-     */
-    if( in_elem == gpu_elem ) {
-        if( FLOW_ACCESS_READ & type ) gpu_elem->readers++;
-        gpu_elem->data_transfer_status = DATA_STATUS_COMPLETE_TRANSFER; /* data is already in GPU, so no transfer required.*/
-        return 0;
-    }
-
     /* DtoD copy, if data is read only, then we go back to CPU copy, and fetch data from CPU (HtoD) */
-    if (in_elem != gpu_elem && in_elem != original->device_copies[0] && in_elem->version == original->device_copies[0]->version) {
+    if( (in_elem != original->device_copies[0]) &&
+        (in_elem->version == original->device_copies[0]->version) ) {
+        /* We should never enter here, as long as we don't foward the GPU data to the input */
+        assert(!((in_elem != original->device_copies[0]) &&
+                 (in_elem->version == original->device_copies[0]->version)));
         dague_data_copy_release(in_elem);  /* release the copy in GPU1 */
         task_data->data_in = original->device_copies[0];
         in_elem = task_data->data_in;
@@ -1034,10 +977,14 @@ int dague_gpu_data_stage_in( gpu_device_t* gpu_device,
     if( -1 != transfer_from ) {
         cudaError_t status;
 
-        DAGUE_OUTPUT_VERBOSE((2, dague_cuda_output_stream,
-                              "GPU:\tMove H2D data %x (H %p:D %p) %d bytes to GPU %d\n",
-                              original->key, in_elem->device_private, (void*)gpu_elem->device_private, original->nb_elts, gpu_device->super.device_index));
+        DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                            "GPU[%d]:\t\tMove H2D data %x of %d bytes\t(Host: v:%d, ptr:%p / Device: v:%d, ptr:%p)",
+                            gpu_device->cuda_index, original->key, original->nb_elts,
+                            in_elem->version, in_elem->device_private,
+                            gpu_elem->version, (void*)gpu_elem->device_private);
 
+        assert( gpu_elem->version <= in_elem->version );
+        assert((gpu_elem->version != in_elem->version) || (gpu_elem->data_transfer_status == DATA_STATUS_NOT_TRANSFER));
 
 #if defined(DAGUE_PROF_TRACE)
         if( gpu_stream->prof_event_track_enable ) {
@@ -1053,28 +1000,31 @@ int dague_gpu_data_stage_in( gpu_device_t* gpu_device,
 #endif
 
         /* Push data into the GPU */
-        status = (cudaError_t)cuMemcpyHtoDAsync( (CUdeviceptr)gpu_elem->device_private,
-                                                 in_elem->device_private, original->nb_elts,
-                                                 gpu_stream->cuda_stream );
-        DAGUE_CUDA_CHECK_ERROR( "cuMemcpyHtoDAsync to device ", status,
-                                { WARNING(("<<%p>> -> <<%p>> [%d]\n", in_elem->device_private, gpu_elem->device_private, original->nb_elts));
+        status = (cudaError_t)cudaMemcpyAsync( gpu_elem->device_private,
+                                               in_elem->device_private, original->nb_elts,
+                                               cudaMemcpyHostToDevice,
+                                               gpu_stream->cuda_stream );
+        DAGUE_CUDA_CHECK_ERROR( "cudaMemcpyAsync to device ", status,
+                                { dague_warning("<<%p>> -> <<%p>> [%d]", in_elem->device_private, gpu_elem->device_private, original->nb_elts);
                                     return -1; } );
         gpu_device->super.transferred_data_in += original->nb_elts;
 
         /* update the data version in GPU immediately, and mark the data under transfer */
+        assert((gpu_elem->version != in_elem->version) || (gpu_elem->data_transfer_status == DATA_STATUS_NOT_TRANSFER));
         gpu_elem->version = in_elem->version;
         gpu_elem->data_transfer_status = DATA_STATUS_UNDER_TRANSFER;
         gpu_elem->push_task = gpu_task->ec;  /* only the task who does the transfer can modify the data status later. */
         /* TODO: take ownership of the data */
         return 1;
     }
-#if DAGUE_DEBUG_VERBOSE
     else {
-        DAGUE_OUTPUT_VERBOSE((2, dague_cuda_output_stream,
-                              "GPU:\tNO PUSH from %p to %p, size %d\n",
-                              in_elem->device_private, gpu_elem->device_private, original->nb_elts));
+        assert( gpu_elem->data_transfer_status == DATA_STATUS_COMPLETE_TRANSFER ||
+                gpu_elem->data_transfer_status == DATA_STATUS_UNDER_TRANSFER);
+
+        DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                            "GPU[%d]:\t\tNO Move H2D for data %x of %d bytes\n",
+                            gpu_device->cuda_index, original->key, original->nb_elts);
     }
-#endif
     /* TODO: data keeps the same coherence flags as before */
     return 0;
 }
@@ -1137,14 +1087,18 @@ static inline int dague_gpu_check_space_needed(gpu_device_t *gpu_device, dague_g
     dague_execution_context_t *this_task = gpu_task->ec;
     dague_data_t *original;
     dague_data_copy_t *data;
+    const dague_flow_t *flow;
+
     for( i = 0; i < this_task->function->nb_flows; i++ ) {
-        if(NULL == this_task->function->in[i]) continue;
+        flow = gpu_task->flow[i];
+        if(!(flow->flow_flags)) continue;
+
         data = this_task->data[i].data_in;
         original = data->original;
         if( NULL != DAGUE_DATA_GET_COPY(original, gpu_device->super.device_index) ) {
             continue;
         }
-        if(this_task->function->in[i]->flow_flags & FLOW_ACCESS_READ)
+        if(flow->flow_flags & FLOW_ACCESS_READ)
             space_needed++;
     }
     return space_needed;
@@ -1182,7 +1136,6 @@ int dague_gpu_sort_pending_list(gpu_device_t *gpu_device)
 
     /* p is head */
     dague_list_item_t *p = gpu_device->sort_starting_p;
-
     int i, j, NB_SORT = 10, space_q, space_min;
 
     dague_list_item_t *q, *prev_p, *min_p;
@@ -1237,9 +1190,10 @@ dague_gpu_context_t* dague_gpu_create_W2R_task(gpu_device_t *gpu_device, dague_e
     dague_list_item_t* item = (dague_list_item_t*)gpu_device->gpu_mem_owned_lru.ghost_element.list_next;
     int nb_cleaned = 0;
 
+    /* Find a data copy that has no pending users on the GPU, and can be
+     * safely moved back on the main memory */
     while(nb_cleaned < DAGUE_GPU_W2R_NB_MOVE_OUT) {
-        /* Find a data copy that has no pending users on the GPU, and can be
-         * safely moved back on the main memory */
+        /* Break at the end of the list */
         if( item == &(gpu_device->gpu_mem_owned_lru.ghost_element) ) {
             break;
         }
@@ -1251,6 +1205,7 @@ dague_gpu_context_t* dague_gpu_create_W2R_task(gpu_device_t *gpu_device, dague_e
         }
         if( NULL == ec ) {  /* allocate on-demand */
             ec = (dague_execution_context_t*)dague_thread_mempool_allocate(eu_context->context_mempool);
+            ec->status = DAGUE_TASK_STATUS_NONE;
             if( NULL == ec )  /* we're running out of memory. Bail out. */
                 break;
         }
@@ -1292,9 +1247,9 @@ int dague_gpu_W2R_task_fini(gpu_device_t *gpu_device,
         cpu_copy = original->device_copies[0];
         cpu_copy->coherency_state =  DATA_COHERENCY_SHARED;
         cpu_copy->version = gpu_copy->version;
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "Mirror on CPU and move CUDA copy %p [ref_count %d] in LRU in %s\n",
-                              gpu_copy, gpu_copy->super.super.obj_reference_count, __func__));
+        DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                            "Mirror on CPU and move CUDA copy %p [ref_count %d] in LRU",
+                            gpu_copy, gpu_copy->super.super.obj_reference_count);
         dague_ulist_fifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_copy);
         gpu_copy->readers--;
         assert(gpu_copy->readers >= 0);
@@ -1305,7 +1260,68 @@ int dague_gpu_W2R_task_fini(gpu_device_t *gpu_device,
 }
 
 
+/**
+ * Try to find the best device to execute the kernel based on the compute
+ * capability of the card.
+ *
+ * Returns:
+ *  > 1    - if the kernel should be executed by the a GPU
+ *  0 or 1 - if the kernel should be executed by some other meaning (in this case the
+ *         execution context is not released).
+ * -1      - if the kernel is scheduled to be executed on a GPU.
+ */
+
+/**
+ * This version is based on 4 streams: one for transfers from the memory to
+ * the GPU, 2 for kernel executions and one for tranfers from the GPU into
+ * the main memory. The synchronization on each stream is based on CUDA events,
+ * such an event indicate that a specific epoch of the lifetime of a task has
+ * been completed. Each type of stream (in, exec and out) has a pending FIFO,
+ * where tasks ready to jump to the respective step are waiting.
+ */
+int dague_gpu_get_best_device( dague_execution_context_t* this_task, double ratio )
+{
+    int i, dev_index, data_index = 0;
+    dague_handle_t* handle = this_task->dague_handle;
+
+    /* Step one: Find the first data in WRITE mode stored on a GPU */
+    for( i = 0; i < this_task->function->nb_flows; i++ ) {
+        if( (NULL != this_task->function->out[i]) &&
+            (this_task->function->out[i]->flow_flags & FLOW_ACCESS_WRITE) ) {
+            data_index = this_task->function->out[i]->flow_index;
+            dev_index  = this_task->data[data_index].data_in->original->owner_device;
+            if (dev_index > 1) {
+                break;
+            }
+        }
+    }
+
+    /* 0 is CPU, and 1 is recursive device */
+    if( dev_index <= 1 ) {  /* This is the first time we see this data for a GPU.
+                             * Let's decide which GPU will work on it. */
+        int best_index = 0;  /* default value: first CPU device */
+        float weight, best_weight = dague_device_load[0] + ratio * dague_device_sweight[0];
+
+        /* Start at 2, to skip the recursive body */
+        for( dev_index = 2; dev_index < dague_devices_enabled(); dev_index++ ) {
+            /* Skip the device if it is not configured */
+            if(!(handle->devices_mask & (1 << dev_index))) continue;
+            weight = dague_device_load[dev_index] + ratio * dague_device_sweight[dev_index];
+            if( best_weight > weight ) {
+                best_index = dev_index;
+                best_weight = weight;
+            }
+        }
+        dague_device_load[best_index] += ratio * dague_device_sweight[best_index];
+        assert( best_index != 1 );
+        dev_index = best_index;
+    }
+
+    return dev_index;
+}
+
 #if DAGUE_GPU_USE_PRIORITIES
+
 static inline dague_list_item_t* dague_fifo_push_ordered( dague_list_t* fifo,
                                                           dague_list_item_t* elem )
 {
@@ -1317,21 +1333,23 @@ static inline dague_list_item_t* dague_fifo_push_ordered( dague_list_t* fifo,
 #define DAGUE_FIFO_PUSH  dague_ulist_fifo_push
 #endif
 
-int progress_stream( gpu_device_t* gpu_device,
-                     dague_gpu_exec_stream_t* exec_stream,
-                     advance_task_function_t progress_fct,
-                     dague_gpu_context_t* task,
-                     dague_gpu_context_t** out_task )
+static inline int
+progress_stream( gpu_device_t* gpu_device,
+                 dague_gpu_exec_stream_t* exec_stream,
+                 advance_task_function_t progress_fct,
+                 dague_gpu_context_t* task,
+                 dague_gpu_context_t** out_task )
 {
     int saved_rc = 0, rc, i;
     *out_task = NULL;
-     dague_execution_context_t *this_task;
+    dague_execution_context_t *this_task;
+    const dague_flow_t *flow;
 
     if( NULL != task ) {
         DAGUE_FIFO_PUSH(exec_stream->fifo_pending, (dague_list_item_t*)task);
         task = NULL;
     }
- grab_a_task:
+  grab_a_task:
     if( NULL == exec_stream->tasks[exec_stream->start] ) {
         /* get the best task */
         task = (dague_gpu_context_t*)dague_ulist_fifo_pop(exec_stream->fifo_pending);
@@ -1347,14 +1365,28 @@ int progress_stream( gpu_device_t* gpu_device,
      * In case the task is succesfully progressed, the corresponding profiling
      * event is triggered.
      */
+    if ( NULL == progress_fct ) {
+        /* Grab the submit function */
+        progress_fct = task->submit;
+#if defined(DAGUE_DEBUG_PARANOID)
+        for( i = 0; i < task->ec->function->nb_flows; i++ ) {
+            flow = task->flow[i];
+            assert( flow );
+            assert( flow->flow_index == i );
+            if(!flow->flow_flags) continue;
+            assert(task->ec->data[i].data_out->data_transfer_status == DATA_STATUS_COMPLETE_TRANSFER);
+        }
+#endif /* defined(DAGUE_DEBUG_PARANOID) */
+    }
+    assert( NULL != progress_fct );
     rc = progress_fct( gpu_device, task, exec_stream );
     if( 0 > rc ) {
         if( -1 == rc ) return -1;  /* Critical issue */
         /* No more room on the GPU. Push the task back on the queue and check the completion queue. */
         DAGUE_FIFO_PUSH(exec_stream->fifo_pending, (dague_list_item_t*)task);
-        DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                              "GPU: Reschedule %s(task %p) priority %d: no room available on the GPU for data\n",
-                              task->ec->function->name, (void*)task->ec, task->ec->priority ));
+        DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                            "GPU[%d]: Reschedule %s(task %p) priority %d: no room available on the GPU for data",
+                            gpu_device->cuda_index, task->ec->function->name, (void*)task->ec, task->ec->priority);
         saved_rc = rc;  /* keep the info for the upper layer */
     } else {
         /**
@@ -1363,42 +1395,57 @@ int progress_stream( gpu_device_t* gpu_device,
          * too early, it might get executed before the data is available on the GPU.
          * Obviously, this lead to incorrect results.
          */
-        rc = cuEventRecord( exec_stream->events[exec_stream->start], exec_stream->cuda_stream );
+        rc = cudaEventRecord( exec_stream->events[exec_stream->start], exec_stream->cuda_stream );
         exec_stream->tasks[exec_stream->start] = task;
         exec_stream->start = (exec_stream->start + 1) % exec_stream->max_events;
-#if DAGUE_OUTPUT_VERBOSE >= 3
-        if( task->type == GPU_TASK_TYPE_D2HTRANSFER ) {
-            DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                  "GPU: Submitted Transfer(task %p) on stream %p\n",
-                                  (void*)task->ec,
-                                  (void*)exec_stream->cuda_stream));
+#if defined(DAGUE_DEBUG_NOISIER)
+        if( task->task_type == GPU_TASK_TYPE_D2HTRANSFER ) {
+            DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                                "GPU[%d]: Submitted Transfer(task %p) on stream %p",
+                                gpu_device->cuda_index, (void*)task->ec,
+                                (void*)exec_stream->cuda_stream);
         }
         else {
-            DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                  "GPU: Submitted %s(task %p) priority %d on stream %p\n",
-                                  task->ec->function->name, (void*)task->ec, task->ec->priority,
-                                  (void*)exec_stream->cuda_stream));
+            DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                                "GPU[%d]: Submitted %s(task %p) priority %d on stream %p",
+                                gpu_device->cuda_index,
+                                task->ec->function->name, (void*)task->ec, task->ec->priority,
+                                (void*)exec_stream->cuda_stream);
         }
 #endif
     }
     task = NULL;
 
- check_completion:
+  check_completion:
     if( (NULL == *out_task) && (NULL != exec_stream->tasks[exec_stream->end]) ) {
-        rc = cuEventQuery(exec_stream->events[exec_stream->end]);
+        rc = cudaEventQuery(exec_stream->events[exec_stream->end]);
         if( CUDA_SUCCESS == rc ) {
 
-            /* even though cuda event return success, the PUSH may not be completed if no PUSH is required by this task and the PUSH is actually
-               done  by another task, so we need to check if the data is actually ready to use */
+            /**
+             * Even though cuda event return success, the PUSH may not be
+             * completed if no PUSH is required by this task and the PUSH is
+             * actually done by another task, so we need to check if the data is
+             * actually ready to use
+             */
             if (exec_stream == &(gpu_device->exec_stream[0])) {  /* exec_stream[0] is the PUSH stream */
-                this_task = exec_stream->tasks[exec_stream->end]->ec;
+                dague_gpu_context_t *gtask = exec_stream->tasks[exec_stream->end];
+                this_task = gtask->ec;
                 for( i = 0; i < this_task->function->nb_flows; i++ ) {
-                    if(NULL == this_task->function->in[i]) continue;
+                    flow = gtask->flow[i];
+                    assert( flow );
+                    assert( flow->flow_index == i );
+                    if(!flow->flow_flags) continue;
                     if (this_task->data[i].data_out->push_task == this_task) {   /* only the task who did this PUSH can modify the status */
                         this_task->data[i].data_out->data_transfer_status = DATA_STATUS_COMPLETE_TRANSFER;
                         continue;
                     }
+                    assert(this_task->data[i].data_out->data_transfer_status == DATA_STATUS_COMPLETE_TRANSFER);
                     if (this_task->data[i].data_out->data_transfer_status != DATA_STATUS_COMPLETE_TRANSFER) {  /* data is not ready */
+                        /**
+                         * As long as we have only one stream to push the data
+                         * to the GPU, we should never end up in this case.
+                         * Remove previous assert if changed.
+                         */
                         return saved_rc;
                     }
                 }
@@ -1406,18 +1453,18 @@ int progress_stream( gpu_device_t* gpu_device,
 
             /* Save the task for the next step */
             task = *out_task = exec_stream->tasks[exec_stream->end];
-#if DAGUE_OUTPUT_VERBOSE >= 3
-            if( task->type == GPU_TASK_TYPE_D2HTRANSFER ) {
-                DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                      "GPU: Completed Transfer(task %p) on stream %p\n",
-                                      (void*)task->ec,
-                                      (void*)exec_stream->cuda_stream));
+#if defined(DAGUE_DEBUG_NOISIER)
+            if( task->task_type == GPU_TASK_TYPE_D2HTRANSFER ) {
+                DAGUE_DEBUG_VERBOSE(19, dague_cuda_output_stream,
+                                    "GPU[%d]: Completed Transfer(task %p) on stream %p",
+                                    (void*)task->ec,
+                                    (void*)exec_stream->cuda_stream);
             }
             else {
-                DAGUE_OUTPUT_VERBOSE((3, dague_cuda_output_stream,
-                                      "GPU: Completed %s(task %p) priority %d on stream %p\n",
-                                      task->ec->function->name, (void*)task->ec, task->ec->priority,
-                                      (void*)exec_stream->cuda_stream));
+                DAGUE_DEBUG_VERBOSE(19, dague_cuda_output_stream,
+                                    "GPU[%d]: Completed %s(task %p) priority %d on stream %p",
+                                    task->ec->function->name, (void*)task->ec, task->ec->priority,
+                                    (void*)exec_stream->cuda_stream);
             }
 #endif
             exec_stream->tasks[exec_stream->end] = NULL;
@@ -1442,8 +1489,8 @@ int progress_stream( gpu_device_t* gpu_device,
             task = NULL;  /* Try to schedule another task */
             goto grab_a_task;
         }
-        if( CUDA_ERROR_NOT_READY != rc ) {
-            DAGUE_CUDA_CHECK_ERROR( "cuEventQuery ", rc,
+        if( cudaErrorNotReady != rc ) {
+            DAGUE_CUDA_CHECK_ERROR( "(progress_stream) cudaEventQuery ", rc,
                                     {return -1;} );
         }
     }
@@ -1455,12 +1502,14 @@ void dump_exec_stream(dague_gpu_exec_stream_t* exec_stream)
     char task_str[128];
     int i;
 
-    printf( "Dump GPU exec stream %p [events = %d, start = %d, end = %d, executed = %d]\n",
-            exec_stream, exec_stream->max_events, exec_stream->start, exec_stream->end,
-            exec_stream->executed);
+    dague_debug_verbose(0, dague_cuda_output_stream,
+                        "Dump GPU exec stream %p [events = %d, start = %d, end = %d, executed = %d]",
+                        exec_stream, exec_stream->max_events, exec_stream->start, exec_stream->end,
+                        exec_stream->executed);
     for( i = 0; i < exec_stream->max_events; i++ ) {
         if( NULL == exec_stream->tasks[i] ) continue;
-        printf( "    %d: %s\n", i, dague_snprintf_execution_context(task_str, 128, exec_stream->tasks[i]->ec));
+        dague_debug_verbose(0, dague_cuda_output_stream,
+                            "    %d: %s", i, dague_snprintf_execution_context(task_str, 128, exec_stream->tasks[i]->ec));
     }
     /* Don't yet dump the fifo_pending queue */
 }
@@ -1469,39 +1518,476 @@ void dump_GPU_state(gpu_device_t* gpu_device)
 {
     int i;
 
-    printf("\n\n");
-    printf("Device %d:%d (%p)\n", gpu_device->cuda_index, gpu_device->super.device_index, gpu_device);
-    printf("\tpeer mask %x executed tasks %llu max streams %d\n",
-           gpu_device->peer_access_mask, (unsigned long long)gpu_device->super.executed_tasks, gpu_device->max_exec_streams);
-    printf("\tstats transferred [in %llu out %llu] required [in %llu out %llu]\n",
-           (unsigned long long)gpu_device->super.transferred_data_in, (unsigned long long)gpu_device->super.transferred_data_out,
-           (unsigned long long)gpu_device->super.required_data_in, (unsigned long long)gpu_device->super.required_data_out);
+    dague_output(dague_cuda_output_stream, "\n\n");
+    dague_output(dague_cuda_output_stream, "Device %d:%d (%p)\n", gpu_device->cuda_index, gpu_device->super.device_index, gpu_device);
+    dague_output(dague_cuda_output_stream, "\tpeer mask %x executed tasks %llu max streams %d\n",
+                 gpu_device->peer_access_mask, (unsigned long long)gpu_device->super.executed_tasks, gpu_device->max_exec_streams);
+    dague_output(dague_cuda_output_stream, "\tstats transferred [in %llu out %llu] required [in %llu out %llu]\n",
+                 (unsigned long long)gpu_device->super.transferred_data_in, (unsigned long long)gpu_device->super.transferred_data_out,
+                 (unsigned long long)gpu_device->super.required_data_in, (unsigned long long)gpu_device->super.required_data_out);
     for( i = 0; i < gpu_device->max_exec_streams; i++ ) {
         dump_exec_stream(&gpu_device->exec_stream[i]);
     }
     if( !dague_ulist_is_empty(&gpu_device->gpu_mem_lru) ) {
-        printf("#\n# LRU list\n#\n");
+        dague_output(dague_cuda_output_stream, "#\n# LRU list\n#\n");
         i = 0;
         DAGUE_ULIST_ITERATOR(&gpu_device->gpu_mem_lru, item,
-                            {
-                                dague_gpu_data_copy_t* gpu_copy = (dague_gpu_data_copy_t*)item;
-                                printf("  %d. elem %p GPU mem %p\n", i, gpu_copy, gpu_copy->device_private);
-                                dague_dump_data_copy(gpu_copy);
-                                i++;
-                            });
+                             {
+                                 dague_gpu_data_copy_t* gpu_copy = (dague_gpu_data_copy_t*)item;
+                                 dague_output(dague_cuda_output_stream, "  %d. elem %p GPU mem %p\n", i, gpu_copy, gpu_copy->device_private);
+                                 dague_dump_data_copy(gpu_copy);
+                                 i++;
+                             });
     };
     if( !dague_ulist_is_empty(&gpu_device->gpu_mem_owned_lru) ) {
-        printf("#\n# Owned LRU list\n#\n");
+        dague_output(dague_cuda_output_stream, "#\n# Owned LRU list\n#\n");
         i = 0;
         DAGUE_ULIST_ITERATOR(&gpu_device->gpu_mem_owned_lru, item,
-                            {
-                                dague_gpu_data_copy_t* gpu_copy = (dague_gpu_data_copy_t*)item;
-                                printf("  %d. elem %p GPU mem %p\n", i, gpu_copy, gpu_copy->device_private);
-                                dague_dump_data_copy(gpu_copy);
-                                i++;
-                            });
+                             {
+                                 dague_gpu_data_copy_t* gpu_copy = (dague_gpu_data_copy_t*)item;
+                                 dague_output(dague_cuda_output_stream, "  %d. elem %p GPU mem %p\n", i, gpu_copy, gpu_copy->device_private);
+                                 dague_dump_data_copy(gpu_copy);
+                                 i++;
+                             });
     };
-    printf("\n\n");
+    dague_output(dague_cuda_output_stream, "\n\n");
 }
 
-#endif /* HAVE_CUDA */
+/**
+ *  This function schedule the move of all the data required for a
+ *  specific task from the main memory into the GPU memory.
+ *
+ *  Returns:
+ *     a positive number: the number of data to be moved.
+ *     -1: data cannot be moved into the GPU.
+ *     -2: No more room on the GPU to move this data.
+ */
+int
+dague_gpu_kernel_push( gpu_device_t            *gpu_device,
+                       dague_gpu_context_t     *gpu_task,
+                       dague_gpu_exec_stream_t *gpu_stream)
+{
+    int i, ret = 0;
+    dague_execution_context_t *this_task = gpu_task->ec;
+    const dague_flow_t        *flow;
+#if defined(DAGUE_DEBUG_NOISIER)
+    char tmp[MAX_TASK_STRLEN];
+#endif
+
+    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                        "GPU[%d]: Try to Push %s",
+                        gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task) );
+
+    /**
+     * First, let's reserve enough space on the device to transfer the data on the GPU.
+     */
+    ret = dague_gpu_data_reserve_device_space( gpu_device,
+                                               gpu_task );
+    if( ret < 0 ) {
+        return ret;
+    }
+
+    /**
+     * Second, We have enough space, let's schedule the required transfer
+     */
+    DAGUE_TASK_PROF_TRACE_IF(gpu_stream->prof_event_track_enable,
+                             gpu_stream->profiling,
+                             (-1 == gpu_stream->prof_event_key_start ?
+                              DAGUE_PROF_FUNC_KEY_START(this_task->dague_handle,
+                                                        this_task->function->function_id) :
+                              gpu_stream->prof_event_key_start),
+                             this_task);
+
+    for( i = 0; i < this_task->function->nb_flows; i++ ) {
+        flow = gpu_task->flow[i];
+        /* Skip CTL flows */
+        if(!(flow->flow_flags)) continue;
+
+        assert( NULL != dague_data_copy_get_ptr(this_task->data[i].data_in) );
+
+        DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                            "GPU[%1d]:\t\tIN  Data of %s <%x> on GPU\n",
+                            gpu_device->cuda_index, flow->name,
+                            this_task->data[i].data_out->original->key);
+        ret = dague_gpu_data_stage_in( gpu_device, flow->flow_flags,
+                                       &(this_task->data[i]), gpu_task, gpu_stream );
+        if( ret < 0 ) {
+            return ret;
+        }
+    }
+
+    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                        "GPU[%d]: Push task %s DONE",
+                        gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task) );
+
+    return ret;
+}
+
+/**
+ *  This function schedule the move of all the modified data for a
+ *  specific task from the GPU memory into the main memory.
+ *
+ *  Returns: negative number if any error occured.
+ *           positive: the number of data to be moved.
+ */
+int
+dague_gpu_kernel_pop( gpu_device_t            *gpu_device,
+                      dague_gpu_context_t     *gpu_task,
+                      dague_gpu_exec_stream_t *gpu_stream)
+{
+    dague_execution_context_t *this_task = gpu_task->ec;
+    dague_gpu_data_copy_t     *gpu_copy;
+    dague_data_t              *original;
+    const dague_flow_t        *flow;
+    int return_code = 0, how_many = 0, i;
+    cudaError_t status;
+#if defined(DAGUE_DEBUG_NOISIER)
+    char tmp[MAX_TASK_STRLEN];
+#endif
+
+    if (gpu_task->task_type == GPU_TASK_TYPE_D2HTRANSFER) {
+        for( i = 0; i < 1; i++ ) {
+            gpu_copy = this_task->data[i].data_out;
+            original = gpu_copy->original;
+            status = cudaMemcpyAsync( original->device_copies[0]->device_private,
+                                      gpu_copy->device_private,
+                                      original->nb_elts,
+                                      cudaMemcpyDeviceToHost,
+                                      gpu_stream->cuda_stream );
+            DAGUE_CUDA_CHECK_ERROR( "cudaMemcpyAsync from device ", status,
+                                    { dague_warning("data %s <<%p>> -> <<%p>>\n", this_task->function->out[i]->name,
+                                                    gpu_copy->device_private, original->device_copies[0]->device_private);
+                                        return_code = -2;
+                                        goto release_and_return_error;} );
+        }
+        return return_code;
+    }
+
+    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                        "GPU[%d]: Try to Pop %s",
+                        gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task) );
+
+    for( i = 0; i < this_task->function->nb_flows; i++ ) {
+        /* Don't bother if there is no real data (aka. CTL or no output) */
+        if(NULL == this_task->data[i].data_out) continue;
+
+        flow = gpu_task->flow[i];
+
+        gpu_copy = this_task->data[i].data_out;
+        original = gpu_copy->original;
+        assert(original == this_task->data[i].data_in->original);
+
+        if( !(flow->flow_flags & FLOW_ACCESS_WRITE) ) {
+            /* Do not propagate GPU copies to successors (temporary solution) */
+            this_task->data[i].data_out = original->device_copies[0];
+        }
+
+        if( flow->flow_flags & FLOW_ACCESS_READ ) {
+            gpu_copy->readers--; assert(gpu_copy->readers >= 0);
+            if( (0 == gpu_copy->readers) &&
+                !(flow->flow_flags & FLOW_ACCESS_WRITE) ) {
+                dague_list_item_ring_chop((dague_list_item_t*)gpu_copy);
+                DAGUE_LIST_ITEM_SINGLETON(gpu_copy); /* TODO: singleton instead? */
+                dague_ulist_fifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_copy);
+                continue;  /* done with this element, go for the next one */
+            }
+        }
+        if( flow->flow_flags & FLOW_ACCESS_WRITE ) {
+            assert( gpu_copy == dague_data_get_copy(gpu_copy->original, gpu_device->super.device_index) );
+
+            /* Stage the transfer of the data back to main memory */
+            gpu_device->super.required_data_out += original->nb_elts;
+            assert( ((dague_list_item_t*)gpu_copy)->list_next == (dague_list_item_t*)gpu_copy );
+            assert( ((dague_list_item_t*)gpu_copy)->list_prev == (dague_list_item_t*)gpu_copy );
+
+            DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                                "GPU[%1d]:\tOUT Data of %s\n", gpu_device->cuda_index, flow->name);
+
+            if( gpu_task->pushout[i] ) {
+                /* TODO: make sure no readers are working on the CPU version */
+                original = gpu_copy->original;
+                DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                                    "GPU[%d]:\tMove D2H data <%s:%x> D:%p -> H:%p requested\n",
+                                    gpu_device->cuda_index, flow->name, original->key,
+                                    (void*)gpu_copy->device_private, original->device_copies[0]->device_private);
+                DAGUE_TASK_PROF_TRACE_IF(gpu_stream->prof_event_track_enable,
+                                         gpu_stream->profiling,
+                                         (-1 == gpu_stream->prof_event_key_start ?
+                                          DAGUE_PROF_FUNC_KEY_START(this_task->dague_handle,
+                                                                    this_task->function->function_id) :
+                                          gpu_stream->prof_event_key_start),
+                                         this_task);
+                /* Move the data back into main memory */
+                status = cudaMemcpyAsync( original->device_copies[0]->device_private,
+                                          gpu_copy->device_private,
+                                          original->nb_elts,
+                                          cudaMemcpyDeviceToHost,
+                                          gpu_stream->cuda_stream );
+                DAGUE_CUDA_CHECK_ERROR( "cudaMemcpyAsync from device ", status,
+                                        { dague_warning("data %s <<%p>> -> <<%p>>\n", this_task->function->out[i]->name,
+                                                        gpu_copy->device_private, original->device_copies[0]->device_private);
+                                            return_code = -2;
+                                            goto release_and_return_error;} );
+                gpu_device->super.transferred_data_out += original->nb_elts; /* TODO: not hardcoded, use datatype size */
+                how_many++;
+            }
+        }
+    }
+
+    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                        "GPU[%d]: Pop %s DONE",
+                        gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task) );
+
+  release_and_return_error:
+    return (return_code < 0 ? return_code : how_many);
+}
+
+/**
+ * Make sure all data on the device is correctly put back into the queues.
+ */
+int
+dague_gpu_kernel_epilog( gpu_device_t        *gpu_device,
+                         dague_gpu_context_t *gpu_task )
+{
+    dague_execution_context_t *this_task = gpu_task->ec;
+    dague_gpu_data_copy_t     *gpu_copy, *cpu_copy;
+    dague_data_t              *original;
+    int i;
+
+#if defined(DAGUE_DEBUG_NOISIER)
+    char tmp[MAX_TASK_STRLEN];
+    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                        "GPU[%d]: Epilog of %s",
+                        gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task) );
+#endif
+
+    for( i = 0; i < this_task->function->nb_flows; i++ ) {
+        /* Don't bother if there is no real data (aka. CTL or no output) */
+        if(NULL == this_task->data[i].data_out) continue;
+
+        gpu_copy = this_task->data[i].data_out;
+        original = gpu_copy->original;
+
+        if( !(gpu_task->flow[i]->flow_flags & FLOW_ACCESS_WRITE) ) {
+            /* Warning data_out for read only flows has been overwritten in pop */
+            continue;
+        }
+
+        cpu_copy = original->device_copies[0];
+
+        /**
+         * There might be a race condition here. We can't assume the first CPU
+         * version is the corresponding CPU copy, as a new CPU-bound data
+         * might have been created meanwhile.
+         *
+         * WARNING: For now we always forward the cpu_copy to the next task, to
+         * do that, we lie to the engine by updating the CPU copy to the same
+         * status than the GPU copy without updating the data itself. Thus, the
+         * cpu copy is really invalid. this is related to Issue #88, and the
+         * fact that:
+         *      - we don't forward the gpu copy as output
+         *      - we always take a cpu copy as input, so it has to be in the
+         *        same state as the GPU to prevent an extra data movement.
+         */
+        assert( DATA_COHERENCY_OWNED == gpu_copy->coherency_state );
+        gpu_copy->coherency_state = DATA_COHERENCY_SHARED;
+        cpu_copy->coherency_state = DATA_COHERENCY_SHARED;
+
+        /**
+         *  The cpu_copy will be updated in the completion, and at that moment
+         *  the two versions will be identical.
+         */
+        cpu_copy->version = gpu_copy->version;
+        gpu_copy->version++;  /* on to the next version */
+
+        /**
+         * Let's lie to the engine by reporting that working version of this
+         * data (aka. the one that GEMM worked on) is now on the CPU.
+         */
+        this_task->data[i].data_out = cpu_copy;
+
+        if( gpu_task->pushout[i] ) {
+            dague_ulist_fifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_copy);
+            DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
+                                "CUDA copy %p [ref_count %d] moved to the read LRU in %s\n",
+                                gpu_copy, gpu_copy->super.super.obj_reference_count, __func__);
+        } else {
+            dague_ulist_fifo_push(&gpu_device->gpu_mem_owned_lru, (dague_list_item_t*)gpu_copy);
+        }
+    }
+    return 0;
+}
+
+/**
+ * This version is based on 4 streams: one for transfers from the memory to
+ * the GPU, 2 for kernel executions and one for tranfers from the GPU into
+ * the main memory. The synchronization on each stream is based on CUDA events,
+ * such an event indicate that a specific epoch of the lifetime of a task has
+ * been completed. Each type of stream (in, exec and out) has a pending FIFO,
+ * where tasks ready to jump to the respective step are waiting.
+ */
+dague_hook_return_t
+dague_gpu_kernel_scheduler( dague_execution_unit_t *eu_context,
+                            dague_gpu_context_t    *gpu_task,
+                            int which_gpu )
+{
+    gpu_device_t* gpu_device;
+    cudaError_t status;
+    int rc, exec_stream = 0;
+    dague_gpu_context_t *progress_task, *out_task_push, *out_task_submit, *out_task_pop;
+#if defined(DAGUE_DEBUG_NOISIER)
+    char tmp[MAX_TASK_STRLEN];
+#endif
+
+    gpu_device = (gpu_device_t*)dague_devices_get(which_gpu);
+
+#if defined(DAGUE_PROF_TRACE)
+    DAGUE_PROFILING_TRACE_FLAGS( eu_context->eu_profile,
+                                 DAGUE_PROF_FUNC_KEY_END(gpu_task->ec->dague_handle,
+                                                         gpu_task->ec->function->function_id),
+                                 gpu_task->ec->function->key( gpu_task->ec->dague_handle, gpu_task->ec->locals),
+                                 gpu_task->ec->dague_handle->handle_id, NULL,
+                                 DAGUE_PROFILING_EVENT_RESCHEDULED );
+#endif /* defined(DAGUE_PROF_TRACE) */
+
+    /* Check the GPU status */
+    rc = dague_atomic_inc_32b( &(gpu_device->mutex) );
+    if( 1 != rc ) {  /* I'm not the only one messing with this GPU */
+        dague_fifo_push( &(gpu_device->pending), (dague_list_item_t*)gpu_task );
+        return DAGUE_HOOK_RETURN_ASYNC;
+    }
+
+#if defined(DAGUE_PROF_TRACE)
+    if( dague_cuda_trackable_events & DAGUE_PROFILE_CUDA_TRACK_OWN )
+        DAGUE_PROFILING_TRACE( eu_context->eu_profile, dague_cuda_own_GPU_key_start,
+                               (unsigned long)eu_context, PROFILE_OBJECT_ID_NULL, NULL );
+#endif  /* defined(DAGUE_PROF_TRACE) */
+
+    status = cudaSetDevice( gpu_device->cuda_index );
+    DAGUE_CUDA_CHECK_ERROR( "(dague_gpu_kernel_scheduler) cudaSetDevice ", status,
+                            {return DAGUE_HOOK_RETURN_DISABLE;} );
+
+  check_in_deps:
+    if( NULL != gpu_task ) {
+        DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
+                            "GPU[%1d]:\tUpload data (if any) for %s priority %d",
+                            gpu_device->cuda_index,
+                            dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
+                            gpu_task->ec->priority );
+    }
+    rc = progress_stream( gpu_device,
+                          &(gpu_device->exec_stream[0]),
+                          dague_gpu_kernel_push,
+                          gpu_task, &progress_task );
+    if( rc < 0 ) {
+        if( -1 == rc )
+            goto disable_gpu;
+    }
+    gpu_task = progress_task;
+    out_task_push = progress_task;
+
+    /* Stage-in completed for this task: it is ready to be executed */
+    exec_stream = (exec_stream + 1) % (gpu_device->max_exec_streams - 2);  /* Choose an exec_stream */
+    if( NULL != gpu_task ) {
+        DAGUE_DEBUG_VERBOSE(10, dague_debug_output,  "GPU[%1d]:\tExecute %s priority %d", gpu_device->cuda_index,
+                            dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
+                            gpu_task->ec->priority );
+    }
+    rc = progress_stream( gpu_device,
+                          &(gpu_device->exec_stream[2+exec_stream]),
+                          NULL,
+                          gpu_task, &progress_task );
+    if( rc < 0 ) {
+        if( -1 == rc )
+            goto disable_gpu;
+    }
+    gpu_task = progress_task;
+    out_task_submit = progress_task;
+
+    /* This task has completed its execution: we have to check if we schedule DtoN */
+    if( NULL != gpu_task ) {
+        DAGUE_DEBUG_VERBOSE(10, dague_debug_output,  "GPU[%1d]:\tRetrieve data (if any) for %s priority %d", gpu_device->cuda_index,
+                            dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
+                            gpu_task->ec->priority );
+    }
+    if (out_task_submit == NULL && out_task_push == NULL) {
+        gpu_task = dague_gpu_create_W2R_task(gpu_device, eu_context);
+    }
+    /* Task is ready to move the data back to main memory */
+    rc = progress_stream( gpu_device,
+                          &(gpu_device->exec_stream[1]),
+                          dague_gpu_kernel_pop,
+                          gpu_task, &progress_task );
+    if( rc < 0 ) {
+        if( -1 == rc )
+            goto disable_gpu;
+    }
+    if( NULL != progress_task ) {
+        /* We have a succesfully completed task. However, it is not gpu_task, as
+         * it was just submitted into the data retrieval system. Instead, the task
+         * ready to move into the next level is the progress_task.
+         */
+        gpu_task = progress_task;
+        progress_task = NULL;
+        goto complete_task;
+    }
+    gpu_task = progress_task;
+    out_task_pop = progress_task;
+
+  fetch_task_from_shared_queue:
+    assert( NULL == gpu_task );
+    if (out_task_submit == NULL && out_task_pop == NULL) {
+        dague_gpu_sort_pending_list(gpu_device);
+    }
+    gpu_task = (dague_gpu_context_t*)dague_fifo_try_pop( &(gpu_device->pending) );
+    if( NULL != gpu_task ) {
+        DAGUE_DEBUG_VERBOSE(10, dague_debug_output,  "GPU[%1d]:\tGet from shared queue %s priority %d", gpu_device->cuda_index,
+                            dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
+                            gpu_task->ec->priority );
+    }
+    goto check_in_deps;
+
+  complete_task:
+    assert( NULL != gpu_task );
+    DAGUE_DEBUG_VERBOSE(10, dague_debug_output,  "GPU[%1d]:\tComplete %s priority %d", gpu_device->cuda_index,
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
+                        gpu_task->ec->priority );
+    /* Everything went fine so far, the result is correct and back in the main memory */
+    DAGUE_LIST_ITEM_SINGLETON(gpu_task);
+    if (gpu_task->task_type == GPU_TASK_TYPE_D2HTRANSFER) {
+        dague_gpu_W2R_task_fini(gpu_device, gpu_task, eu_context);
+        gpu_task = progress_task;
+        goto fetch_task_from_shared_queue;
+    }
+    dague_gpu_kernel_epilog( gpu_device, gpu_task );
+    __dague_complete_execution( eu_context, gpu_task->ec );
+    dague_device_load[gpu_device->super.device_index] -= dague_device_sweight[gpu_device->super.device_index];
+    gpu_device->super.executed_tasks++;
+    free( gpu_task );
+    rc = dague_atomic_dec_32b( &(gpu_device->mutex) );
+    if( 0 == rc ) {  /* I was the last one */
+#if defined(DAGUE_PROF_TRACE)
+        if( dague_cuda_trackable_events & DAGUE_PROFILE_CUDA_TRACK_OWN )
+            DAGUE_PROFILING_TRACE( eu_context->eu_profile, dague_cuda_own_GPU_key_end,
+                                   (unsigned long)eu_context, PROFILE_OBJECT_ID_NULL, NULL );
+#endif  /* defined(DAGUE_PROF_TRACE) */
+
+        return DAGUE_HOOK_RETURN_ASYNC;
+    }
+    gpu_task = progress_task;
+    goto fetch_task_from_shared_queue;
+
+  disable_gpu:
+    /* Something wrong happened. Push all the pending tasks back on the
+     * cores, and disable the gpu.
+     */
+    dague_warning("Critical issue related to the GPU discovered. Giving up\n");
+    return DAGUE_HOOK_RETURN_DISABLE;
+}
+
+#endif /* DAGUE_HAVE_CUDA */

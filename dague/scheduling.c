@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2015 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -15,22 +15,24 @@
 #include "dague/mca/pins/pins.h"
 #include "dague/os-spec-timing.h"
 #include "dague/remote_dep.h"
+#include "dague/scheduling.h"
 
+#include "dague/debug_marks.h"
 #include "dague/ayudame.h"
 #include "dague/constants.h"
 
 #include <signal.h>
-#if defined(HAVE_STRING_H)
+#if defined(DAGUE_HAVE_STRING_H)
 #include <string.h>
-#endif /* defined(HAVE_STRING_H) */
+#endif /* defined(DAGUE_HAVE_STRING_H) */
 #include <sched.h>
 #include <sys/types.h>
-#if defined(HAVE_ERRNO_H)
+#if defined(DAGUE_HAVE_ERRNO_H)
 #include <errno.h>
-#endif  /* defined(HAVE_ERRNO_H) */
-#if defined(HAVE_SCHED_SETAFFINITY)
+#endif  /* defined(DAGUE_HAVE_ERRNO_H) */
+#if defined(DAGUE_HAVE_SCHED_SETAFFINITY)
 #include <linux/unistd.h>
-#endif  /* defined(HAVE_SCHED_SETAFFINITY) */
+#endif  /* defined(DAGUE_HAVE_SCHED_SETAFFINITY) */
 #if defined(DAGUE_PROF_TRACE) && defined(DAGUE_PROF_TRACE_SCHEDULING_EVENTS)
 #define TAKE_TIME(EU_PROFILE, KEY, ID)  DAGUE_PROFILING_TRACE((EU_PROFILE), (KEY), (ID), NULL)
 #else
@@ -52,7 +54,7 @@ static uint32_t sched_priority_trace_counter;
 
 #if defined(DAGUE_PROF_RUSAGE_EU)
 
-#if defined(HAVE_GETRUSAGE) && defined(HAVE_RUSAGE_THREAD)
+#if defined(DAGUE_HAVE_GETRUSAGE) && defined(DAGUE_HAVE_RUSAGE_THREAD)
 #include <sys/time.h>
 #include <sys/resource.h>
 
@@ -69,7 +71,7 @@ static void dague_statistics_per_eu(char* str, dague_execution_unit_t* eu)
         sys = ((current.ru_stime.tv_sec - eu->_eu_rusage.ru_stime.tv_sec) +
                (current.ru_stime.tv_usec - eu->_eu_rusage.ru_stime.tv_usec) / 1000000.0);
 
-        STATUS(("\n=============================================================\n"
+        dague_inform(("\n=============================================================\n"
                 "%s: Resource Usage Data for Exec. Unit ...\n"
                 "VP: %i Thread: %i (Core %i, socket %i)\n"
                 "-------------------------------------------------------------\n"
@@ -83,7 +85,7 @@ static void dague_statistics_per_eu(char* str, dague_execution_unit_t* eu)
                 "Involuntary Context Switches: %10ld\n"
                 "Block Input Operations      : %10ld\n"
                 "Block Output Operations     : %10ld\n"
-                "=============================================================\n\n"
+                "=============================================================\n"
                 , str, eu->virtual_process->vp_id, eu->th_id, eu->core_id, eu->socket_id,
                 usr, sys, usr + sys,
                 (current.ru_minflt  - eu->_eu_rusage.ru_minflt), (current.ru_majflt  - eu->_eu_rusage.ru_majflt),
@@ -97,7 +99,7 @@ static void dague_statistics_per_eu(char* str, dague_execution_unit_t* eu)
 }
 #else
 static void dague_statistics_per_eu(char* str, dague_execution_unit_t* eu) { (void)str; (void)eu; return; }
-#endif /* defined(HAVE_GETRUSAGE) */
+#endif /* defined(DAGUE_HAVE_GETRUSAGE) */
 #endif /* defined(DAGUE_PROF_RUSAGE_EU) */
 
 #if 0
@@ -110,10 +112,10 @@ int __dague_context_wait_task( dague_execution_unit_t* eu_context,
     (void)eu_context;
     switch(task->status) {
         case DAGUE_TASK_STATUS_NONE:
-#ifdef DAGUE_DEBUG_VERBOSE != 0
+#if defined(DAGUE_DEBUG)
             char tmp[MAX_TASK_STRLEN];
-            DEBUG(("thread %d of VP %d Execute %s\n", eu_context->th_id, eu_context->virtual_process->vp_id,
-                   dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, task)));
+            dague_degug_verbose(5, dague_debug_output, "thread %d of VP %d Execute %s\n", eu_context->th_id, eu_context->virtual_process->vp_id,
+                   dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, task));
 #endif
         return -1;
 
@@ -141,21 +143,21 @@ int __dague_execute( dague_execution_unit_t* eu_context,
 {
     const dague_function_t* function = exec_context->function;
     int rc;
-#if DAGUE_DEBUG_VERBOSE != 0
+#if defined(DAGUE_DEBUG)
     char tmp[MAX_TASK_STRLEN];
     dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, exec_context);
 #endif
 
     PINS(eu_context, EXEC_BEGIN, exec_context);
     AYU_TASK_RUN(eu_context->th_id, exec_context);
-    /**
-     * Try all the incarnation until one agree to execute.
-     */
+    /* Let's assume everything goes just fine */
+    exec_context->status = DAGUE_TASK_STATUS_COMPLETE;
+    /* Try all the incarnations until one agree to execute. */
     do {
-#if DAGUE_DEBUG_VERBOSE != 0
-        DEBUG(("thread %d of VP %d Execute %s[%d]\n",
+#if defined(DAGUE_DEBUG)
+        dague_debug_verbose(5, dague_debug_output, "Thread %d of VP %d Execute %s[%d]",
                eu_context->th_id, eu_context->virtual_process->vp_id,
-               tmp, function->incarnations[exec_context->chore_id].type));
+               tmp, function->incarnations[exec_context->chore_id].type);
 #endif
         rc = function->incarnations[exec_context->chore_id].hook( eu_context, exec_context );
         if( DAGUE_HOOK_RETURN_NEXT != rc ) {
@@ -164,9 +166,26 @@ int __dague_execute( dague_execution_unit_t* eu_context,
         }
         exec_context->chore_id++;
     } while(NULL != function->incarnations[exec_context->chore_id].hook);
+    /* We failed to execute. Give it another chance ... */
+    exec_context->status = DAGUE_TASK_STATUS_HOOK;
     /* We're out of luck, no more chores */
     PINS(eu_context, EXEC_END, exec_context);
     return DAGUE_HOOK_RETURN_ERROR;
+}
+
+/**< Increases the number of runtime associated activities (decreases if
+ *   nb_tasks is negative). When this counter reaches zero the handle is
+ *   considered as completed, and all resources will be marked for
+ *   release.
+ */
+int dague_handle_update_runtime_nbtask(dague_handle_t *handle, int32_t nb_tasks)
+{
+    int remaining;
+
+    assert( handle->nb_pending_actions != 0 );
+    remaining = dague_atomic_add_32b((int32_t*)&(handle->nb_pending_actions), nb_tasks );
+    assert( 0<= remaining );
+    return dague_check_complete_cb(handle, handle->context, remaining);
 }
 
 static inline int all_tasks_done(dague_context_t* context)
@@ -188,15 +207,6 @@ int dague_check_complete_cb(dague_handle_t *dague_handle, dague_context_t *conte
         return 1;
     }
     return 0;
-}
-
-int __dague_complete_task(dague_handle_t *dague_handle, dague_context_t* context)
-{
-    int remaining;
-
-    assert( dague_handle->nb_local_tasks != 0 );
-    remaining = dague_atomic_dec_32b( &(dague_handle->nb_local_tasks) );
-    return dague_check_complete_cb(dague_handle, context, remaining);
 }
 
 dague_sched_module_t *current_scheduler                  = NULL;
@@ -234,7 +244,7 @@ int dague_set_scheduler( dague_context_t *dague )
     current_scheduler   = (dague_sched_module_t*)new_scheduler;
     scheduler_component = (dague_sched_base_component_t*)new_component;
 
-    DEBUG((" Installing %s\n", current_scheduler->component->base_version.mca_component_name));
+    dague_debug_verbose(4, dague_debug_output, " Installing scheduler %s", current_scheduler->component->base_version.mca_component_name);
     PROFILING_SAVE_sINFO("sched", (char *)current_scheduler->component->base_version.mca_component_name);
 
     current_scheduler->module.install( dague );
@@ -250,7 +260,7 @@ int __dague_schedule( dague_execution_unit_t* eu_context,
 {
     int ret;
 
-#if defined(DAGUE_DEBUG_ENABLE)
+#if defined(DAGUE_DEBUG_PARANOID) && defined(DAGUE_DEBUG_NOISIER)
     {
         dague_execution_context_t* context = new_context;
         const struct dague_flow_s* flow;
@@ -263,23 +273,23 @@ int __dague_schedule( dague_execution_unit_t* eu_context,
                 if( NULL != context->data[flow->flow_index].data_repo ) {
                     set_parameters++;
                     if( NULL == context->data[flow->flow_index].data_in ) {
-                        DEBUG2(("Task %s has flow %s data_repo != NULL but a data == NULL (%s:%d)\n",
+                        DAGUE_DEBUG_VERBOSE(10, dague_debug_output, "Task %s has flow %s data_repo != NULL but a data == NULL (%s:%d)",
                                 dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, context),
-                                flow->name, __FILE__, __LINE__));
+                                flow->name, __FILE__, __LINE__);
                     }
                 }
             }
             /*if( set_parameters > 1 ) {
-                ERROR(( "Task %s has more than one input flow set (impossible)!! (%s:%d)\n",
-                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, context), __FILE__, __LINE__));
+                dague_abort( "Task %s has more than one input flow set (impossible)!! (%s:%d)",
+                        dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, context), __FILE__, __LINE__);
             }*/ /* Change it as soon as dtd has a running version */
-            DEBUG2(( "thread %d of VP %d Schedules %s\n",
+            DAGUE_DEBUG_VERBOSE(10, dague_debug_output,  "thread %d of VP %d Schedules %s",
                     eu_context->th_id, eu_context->virtual_process->vp_id,
-                    dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, context) ));
+                    dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, context) );
             context = (dague_execution_context_t*)context->super.list_item.list_next;
         } while ( context != new_context );
     }
-#endif  /* defined(DAGUE_DEBUG_ENABLE) */
+#endif  /* defined(DAGUE_DEBUG_PARANOID) */
 
     /* Deactivate this measurement, until the MPI thread has its own execution unit
      *  TAKE_TIME(eu_context->eu_profile, schedule_push_begin, 0);
@@ -292,9 +302,9 @@ int __dague_schedule( dague_execution_unit_t* eu_context,
     return ret;
 }
 
-#ifdef  HAVE_SCHED_SETAFFINITY
+#ifdef  DAGUE_HAVE_SCHED_SETAFFINITY
 #define gettid() syscall(__NR_gettid)
-#endif /* HAVE_SCHED_SETAFFINITY */
+#endif /* DAGUE_HAVE_SCHED_SETAFFINITY */
 
 #define TIME_STEP 5410
 #define MIN(x, y) ( (x)<(y)?(x):(y) )
@@ -308,9 +318,12 @@ static inline unsigned long exponential_backoff(uint64_t k)
 int __dague_complete_execution( dague_execution_unit_t *eu_context,
                                 dague_execution_context_t *exec_context )
 {
+    dague_handle_t *handle = exec_context->dague_handle;
     int rc = 0;
 
-    /* complete execution==add==push (also includes exec of immediates) */
+    /* complete execution PINS event includes the preparation of the
+     * output and the and the call to complete_execution.
+     */
     PINS(eu_context, COMPLETE_EXEC_BEGIN, exec_context);
 
     if( NULL != exec_context->function->prepare_output ) {
@@ -318,8 +331,7 @@ int __dague_complete_execution( dague_execution_unit_t *eu_context,
     }
     if( NULL != exec_context->function->complete_execution )
         rc = exec_context->function->complete_execution( eu_context, exec_context );
-    /* Update the number of remaining tasks */
-    __dague_complete_task(exec_context->dague_handle, eu_context->virtual_process->dague_context);
+
     PINS(eu_context, COMPLETE_EXEC_END, exec_context);
     AYU_TASK_COMPLETE(exec_context);
 
@@ -331,6 +343,18 @@ int __dague_complete_execution( dague_execution_unit_t *eu_context,
     /* Release the execution context */
     exec_context->function->release_task( eu_context, exec_context );
 
+    /* Check to see if the DSL has marked the handle as completed */
+    if( 0 == handle->nb_tasks ) {
+        /* The handle has been marked as complete. Unfortunately, it is possible
+         * that multiple threads are completing tasks associated with this handle
+         * simultaneously and we need to release the runtime action associated with
+         * this handle tasks once. We need to protect this action by atomically
+         * setting the number of tasks to a non-zero value.
+         */
+        if( dague_atomic_cas(&handle->nb_tasks, 0, DAGUE_RUNTIME_RESERVED_NB_TASKS) )
+            dague_handle_update_runtime_nbtask(handle, -1);
+    }
+
     return rc;
 }
 
@@ -340,7 +364,7 @@ int __dague_context_wait( dague_execution_unit_t* eu_context )
     dague_context_t* dague_context = eu_context->virtual_process->dague_context;
     int32_t my_barrier_counter = dague_context->__dague_internal_finalization_counter;
     dague_execution_context_t* exec_context;
-    int nbiterations = 0;
+    int rc, nbiterations = 0;
     struct timespec rqtp;
 
     rqtp.tv_sec = 0;
@@ -381,7 +405,7 @@ int __dague_context_wait( dague_execution_unit_t* eu_context )
     }
 
     if( NULL == current_scheduler ) {
-        fprintf(stderr, "DAGuE: Main thread entered dague_context_wait, while scheduler is not selected yet!\n");
+        dague_abort("Main thread entered dague_context_wait, while a scheduler is not selected yet!");
         return -1;
     }
 
@@ -421,20 +445,58 @@ int __dague_context_wait( dague_execution_unit_t* eu_context )
             }
 #endif
 
-            PINS(eu_context, PREPARE_INPUT_BEGIN, exec_context);
-            switch( exec_context->function->prepare_input(eu_context, exec_context) ) {
-            case DAGUE_HOOK_RETURN_DONE:
-            {
+            rc = DAGUE_HOOK_RETURN_DONE;
+            if(exec_context->status <= DAGUE_TASK_STATUS_PREPARE_INPUT) {
+                PINS(eu_context, PREPARE_INPUT_BEGIN, exec_context);
+                rc = exec_context->function->prepare_input(eu_context, exec_context);
                 PINS(eu_context, PREPARE_INPUT_END, exec_context);
-                int rv = 0;
+            }
+            switch(rc) {
+            case DAGUE_HOOK_RETURN_DONE: {
+                if(exec_context->status <= DAGUE_TASK_STATUS_HOOK) {
+                    rc = __dague_execute( eu_context, exec_context );
+                }
                 /* We're good to go ... */
-                rv = __dague_execute( eu_context, exec_context );
-                if( 0 == rv ) {
+                switch(rc) {
+                case DAGUE_HOOK_RETURN_DONE:    /* This execution succeeded */
+                    exec_context->status = DAGUE_TASK_STATUS_COMPLETE;
                     __dague_complete_execution( eu_context, exec_context );
+                    break;
+                case DAGUE_HOOK_RETURN_AGAIN:   /* Reschedule later */
+                    exec_context->status = DAGUE_TASK_STATUS_HOOK;
+                    if(0 == exec_context->priority) {
+                        SET_LOWEST_PRIORITY(exec_context, dague_execution_context_priority_comparator);
+                    } else
+                        exec_context->priority /= 10;  /* demote the task */
+                    DAGUE_LIST_ITEM_SINGLETON(exec_context);
+                    __dague_schedule(eu_context, exec_context);
+                    exec_context = NULL;
+                    break;
+                case DAGUE_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
+                                                 * even try to change it's state, the completion
+                                                 * will be triggered asynchronously. */
+                    break;
+                case DAGUE_HOOK_RETURN_NEXT:    /* Try next variant [if any] */
+                case DAGUE_HOOK_RETURN_DISABLE: /* Disable the device, something went wrong */
+                case DAGUE_HOOK_RETURN_ERROR:   /* Some other major error happened */
+                    assert( 0 ); /* Internal error: invalid return value */
                 }
                 nbiterations++;
                 break;
             }
+            case DAGUE_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
+                                             * even try to change it's state, the completion
+                                             * will be triggered asynchronously. */
+                break;
+            case DAGUE_HOOK_RETURN_AGAIN:   /* Reschedule later */
+                if(0 == exec_context->priority) {
+                    SET_LOWEST_PRIORITY(exec_context, dague_execution_context_priority_comparator);
+                } else
+                    exec_context->priority /= 10;  /* demote the task */
+                DAGUE_LIST_ITEM_SINGLETON(exec_context);
+                __dague_schedule(eu_context, exec_context);
+                exec_context = NULL;
+                break;
             default:
                 assert( 0 ); /* Internal error: invalid return value for data_lookup function */
             }
@@ -483,7 +545,7 @@ int __dague_context_wait( dague_execution_unit_t* eu_context )
     PINS(eu_context, SELECT_END, NULL);
 
 #if defined(DAGUE_SCHED_REPORT_STATISTICS)
-    STATUS(("#Scheduling: th <%3d/%3d> done %6d | local %6llu | remote %6llu | stolen %6llu | starve %6llu | miss %6llu\n",
+    dague_inform(("#Scheduling: th <%3d/%3d> done %6d | local %6llu | remote %6llu | stolen %6llu | starve %6llu | miss %6llu",
             eu_context->th_id, eu_context->virtual_process->vp_id, nbiterations, (long long unsigned int)found_local,
             (long long unsigned int)found_remote,
             (long long unsigned int)found_victim,
@@ -530,7 +592,7 @@ static int dague_composed_cb( dague_handle_t* o, void* cbdata )
     dague_compound_state_t* compound_state = (dague_compound_state_t*)compound->functions_array;
     int completed_objects = compound_state->completed_objects++;
     assert( o == compound_state->objects_array[completed_objects] ); (void)o;
-    if( compound->nb_local_tasks-- ) {
+    if( compound->nb_pending_actions-- ) {
         assert( NULL != compound_state->objects_array[completed_objects+1] );
         dague_enqueue(compound_state->ctx,
                       compound_state->objects_array[completed_objects+1]);
@@ -550,7 +612,7 @@ static void dague_compound_startup( dague_context_t *context,
     assert( NULL != first );
     first->startup_hook(context, first, startup_list);
     compound_state->ctx = context;
-    compound_object->nb_local_tasks = compound_state->nb_objects;
+    compound_object->nb_pending_actions = compound_state->nb_objects;
     for( i = 0; i < compound_state->nb_objects; i++ ) {
         dague_handle_t* o = compound_state->objects_array[i];
         assert( NULL != o );
@@ -565,19 +627,18 @@ dague_handle_t* dague_compose( dague_handle_t* start,
     dague_handle_t* compound = NULL;
     dague_compound_state_t* compound_state = NULL;
 
-    if( start->nb_functions == 0 ) {
+    if( start->nb_functions == 0 ) {  /* start is already a compound object */
         compound = start;
         compound_state = (dague_compound_state_t*)compound->functions_array;
         compound_state->objects_array[compound_state->nb_objects++] = next;
         /* make room for NULL terminating, if necessary */
-        if( 0 == (compound_state->nb_objects%16) ) {
+        if( 0 == (compound_state->nb_objects % 16) ) {
             compound_state = realloc(compound_state, sizeof(dague_compound_state_t) +
-                            (1 + compound_state->nb_objects/16) * 16 * sizeof(void*));
+                            (1 + compound_state->nb_objects / 16) * 16 * sizeof(void*));
             compound->functions_array = (void*)compound_state;
         }
         compound_state->objects_array[compound_state->nb_objects] = NULL;
-    }
-    else {
+    } else {
         compound = calloc(1, sizeof(dague_handle_t));
         compound->functions_array = malloc(sizeof(dague_compound_state_t) + 16 * sizeof(void*));
         compound_state = (dague_compound_state_t*)compound->functions_array;
@@ -612,47 +673,38 @@ int dague_enqueue( dague_context_t* context, dague_handle_t* handle )
     /* Update the number of pending objects */
     dague_atomic_inc_32b( &(context->active_objects) );
 
-    /* Enable the handle to interact with the communication engine */
-    (void)dague_handle_register(handle);
-
     /* If necessary trigger the on_enqueue callback */
     if( NULL != handle->on_enqueue ) {
         handle->on_enqueue(handle, handle->on_enqueue_data);
     }
 
-    if( handle->nb_local_tasks > 0 ) {
-
-         /* Retrieve all the early messages for this handle */
-        (void)dague_remote_dep_new_object(handle);
-        if( NULL != handle->startup_hook ) {
-            dague_execution_context_t **startup_list;
-            int p;
-            /* These pointers need to be initialized to NULL; doing it with calloc */
-            startup_list = (dague_execution_context_t**)calloc( vpmap_get_nb_vp(), sizeof(dague_execution_context_t*) );
-            if( NULL == startup_list ) {  /* bad bad */
-                return DAGUE_ERR_OUT_OF_RESOURCE;
-            }
-            handle->startup_hook(context, handle, startup_list);
-            for(p = 0; p < vpmap_get_nb_vp(); p++) {
-                if( NULL != startup_list[p] ) {
-                    dague_list_t temp;
-
-                    OBJ_CONSTRUCT( &temp, dague_list_t );
-                    /* Order the tasks by priority */
-                    dague_list_chain_sorted(&temp, (dague_list_item_t*)startup_list[p],
-                                            dague_execution_context_priority_comparator);
-                    startup_list[p] = (dague_execution_context_t*)dague_list_nolock_unchain(&temp);
-                    OBJ_DESTRUCT(&temp);
-                    /* We should add these tasks on the system queue when there is one */
-                    __dague_schedule( context->virtual_processes[p]->execution_units[0], startup_list[p] );
-                }
-            }
-            free(startup_list);
+    if( NULL != handle->startup_hook ) {
+        dague_execution_context_t **startup_list;
+        int p;
+        /* These pointers need to be initialized to NULL; doing it with calloc */
+        startup_list = (dague_execution_context_t**)calloc( vpmap_get_nb_vp(), sizeof(dague_execution_context_t*) );
+        if( NULL == startup_list ) {  /* bad bad */
+            return DAGUE_ERR_OUT_OF_RESOURCE;
         }
-    } else {
-        dague_check_complete_cb(handle, context, handle->nb_local_tasks);
-    }
+        handle->startup_hook(context, handle, startup_list);
+        for(p = 0; p < vpmap_get_nb_vp(); p++) {
+            if( NULL != startup_list[p] ) {
+                dague_list_t temp;
 
+                OBJ_CONSTRUCT( &temp, dague_list_t );
+                /* Order the tasks by priority */
+                dague_list_chain_sorted(&temp, (dague_list_item_t*)startup_list[p],
+                                        dague_execution_context_priority_comparator);
+                startup_list[p] = (dague_execution_context_t*)dague_list_nolock_unchain(&temp);
+                OBJ_DESTRUCT(&temp);
+                /* We should add these tasks on the system queue when there is one */
+                __dague_schedule( context->virtual_processes[p]->execution_units[0], startup_list[p] );
+            }
+        }
+        free(startup_list);
+    } else {
+        dague_check_complete_cb(handle, context, handle->nb_pending_actions);
+    }
 #if defined(DAGUE_SCHED_REPORT_STATISTICS)
     sched_priority_trace_counter = 0;
 #endif

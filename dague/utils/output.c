@@ -2,7 +2,7 @@
  * Copyright (c) 2004-2010 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2012 The University of Tennessee and The University
+ * Copyright (c) 2004-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2006 High Performance Computing Center Stuttgart,
@@ -22,15 +22,15 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#ifdef HAVE_SYSLOG_H
+#ifdef DAGUE_HAVE_SYSLOG_H
 #include <syslog.h>
 #endif
 #include <string.h>
 #include <fcntl.h>
-#ifdef HAVE_UNISTD_H
+#ifdef DAGUE_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_SYS_PARAM_H
+#ifdef DAGUE_HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
 
@@ -86,13 +86,13 @@ static void construct(dague_object_t *stream);
 static int do_open(int output_id, dague_output_stream_t * lds);
 static int open_file(int i);
 static void free_descriptor(int output_id);
-static int make_string(char **no_newline_string, output_desc_t *ldi, 
+static int make_string(char **no_newline_string, output_desc_t *ldi,
                        const char *format, va_list arglist);
 static int output(int output_id, const char *format, va_list arglist);
 
 
 #define DAGUE_OUTPUT_MAX_STREAMS 64
-#if defined(__WINDOWS__) || defined(HAVE_SYSLOG)
+#if defined(__WINDOWS__) || defined(DAGUE_HAVE_SYSLOG)
 #define USE_SYSLOG 1
 #else
 #define USE_SYSLOG 0
@@ -111,9 +111,9 @@ static output_desc_t info[DAGUE_OUTPUT_MAX_STREAMS];
 static char *temp_str = 0;
 static size_t temp_str_len = 0;
 static uint32_t mutex = 0;
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
 static bool syslog_opened = false;
-#endif  /* defined(HAVE_SYSLOG) */
+#endif  /* defined(DAGUE_HAVE_SYSLOG) */
 static char *redirect_syslog_ident = NULL;
 
 OBJ_CLASS_INSTANCE(dague_output_stream_t, dague_object_t, construct, NULL);
@@ -123,7 +123,7 @@ OBJ_CLASS_INSTANCE(dague_output_stream_t, dague_object_t, construct, NULL);
  */
 bool dague_output_init(void)
 {
-    int i;
+    int i, rc;
     char hostname[32];
     char *str;
 
@@ -180,8 +180,9 @@ bool dague_output_init(void)
         verbose.lds_want_stderr = true;
     }
     gethostname(hostname, sizeof(hostname));
-    asprintf(&verbose.lds_prefix, "[%s:%05d] ", hostname, getpid());
-
+    /* This is spammy and redundant (mpirun --tag-output, etc)
+    rc = asprintf(&verbose.lds_prefix, "[%s:%05d] ", hostname, getpid());
+    */
     for (i = 0; i < DAGUE_OUTPUT_MAX_STREAMS; ++i) {
         info[i].ldi_used = false;
         info[i].ldi_enabled = false;
@@ -198,11 +199,12 @@ bool dague_output_init(void)
 
     /* Set some defaults */
 
-    asprintf(&output_prefix, "output-pid%d-", getpid());
+    rc = asprintf(&output_prefix, "dague@%s:pid%d.", hostname, getpid());
     output_dir = strdup(dague_tmp_directory());
 
     /* Open the default verbose stream */
     verbose_stream = dague_output_open(&verbose);
+    (void)rc;
     return true;
 }
 
@@ -252,6 +254,7 @@ bool dague_output_switch(int output_id, bool enable)
  */
 void dague_output_reopen_all(void)
 {
+    int rc;
     char *str;
     char hostname[32];
 
@@ -267,7 +270,7 @@ void dague_output_reopen_all(void)
         free(verbose.lds_prefix);
         verbose.lds_prefix = NULL;
     }
-    asprintf(&verbose.lds_prefix, "[%s:%05d] ", hostname, getpid());
+    rc = asprintf(&verbose.lds_prefix, "[%s:%05d] ", hostname, getpid());
 #if 0
     int i;
     dague_output_stream_t lds;
@@ -280,7 +283,7 @@ void dague_output_reopen_all(void)
             break;
         }
 
-        /* 
+        /*
          * set this to zero to ensure that dague_output_open will
          * return this same index as the output stream id
          */
@@ -302,13 +305,14 @@ void dague_output_reopen_all(void)
         lds.lds_want_file_append = true;
         lds.lds_file_suffix = info[i].ldi_file_suffix;
 
-        /* 
+        /*
          * call dague_output_open to open the stream. The return value
          * is guaranteed to be i.  So we can ignore it.
          */
         dague_output_open(&lds);
     }
 #endif
+    (void)rc;
 }
 
 
@@ -341,7 +345,7 @@ void dague_output_close(int output_id)
             }
         }
 
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
         if (i >= DAGUE_OUTPUT_MAX_STREAMS && syslog_opened) {
             closelog();
         }
@@ -395,7 +399,7 @@ void dague_output_verbose(int level, int output_id, const char *format, ...)
 /*
  * Send a message to a stream if the verbose level is high enough
  */
-void dague_output_vverbose(int level, int output_id, const char *format, 
+void dague_output_vverbose(int level, int output_id, const char *format,
                           va_list arglist)
 {
     if (output_id >= 0 && output_id < DAGUE_OUTPUT_MAX_STREAMS &&
@@ -431,7 +435,7 @@ char *dague_output_string(int level, int output_id, const char *format, ...)
 /*
  * Send a message to a string if the verbose level is high enough
  */
-char *dague_output_vstring(int level, int output_id, const char *format,  
+char *dague_output_vstring(int level, int output_id, const char *format,
                           va_list arglist)
 {
     int rc;
@@ -583,11 +587,15 @@ static int do_open(int output_id, dague_output_stream_t * lds)
         dague_atomic_unlock(&mutex);
     }
     info[i].ldi_enabled = lds->lds_is_debugging ?
-        (bool) DAGUE_DEBUG_VERBOSE : true;
+#if defined(DAGUE_DEBUG)
+    true : true;
+#else
+    false : true;
+#endif
     info[i].ldi_verbose_level = lds->lds_verbose_level;
 
 #if USE_SYSLOG
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
     if (dague_output_redirected_to_syslog) {
         info[i].ldi_syslog = true;
         info[i].ldi_syslog_priority = dague_output_redirected_syslog_pri;
@@ -604,7 +612,7 @@ static int do_open(int output_id, dague_output_stream_t * lds)
         info[i].ldi_syslog = lds->lds_want_syslog;
         if (lds->lds_want_syslog) {
 
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
             if (NULL != lds->lds_syslog_ident) {
                 info[i].ldi_syslog_ident = strdup(lds->lds_syslog_ident);
                 openlog(lds->lds_syslog_ident, LOG_PID, LOG_USER);
@@ -623,7 +631,7 @@ static int do_open(int output_id, dague_output_stream_t * lds)
             info[i].ldi_syslog_priority = lds->lds_syslog_priority;
         }
 
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
     }
 #endif
 
@@ -646,7 +654,7 @@ static int do_open(int output_id, dague_output_stream_t * lds)
         info[i].ldi_suffix = NULL;
         info[i].ldi_suffix_len = 0;
     }
-    
+
     if (dague_output_redirected_to_syslog) {
         /* since all is redirected to syslog, ensure
          * we don't duplicate the output to the std places
@@ -742,50 +750,50 @@ static void free_descriptor(int output_id)
     output_desc_t *ldi;
 
     if (output_id >= 0 && output_id < DAGUE_OUTPUT_MAX_STREAMS &&
-	info[output_id].ldi_used && info[output_id].ldi_enabled) {
-	ldi = &info[output_id];
+        info[output_id].ldi_used && info[output_id].ldi_enabled) {
+        ldi = &info[output_id];
 
-	if (-1 != ldi->ldi_fd) {
-	    close(ldi->ldi_fd);
-	}
-	ldi->ldi_used = false;
+        if (-1 != ldi->ldi_fd) {
+            close(ldi->ldi_fd);
+        }
+        ldi->ldi_used = false;
 
-	/* If we strduped a prefix, suffix, or syslog ident, free it */
+        /* If we strduped a prefix, suffix, or syslog ident, free it */
 
-	if (NULL != ldi->ldi_prefix) {
-	    free(ldi->ldi_prefix);
-	}
-	ldi->ldi_prefix = NULL;
+        if (NULL != ldi->ldi_prefix) {
+            free(ldi->ldi_prefix);
+        }
+        ldi->ldi_prefix = NULL;
 
     if (NULL != ldi->ldi_suffix) {
         free(ldi->ldi_suffix);
     }
     ldi->ldi_suffix = NULL;
-    
+
     if (NULL != ldi->ldi_file_suffix) {
-	    free(ldi->ldi_file_suffix);
-	}
-	ldi->ldi_file_suffix = NULL;
+            free(ldi->ldi_file_suffix);
+        }
+        ldi->ldi_file_suffix = NULL;
 
 #ifndef __WINDOWS__
-	if (NULL != ldi->ldi_syslog_ident) {
-	    free(ldi->ldi_syslog_ident);
-	}
-	ldi->ldi_syslog_ident = NULL;
+        if (NULL != ldi->ldi_syslog_ident) {
+            free(ldi->ldi_syslog_ident);
+        }
+        ldi->ldi_syslog_ident = NULL;
 #endif
     }
 }
 
 
-static int make_string(char **no_newline_string, output_desc_t *ldi, 
+static int make_string(char **no_newline_string, output_desc_t *ldi,
                        const char *format, va_list arglist)
 {
+    int rc;
     size_t len, total_len;
     bool want_newline = false;
 
     /* Make the formatted string */
-
-    vasprintf(no_newline_string, format, arglist);
+    rc = vasprintf(no_newline_string, format, arglist);
     total_len = len = strlen(*no_newline_string);
     if ('\n' != (*no_newline_string)[len - 1]) {
         want_newline = true;
@@ -848,6 +856,7 @@ static int make_string(char **no_newline_string, output_desc_t *ldi,
         }
     }
 
+    (void)rc;
     return DAGUE_SUCCESS;
 }
 
@@ -858,7 +867,7 @@ static int make_string(char **no_newline_string, output_desc_t *ldi,
  */
 static int output(int output_id, const char *format, va_list arglist)
 {
-    int rc = DAGUE_SUCCESS;
+    int nbwrote, rc = DAGUE_SUCCESS;
     char *str, *out = NULL;
     output_desc_t *ldi;
 
@@ -882,7 +891,7 @@ static int output(int output_id, const char *format, va_list arglist)
         }
 
         /* Syslog output -- does not use the newline-appended string */
-#if defined(HAVE_SYSLOG)
+#if defined(DAGUE_HAVE_SYSLOG)
         if (ldi->ldi_syslog) {
             syslog(ldi->ldi_syslog_priority, "%s", str);
         }
@@ -895,15 +904,15 @@ static int output(int output_id, const char *format, va_list arglist)
 
         /* stdout output */
         if (ldi->ldi_stdout) {
-            write(fileno(stdout), out, (int)strlen(out));
+            nbwrote = write(fileno(stdout), out, (int)strlen(out));
             fflush(stdout);
         }
 
         /* stderr output */
         if (ldi->ldi_stderr) {
-            write((-1 == default_stderr_fd) ?
-                  fileno(stderr) : default_stderr_fd,
-                  out, (int)strlen(out));
+            nbwrote = write((-1 == default_stderr_fd) ?
+                            fileno(stderr) : default_stderr_fd,
+                            out, (int)strlen(out));
             fflush(stderr);
         }
 
@@ -922,18 +931,19 @@ static int output(int output_id, const char *format, va_list arglist)
                     snprintf(buffer, BUFSIZ - 1,
                              "[WARNING: %d lines lost because the Open MPI process session directory did\n not exist when dague_output() was invoked]\n",
                              ldi->ldi_file_num_lines_lost);
-                    write(ldi->ldi_fd, buffer, (int)strlen(buffer));
+                    nbwrote = write(ldi->ldi_fd, buffer, (int)strlen(buffer));
                     ldi->ldi_file_num_lines_lost = 0;
                 }
             }
             if (ldi->ldi_fd != -1) {
-                write(ldi->ldi_fd, out, (int)strlen(out));
+                nbwrote = write(ldi->ldi_fd, out, (int)strlen(out));
             }
         }
         dague_atomic_unlock(&mutex);
         free(str);
     }
 
+    (void)nbwrote;
     return rc;
 }
 
@@ -945,3 +955,71 @@ int dague_output_get_verbosity(int output_id)
         return -1;
     }
 }
+
+
+#if !defined(DAGUE_HAVE_VASPRINTF)
+#include <errno.h>
+
+int vasprintf(char **ptr, const char *fmt, va_list ap) {
+    int length;
+    va_list ap2;
+    char dummy[4];
+
+    /* va_list might have pointer to internal state and using
+       it twice is a bad idea.  So make a copy for the second
+       use.  Copy order taken from Autoconf docs. */
+#if defined(DAGUE_HAVE_VA_COPY)
+    va_copy(ap2, ap);
+#elif defined(DAGUE_HAVE_UNDERSCORE_VA_COPY)
+    __va_copy(ap2, ap);
+#else
+    memcpy (&ap2, &ap, sizeof(va_list));
+#endif
+
+    /* guess the size using a nice feature of snprintf and friends:
+     *
+     *  The functions snprintf() and vsnprintf() do not write more than size bytes (including
+     *  the  trailing  '\0').  If the output was truncated due to this limit then the return
+     *  value is the number of characters (not including the trailing '\0') which  would
+     *  have  been written  to  the  final  string  if enough space had been available.
+     */
+    length = vsnprintf(dummy, 4, fmt, ap2);
+
+#if defined(DAGUE_HAVE_VA_COPY) || defined(DAGUE_HAVE_UNDERSCORE_VA_COPY)
+    va_end(ap2);
+#endif  /* defined(DAGUE_HAVE_VA_COPY) || defined(DAGUE_HAVE_UNDERSCORE_VA_COPY) */
+
+    /* allocate a buffer */
+    *ptr = (char *) malloc((size_t) length + 1);
+    if (NULL == *ptr) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    /* fill the buffer */
+    length = vsprintf(*ptr, fmt, ap);
+
+
+    /* realloc */
+    *ptr = (char*) realloc(*ptr, (size_t) length + 1);
+    if (NULL == *ptr) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    return length;
+}
+#endif  /* !defined(DAGUE_HAVE_VASPRINTF) */
+
+#if !defined(DAGUE_HAVE_ASPRINTF)
+int asprintf(char **ptr, const char *fmt, ...) {
+    int length;
+    va_list ap;
+
+    va_start(ap, fmt);
+    length = vasprintf(ptr, fmt, ap);
+    va_end(ap);
+
+    return length;
+}
+#endif  /* !defined(DAGUE_HAVE_ASPRINTF) */

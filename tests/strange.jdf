@@ -6,9 +6,8 @@ extern "C" %{
  *
  */
 
-#include "dague.h"
-#include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "strange.h"
+#include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 
 /**
  * This test build a chain using different different local variables
@@ -29,9 +28,9 @@ second    [type = float
  *                       TASK                     *
  **************************************************/
 TASK(k)
- k = 0 .. (inline_c %{ return N; %} - 1) .. inline_c %{ return 1; %}
- n = inline_c %{ return k + 1; %}
- m = inline_c %{ return k + 1; %}
+ k = 0 .. (%{ return N; %} - 1) .. %{ return 1; %}
+ n = %{ return k + 1; %}
+ m = %{ return k + 1; %}
 
 // Parallel partitioning
 :A(k, 0)
@@ -40,8 +39,10 @@ RW A <- (0 == k) ? A(k, 0) : A TASK(k-1)
      -> (k%2 == 1) ? A TASK(n) : A TASK(inline_c%{ return k+1; %})
 
 BODY
+{
   /*printf("Task(%d)\n", k);*/
   (*VAL) += 1;
+}
 END
 
 extern "C" %{
@@ -53,7 +54,7 @@ int main(int argc, char* argv[] )
 {
     dague_context_t *dague;
     dague_strange_handle_t* handle;
-    int i = 0, n, val = 0;
+    int i = 0, n = 1, val = 0;
 
     while( NULL != argv[i] ) {
         if( 0 == strncmp(argv[i], "-n=", 3) ) {
@@ -67,7 +68,7 @@ int main(int argc, char* argv[] )
         argc -= 1;
     }
 
-#ifdef HAVE_MPI
+#ifdef DAGUE_HAVE_MPI
     {
         int provided;
         MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
@@ -99,7 +100,7 @@ int main(int argc, char* argv[] )
     free(descA.mat);
     dague_fini( &dague);
 
-#ifdef HAVE_MPI
+#ifdef DAGUE_HAVE_MPI
     MPI_Finalize();
 #endif
 

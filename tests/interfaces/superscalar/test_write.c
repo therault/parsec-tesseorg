@@ -63,7 +63,7 @@ int main(int argc, char ** argv)
     dague_ddesc_set_key ((dague_ddesc_t *)&ddescDATA, "ddescDATA");
 
     dague_dtd_init();
-    dague_dtd_handle_t* DAGUE_dtd_handle = dague_dtd_handle_new (dague, 1); /* 4 = task_class_count, 1 = arena_count */
+    dague_dtd_handle_t* DAGUE_dtd_handle = dague_dtd_handle_new (dague);
 
     two_dim_block_cyclic_t *__ddescDATA = &ddescDATA;
 
@@ -84,7 +84,7 @@ int main(int argc, char ** argv)
 
     for(kk = 0; kk< no_of_tasks; kk++) {
         for( k = 0; k < total; k++ ) {
-            insert_task_generic_fptr(DAGUE_dtd_handle, call_to_kernel,     "Task",
+            dague_insert_task(DAGUE_dtd_handle, call_to_kernel,     "Task",
                                      PASSED_BY_REF,    TILE_OF(DAGUE_dtd_handle, DATA, k, k),   INOUT | REGION_FULL,
                                      0);
         }

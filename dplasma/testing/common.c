@@ -8,26 +8,25 @@
 #include "dague.h"
 #include "dague/execution_unit.h"
 #include "dague/utils/mca_param.h"
-#include "dague/mca/mca_repository.h"
 
 #include "common.h"
 #include "common_timing.h"
 
 #include <stdlib.h>
 #include <stdio.h>
-#ifdef HAVE_UNISTD_H
+#ifdef DAGUE_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_LIMITS_H
+#ifdef DAGUE_HAVE_LIMITS_H
 #include <limits.h>
 #endif
-#if defined(HAVE_GETOPT_H)
+#if defined(DAGUE_HAVE_GETOPT_H)
 #include <getopt.h>
-#endif  /* defined(HAVE_GETOPT_H) */
-#ifdef HAVE_MPI
+#endif  /* defined(DAGUE_HAVE_GETOPT_H) */
+#ifdef DAGUE_HAVE_MPI
 #include <mpi.h>
 #endif
-#if defined(HAVE_CUDA)
+#if defined(DAGUE_HAVE_CUDA)
 #include <dague/devices/cuda/dev_cuda.h>
 #endif
 
@@ -48,9 +47,9 @@ char *DAGUE_SCHED_NAME[] = {
 /*******************************
  * globals and argv set values *
  *******************************/
-#if defined(HAVE_MPI)
+#if defined(DAGUE_HAVE_MPI)
 MPI_Datatype SYNCHRO = MPI_BYTE;
-#endif  /* HAVE_MPI */
+#endif  /* DAGUE_HAVE_MPI */
 
 const int   side[2]  = { PlasmaLeft,    PlasmaRight };
 const int   uplo[2]  = { PlasmaUpper,   PlasmaLower };
@@ -95,6 +94,7 @@ void print_usage(void)
             " -z --HNB --HMB    : Inner NB/MB used for recursive algorithms (default: MB)\n"
             " -x --check        : verify the results\n"
             " -X --check_inv    : verify the results against the inverse\n"
+            " -b --sync         : call the step by step version of the algorithm if exists\n"
             "\n"
             "    --qr_a         : Size of TS domain. (specific to xgeqrf_param)\n"
             "    --qr_p         : Size of the high level tree. (specific to xgeqrf_param)\n"
@@ -123,11 +123,13 @@ void print_usage(void)
             " -o --scheduler    : select the scheduler (default: LFQ)\n"
             "                     Accepted values:\n"
             "                       LFQ -- Local Flat Queues\n"
-            "                       GD  -- Global Dequeue\n"
-            "                       LHQ -- Local Hierarchical Queues\n"
-            "                       AP  -- Absolute Priorities\n"
-            "                       PBQ -- Priority Based Local Flat Queues\n"
             "                       LTQ -- Local Tree Queues\n"
+            "                       AP  -- Absolute Priorities\n"
+            "                       LHQ -- Local Hierarchical Queues\n"
+            "                       GD  -- Global Dequeue\n"
+            "                       PBQ -- Priority Based Local Flat Queues\n"
+            "                       IP  -- Inverse Priorities\n"
+            "                       RND -- Random\n"
             "\n"
             "    --dot          : create a dot output file (default: don't)\n"
             "\n"
@@ -162,7 +164,7 @@ void print_usage(void)
 
 #define GETOPT_STRING "bc:o:g::p:P:q:Q:N:M:K:A:B:C:i:t:T:s:S:xXv::hd:r:y:V:a:R:m:"
 
-#if defined(HAVE_GETOPT_LONG)
+#if defined(DAGUE_HAVE_GETOPT_LONG)
 static struct option long_options[] =
 {
     /* PaRSEC specific options */
@@ -210,7 +212,7 @@ static struct option long_options[] =
     {"check_inv",   no_argument,        0, 'X'},
     {"X",           no_argument,        0, 'X'},
 
-    {"async",       no_argument,        0, 'b'},
+    {"sync",        no_argument,        0, 'b'},
     {"b",           no_argument,        0, 'b'},
 
     /* HQR options */
@@ -245,35 +247,36 @@ static struct option long_options[] =
     {"h",           no_argument,        0, 'h'},
     {0, 0, 0, 0}
 };
-#endif  /* defined(HAVE_GETOPT_LONG) */
+#endif  /* defined(DAGUE_HAVE_GETOPT_LONG) */
 
 static void parse_arguments(int *_argc, char*** _argv, int* iparam)
 {
+    extern char **environ;
     int opt = 0;
-    int c;
+    int rc, c;
     int argc = *_argc;
     char **argv = *_argv;
     char *add_dot = NULL;
+    char *value;
 
     /* Default seed */
     iparam[IPARAM_RANDOM_SEED] = 3872;
     iparam[IPARAM_MATRIX_INIT] = PlasmaMatrixRandom;
 
     do {
-#if defined(HAVE_GETOPT_LONG)
+#if defined(DAGUE_HAVE_GETOPT_LONG)
         c = getopt_long_only(argc, argv, "",
                         long_options, &opt);
 #else
         c = getopt(argc, argv, GETOPT_STRING);
         (void) opt;
-#endif  /* defined(HAVE_GETOPT_LONG) */
+#endif  /* defined(DAGUE_HAVE_GETOPT_LONG) */
 
         // printf("%c: %s = %s\n", c, long_options[opt].name, optarg);
         switch(c)
         {
             case 'c': iparam[IPARAM_NCORES] = atoi(optarg); break;
             case 'o':
-                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to parsec instead\n", long_options[opt].name);
                 if( !strcmp(optarg, "LFQ") )
                     iparam[IPARAM_SCHEDULER] = DAGUE_SCHEDULER_LFQ;
                 else if( !strcmp(optarg, "LTQ") )
@@ -295,16 +298,20 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
                             optarg);
                     iparam[IPARAM_SCHEDULER] = DAGUE_SCHEDULER_LFQ;
                 }
+                dague_setenv_mca_param( "mca_sched", DAGUE_SCHED_NAME[iparam[IPARAM_SCHEDULER]], &environ );
                 break;
 
             case 'g':
-                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to parsec instead\n", long_options[opt].name);
                 if(iparam[IPARAM_NGPUS] == -1) {
                     fprintf(stderr, "#!!!!! This test does not have GPU support. GPU disabled.\n");
                     break;
                 }
                 if(optarg)  iparam[IPARAM_NGPUS] = atoi(optarg);
                 else        iparam[IPARAM_NGPUS] = INT_MAX;
+
+                rc = asprintf(&value, "%d", iparam[IPARAM_NGPUS]);
+                dague_setenv_mca_param( "device_cuda_enabled", value, &environ );
+                free(value);
                 break;
 
             case 'p': case 'P': iparam[IPARAM_P] = atoi(optarg); break;
@@ -355,15 +362,16 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
                 break;
 
             case 'H':
-                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to PaRSEC instead\n", long_options[opt].name);
+                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to PaRSEC instead in the exact same format after --\n", long_options[opt].name);
                 exit(-10);  /* No kidding! */
 
             case 'V':
-                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to PaRSEC instead\n", long_options[opt].name);
+                if( 0 == iparam[IPARAM_RANK] ) fprintf(stderr, "#!!!!! option '%s' deprecated in testing programs, it should be passed to PaRSEC instead in the exact same format after --\n", long_options[opt].name);
                 exit(-10);  /* No kidding! */
 
             case '.':
                 add_dot = optarg;
+
                 break;
 
             case 'h': print_usage(); exit(0);
@@ -400,7 +408,7 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
             for(i = 0; i < (*_argc);i++)
                 tmp[i] = (*_argv)[i];
 
-            asprintf( &tmp[ tmpc - 1 ], "--dague_dot=%s", add_dot );
+            rc = asprintf( &tmp[ tmpc - 1 ], "--dague_dot=%s", add_dot );
             tmp[ tmpc     ] = NULL;
 
             *_argc = tmpc;
@@ -411,6 +419,14 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
     int verbose = iparam[IPARAM_RANK] ? 0 : iparam[IPARAM_VERBOSE];
 
     if(iparam[IPARAM_NGPUS] < 0) iparam[IPARAM_NGPUS] = 0;
+    if(iparam[IPARAM_NGPUS] > 0) {
+        if (iparam[IPARAM_VERBOSE] > 3) {
+            dague_setenv_mca_param( "device_show_capabilities", "1", &environ );
+        }
+        if (iparam[IPARAM_VERBOSE] > 2) {
+            dague_setenv_mca_param( "device_show_statistics", "1", &environ );
+        }
+    }
 
     /* Check the process grid */
     if(0 == iparam[IPARAM_P])
@@ -480,6 +496,8 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
     /* HQR */
     if(-1 == iparam[IPARAM_QR_HLVL_SZE])
         iparam[IPARAM_QR_HLVL_SZE] = iparam[IPARAM_NNODES];
+
+    (void)rc;
 }
 
 static void print_arguments(int* iparam)
@@ -593,15 +611,12 @@ int unix_timestamp;
 
 dague_context_t* setup_dague(int argc, char **argv, int *iparam)
 {
-    dague_mca_param_init();
-    mca_components_repository_init();
-
 #ifdef DAGUE_PROF_TRACE
     argvzero = argv[0];
     unix_timestamp = time(NULL);
     getcwd(cwd, sizeof(cwd));
 #endif
-#ifdef HAVE_MPI
+#ifdef DAGUE_HAVE_MPI
     {
         int provided;
         MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
@@ -618,19 +633,6 @@ dague_context_t* setup_dague(int argc, char **argv, int *iparam)
 
     TIME_START();
 
-    if( iparam[IPARAM_SCHEDULER] != DAGUE_SCHEDULER_DEFAULT ) {
-        char *ignored;
-        (void)dague_mca_param_reg_string_name("mca", "sched", NULL,
-                                              false, false,
-                                              DAGUE_SCHED_NAME[iparam[IPARAM_SCHEDULER]],
-                                              &ignored);
-        /* if( 0 == dague_set_scheduler( ctx ) ) { */
-        /*     fprintf(stderr, "*** Warning: unable to select the scheduler %s. Default scheduler is maintained.\n", */
-        /*             DAGUE_SCHED_NAME[iparam[IPARAM_SCHEDULER]]); */
-        /*     iparam[IPARAM_SCHEDULER] = DAGUE_SCHEDULER_LFQ; /\* set param for profile *\/ */
-        /* } */
-    }
-
     /* Once we got out arguments, we should pass whatever is left down */
     int dague_argc, idx;
     char** dague_argv = (char**)calloc(argc, sizeof(char*));
@@ -644,6 +646,12 @@ dague_context_t* setup_dague(int argc, char **argv, int *iparam)
     dague_context_t* ctx = dague_init(iparam[IPARAM_NCORES],
                                       &dague_argc, &dague_argv);
     free(dague_argv);
+    if( NULL == ctx ) {
+        /* Failed to correctly initialize. In a correct scenario report
+         * upstream, but in this particular case bail out.
+         */
+        exit(-1);
+    }
 
     /* If the number of cores has not been defined as a parameter earlier
      update it with the default parameter computed in dague_init. */
@@ -665,7 +673,7 @@ void cleanup_dague(dague_context_t* dague, int *iparam)
 {
     dague_fini(&dague);
 
-#ifdef HAVE_MPI
+#ifdef DAGUE_HAVE_MPI
     MPI_Finalize();
 #endif
     (void)iparam;

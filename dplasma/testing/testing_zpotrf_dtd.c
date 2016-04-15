@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2015 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  *
@@ -11,9 +11,6 @@
 #include "flops.h"
 #include "data_dist/matrix/sym_two_dim_rectangle_cyclic.h"
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
-#if defined(HAVE_CUDA)
-#include "dplasma/cores/cuda_zgemm.h"
-#endif
 #include "dague/interfaces/superscalar/insert_function_internal.h"
 
 struct dague_execution_unit_s;
@@ -167,7 +164,7 @@ int main(int argc, char **argv)
     /* Set defaults for non argv iparams */
     iparam_default_facto(iparam);
     iparam_default_ibnbmb(iparam, 0, 180, 180);
-#if defined(HAVE_CUDA)
+#if defined(DAGUE_HAVE_CUDA)
     iparam[IPARAM_NGPUS] = 0;
 #endif
 
@@ -196,7 +193,7 @@ int main(int argc, char **argv)
 
     dague_dtd_init();
     SYNC_TIME_START();
-    dague_dtd_handle_t* DAGUE_dtd_handle = dague_dtd_handle_new (dague, 4); /* 4 = task_class_count, 1 = arena_count */
+    dague_dtd_handle_t* DAGUE_dtd_handle = dague_dtd_handle_new (dague);
     dague_handle_t* DAGUE_zpotrf_dtd = (dague_handle_t *) DAGUE_dtd_handle;
 
     sym_two_dim_block_cyclic_t *__ddescA = &ddescA;
@@ -213,7 +210,7 @@ int main(int argc, char **argv)
     for(k=0;k<total;k++){
         tempkm = (k == (ddescA.super.mt - 1)) ? ddescA.super.m - k * ddescA.super.mb : ddescA.super.mb;
         ldak = BLKLDD(ddescA.super, k);
-        insert_task_generic_fptr(DAGUE_dtd_handle, call_to_kernel_PO, "Potrf",
+        dague_insert_task(DAGUE_dtd_handle, &call_to_kernel_PO, "Potrf",
                                  sizeof(int),      &uplo,              VALUE,
                                  sizeof(int),      &tempkm,            VALUE,
                                  PASSED_BY_REF,    TILE_OF(DAGUE_dtd_handle, A, k, k), INOUT | REGION_FULL,
@@ -223,7 +220,7 @@ int main(int argc, char **argv)
         for(m=k+1;m<total;m++){
             tempmm = m == ddescA.super.mt - 1 ? ddescA.super.m - m * ddescA.super.mb : ddescA.super.mb;
             ldam = BLKLDD(ddescA.super, m);
-            insert_task_generic_fptr(DAGUE_dtd_handle, &call_to_kernel_TR, "Trsm",
+            dague_insert_task(DAGUE_dtd_handle, &call_to_kernel_TR, "Trsm",
                                      sizeof(int),      &side,               VALUE,
                                      sizeof(int),      &uplo,               VALUE,
                                      sizeof(int),      &transA_p,           VALUE,
@@ -240,7 +237,7 @@ int main(int argc, char **argv)
         for(m=k+1;m<total;m++){
             tempmm = m == ddescA.super.mt - 1 ? ddescA.super.m - m * ddescA.super.mb : ddescA.super.mb;
             ldam = BLKLDD(ddescA.super, m);
-            insert_task_generic_fptr(DAGUE_dtd_handle, &call_to_kernel_HE, "Herk",
+            dague_insert_task(DAGUE_dtd_handle, &call_to_kernel_HE, "Herk",
                                     sizeof(int),       &uplo,               VALUE,
                                     sizeof(int),       &trans,              VALUE,
                                     sizeof(int),       &tempmm,             VALUE,
@@ -254,7 +251,7 @@ int main(int argc, char **argv)
                                     0);
             for(n=k+1;n<m;n++){
                    ldan = BLKLDD(ddescA.super, n);
-                   insert_task_generic_fptr(DAGUE_dtd_handle,  &call_to_kernel_GE, "Gemm",
+                   dague_insert_task(DAGUE_dtd_handle,  &call_to_kernel_GE, "Gemm",
                                            sizeof(int),        &transA_g,           VALUE,
                                            sizeof(int),        &transB,             VALUE,
                                            sizeof(int),        &tempmm,             VALUE,
@@ -278,10 +275,6 @@ int main(int argc, char **argv)
 
     DAGUE_INTERNAL_HANDLE_DESTRUCT(DAGUE_zpotrf_dtd);
 
-    if( loud > 3 )
-        TIME_PRINT(rank, ("\t%d tasks computed,\t%f task/s rate\n",
-                          nb_local_tasks,
-                          nb_local_tasks/time_elapsed));
     SYNC_TIME_PRINT(rank, ("\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
                            P, Q, NB, N,
                            gflops=(flops/1e9)/sync_time_elapsed));

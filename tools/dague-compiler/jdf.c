@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2015 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -7,9 +7,9 @@
 #include "dague_config.h"
 
 #include <stdio.h>
-#if defined(HAVE_STRING_H)
+#if defined(DAGUE_HAVE_STRING_H)
 #include <string.h>
-#endif  /* defined(HAVE_STRING_H) */
+#endif  /* defined(DAGUE_HAVE_STRING_H) */
 #include <stdlib.h>
 #include <assert.h>
 
@@ -19,8 +19,18 @@
 
 jdf_t current_jdf;
 int current_lineno;
+int verbose_level = 0;
 
 extern const char *yyfilename;
+
+#if (defined(DAGUE_DEBUG_NOISIER))
+#define DO_DEBUG_VERBOSE( VAL, ARG ) \
+    if( verbose_level >= (VAL) ) { ARG; }
+#else
+#define DO_DEBUG_VERBOSE( VAL, ARG )
+#endif
+
+void jdf_dump_function_flows(jdf_function_entry_t* function, int expanded);
 
 void jdf_warn(int lineno, const char *format, ...)
 {
@@ -470,7 +480,8 @@ static int jdf_sanity_check_dataflow_naming_collisions(void)
                         continue;
                     }
                     if( !strcmp(guard->calltrue->func_or_mem, f1->fname) &&
-                        (guard->calltrue->var == NULL) ) {
+                        (guard->calltrue->var == NULL) &&
+                        (guard->calltrue->parameters != NULL)) {
                         jdf_fatal(JDF_OBJECT_LINENO(dep),
                                   "%s is the name of a function (defined line %d):\n"
                                   "  it cannot be also used as a memory reference in function %s\n",
@@ -479,7 +490,8 @@ static int jdf_sanity_check_dataflow_naming_collisions(void)
                     }
                     if( guard->guard_type == JDF_GUARD_TERNARY &&
                         !strcmp(guard->callfalse->func_or_mem, f1->fname) &&
-                        (guard->callfalse->var == NULL) ) {
+                        (guard->callfalse->var == NULL) &&
+                        (guard->callfalse->parameters != NULL)) {
                         jdf_fatal(JDF_OBJECT_LINENO(dep),
                                   "%s is the name of a function (defined line %d):\n"
                                   "  it cannot be also used as a memory reference in function %s\n",
@@ -508,6 +520,27 @@ static int jdf_sanity_check_dataflow_type_consistency(void)
             }
             input_deps = output_deps = type_deps = 0;
             for(dep = flow->deps; dep != NULL; dep = dep->next) {
+                /* Check for datatype definition concistency: if a type and a layout are equal
+                 * then the count must be 1 and the displacement must be zero. Generate a warning
+                 * and replace the default if it's not the case.
+                 */
+                if( dep->datatype.type == dep->datatype.layout ) {
+                    if( (JDF_CST != dep->datatype.count->op) ||
+                        ((JDF_CST == dep->datatype.count->op) && (1 != dep->datatype.count->jdf_cst))) {
+                        jdf_warn(JDF_OBJECT_LINENO(dep),
+                                 "Function %s: flow %s has the same layout and type but the count is not the"
+                                 " expected constant 1. The generated code will abide by the input code.\n",
+                                 f->fname, flow->varname);
+                    }
+                    if( (JDF_CST != dep->datatype.displ->op) ||
+                        ((JDF_CST == dep->datatype.displ->op) && (0 != dep->datatype.displ->jdf_cst))) {
+                        jdf_warn(JDF_OBJECT_LINENO(dep),
+                                 "Function %s: flow %s has the same layout and type but the displacement is not the"
+                                 " expected constant 0. The generated code will abide by the input code.\n",
+                                 f->fname, flow->varname);
+                    }
+                }
+
                 /* Special case for the arena definition for WRITE-only flows */
                 if( JDF_IS_DEP_WRITE_ONLY_INPUT_TYPE(dep) ) {
                     type_deps++;
@@ -600,12 +633,14 @@ static int jdf_sanity_check_in_out_flow_match( jdf_function_entry_t* fout,
                 continue;
 
             if( (dep->guard->calltrue->var != NULL) &&
+                (dep->guard->calltrue->parameters != NULL) &&
                 (0 == strcmp(dep->guard->calltrue->func_or_mem, fout->fname)) ) {
                 matched = 1;
                 break;
             }
             if( (dep->guard->guard_type == JDF_GUARD_TERNARY) &&
                 (dep->guard->callfalse->var != NULL) &&
+                (dep->guard->callfalse->parameters != NULL) &&
                 (0 == strcmp(dep->guard->callfalse->func_or_mem, fout->fname)) ) {
                 matched = 1;
                 break;
@@ -775,7 +810,9 @@ static int jdf_sanity_check_call_compatible(const jdf_call_t *c,
     ciscanon = compute_canonical_data_location( c->func_or_mem, c->parameters, &cstr, &ccanon );
     discanon = compute_canonical_data_location( d->func_or_mem, d->parameters, &dstr, &dcanon );
 
-    if( strcmp(ccanon, dcanon) && strcmp(dcanon, PARSEC_WRITE_MAGIC_NAME"()") ) {
+    if( strcmp(ccanon, dcanon)
+        && strcmp(dcanon, PARSEC_WRITE_MAGIC_NAME"()")
+        && strcmp(dcanon, PARSEC_NULL_MAGIC_NAME"()") ) {
         /* d does not have the same representation as c..
          * There is a risk: depends on the data distribution...,
          *  on expression evaluations, etc...
@@ -961,16 +998,86 @@ static int jdf_compare_expr(const jdf_expr_t* ex1, const jdf_expr_t* ex2)
 }
 
 /**
- * Compare two datatype. Return 0 if they are identical.
+ * Compare two datatypes, and if any of their components are identical, return
+ * 0.
+ *
+ * @return 0 if the datatypes are identical, 1 otherwise.
  */
-int jdf_compare_datatype(const jdf_datatransfer_type_t* src,
-                         const jdf_datatransfer_type_t* dst)
+static int
+jdf_compare_datatype(const jdf_datatransfer_type_t* src,
+                     const jdf_datatransfer_type_t* dst)
 {
     if( jdf_compare_expr(src->type,   dst->type) )   return 1;
     if( jdf_compare_expr(src->layout, dst->layout) ) return 1;
     if( jdf_compare_expr(src->count,  dst->count) )  return 1;
     if( jdf_compare_expr(src->displ,  dst->displ) )  return 1;
     return 0;
+}
+
+#define COMPARE_EXPR(TYPE, SA, SET_IF_EQUAL)                            \
+    do {                                                                \
+        if( src->TYPE != dst->TYPE ) {  /* if they were replaced previously */ \
+            DO_DEBUG_VERBOSE(3, ({                                      \
+                        dump_expr((void**)src->TYPE, &linfo);           \
+                        if( strlen(string_arena_get_string(linfo.sa)) ) \
+                            string_arena_add_string((SA), "%s", string_arena_get_string(linfo.sa)); \
+                        string_arena_add_string((SA), "<< AND >>");     \
+                        dump_expr((void**)dst->TYPE, &linfo);           \
+                        if( strlen(string_arena_get_string(linfo.sa)) ) \
+                            string_arena_add_string((SA), "%s", string_arena_get_string(linfo.sa)); \
+                    }));                                                \
+                                                                        \
+            if( 0 == jdf_compare_expr(src->TYPE, dst->TYPE) ) {         \
+                if( JDF_OP_IS_C_CODE(dst->TYPE->op) && (NULL == dst->TYPE->jdf_c_code.fname) ) { \
+                    int rc = asprintf(&dst->TYPE->jdf_c_code.fname, "same_type_as_line_%d", JDF_OBJECT_LINENO(dst->TYPE)); \
+                    (void)rc;                                           \
+                }                                                       \
+                JDF_OBJECT_RELEASE(dst->TYPE);                          \
+                dst->TYPE = src->TYPE;                                  \
+                JDF_OBJECT_RETAIN(src->TYPE);                           \
+            } else { (SET_IF_EQUAL) = 1; }                              \
+            DO_DEBUG_VERBOSE(1, ({                                      \
+                        printf( "%s at line %d is %s to %s at line %d (is%s inline_c, fname %s)%s\n", # TYPE, \
+                                JDF_OBJECT_LINENO(src->TYPE), (0 == (SET_IF_EQUAL) ? "equal" : "different"), # TYPE, JDF_OBJECT_LINENO(dst->TYPE), \
+                                (JDF_OP_IS_C_CODE(dst->TYPE->op) ? "" : " not"), \
+                                dst->TYPE->jdf_c_code.fname, string_arena_get_string(sa)); \
+                    }));                                                \
+        }                                                               \
+    } while (0)
+
+/**
+ * Compare two datatype and for each component that is identical release the one
+ * from the destination and replace it with the one from the source. This will
+ * allow to generate less code, as we can now reuse the same generated code
+ * multiple times. This optimization can be done outside the boundaries of a
+ * single flow, but it remains scoped to a single function (due to the order of
+ * the locals in the task description).
+ *
+ * @return 0 if they are identical.
+ */
+static int
+jdf_datatype_remove_redundancy(const jdf_datatransfer_type_t* src,
+                               jdf_datatransfer_type_t* dst)
+{
+    int are_types_equal = 0, are_layout_equal = 0, are_count_equal = 0, are_displ_equal = 0;
+    string_arena_t* sa = string_arena_new(64);
+    string_arena_t* sa1 = string_arena_new(64);
+    expr_info_t linfo;
+
+    linfo.sa = sa1;
+    linfo.prefix = ":";
+    linfo.assignments = "";
+    COMPARE_EXPR(type, sa, are_types_equal);
+    COMPARE_EXPR(layout, sa, are_layout_equal);
+    COMPARE_EXPR(count, sa, are_count_equal);
+    COMPARE_EXPR(displ, sa, are_displ_equal);
+
+    string_arena_free(sa);
+
+    (void)linfo; /* Used with verbose=3 */
+
+    /* the return is similar to strcmp: 0 stands for equality */
+    return (are_types_equal | are_layout_equal | are_count_equal | are_displ_equal);
 }
 
 #define SAVE_AND_UPDATE_INDEX(DEP, IDX1, IDX2, UPDATE)                  \
@@ -1019,13 +1126,12 @@ static void jdf_reorder_dep_list_by_type(jdf_dataflow_t* flow,
     uint32_t i, j, dep_count, saved_out_index;
     uint32_t global_in_index, global_out_index;
     jdf_dep_t *dep, *sdep, **dep_array = NULL;
-    jdf_datatransfer_type_t *ddt, *sddt;
 
     global_in_index  = *dep_in_index;
     global_out_index = saved_out_index = *dep_out_index;
     /**
      * Step 1: Transform the list of dependencies into an array, to facilitate
-     *         the massaging.
+     *         the manipulation.
      */
     for( dep_count = 0, dep = flow->deps; NULL != dep; dep_count++, dep = dep->next ) {
         dep->dep_index          = 0xff;
@@ -1056,9 +1162,7 @@ static void jdf_reorder_dep_list_by_type(jdf_dataflow_t* flow,
             sdep = dep_array[j];
             if( !((dep->dep_flags & sdep->dep_flags) & (JDF_DEP_FLOW_IN|JDF_DEP_FLOW_OUT)) )
                 break;
-            ddt = &dep->datatype;
-            sddt = &sdep->datatype;
-            if( jdf_compare_datatype(ddt, sddt) ) continue;
+            if( jdf_compare_datatype(&dep->datatype, &sdep->datatype) ) continue;
             COPY_INDEX(sdep, dep);
         }
         UPDATE_INDEX(dep);
@@ -1066,6 +1170,67 @@ static void jdf_reorder_dep_list_by_type(jdf_dataflow_t* flow,
     free(dep_array);
 }
 
+/**
+ * Helper function to dump all the flows (input, output and control) of a function,
+ * as seen by the compiler. If expanded is not 0 then each flow will be detailed,
+ * otherwise only the point to the expr will be shown.
+ *
+ * This function is not used when DEBUG is not enabled, so it might generate a
+ * compilation warning.
+ */
+void jdf_dump_function_flows(jdf_function_entry_t* function, int expanded)
+{
+    jdf_dataflow_t* flow;
+
+    for( flow = function->dataflow; NULL != flow; flow = flow->next) {
+        string_arena_t* sa1 = string_arena_new(64);
+        string_arena_t* sa2 = string_arena_new(64);
+        expr_info_t linfo;
+        jdf_dep_t *dep;
+
+        linfo.sa = sa1;
+        linfo.prefix = ":";
+        linfo.assignments = "";
+        linfo.suffix = "";
+        for(dep = flow->deps; NULL != dep; dep = dep->next) {
+            string_arena_init(sa2);
+
+            string_arena_add_string(sa2, "type = %p ", dep->datatype.type);
+            if( expanded ) dump_expr((void**)dep->datatype.type, &linfo);
+            if( strlen(string_arena_get_string(sa1)) )
+                string_arena_add_string(sa2, "<%s>", string_arena_get_string(sa1));
+
+            if( dep->datatype.layout != dep->datatype.type ) {
+                string_arena_add_string(sa2, " layout = %p ", dep->datatype.layout);
+                if( expanded ) dump_expr((void**)dep->datatype.layout, &linfo);
+                if( strlen(string_arena_get_string(sa1)) )
+                    string_arena_add_string(sa2, "<%s>", string_arena_get_string(sa1));
+            }
+
+            string_arena_add_string(sa2, " count = %p ", dep->datatype.count);
+            if( expanded ) dump_expr((void**)dep->datatype.count, &linfo);
+            if( strlen(string_arena_get_string(sa1)) )
+                string_arena_add_string(sa2, "<%s>", string_arena_get_string(sa1));
+
+            string_arena_add_string(sa2, " displ = %p ", dep->datatype.displ);
+            if( expanded ) dump_expr((void**)dep->datatype.displ, &linfo);
+            if( strlen(string_arena_get_string(sa1)) )
+                string_arena_add_string(sa2, "<%s>", string_arena_get_string(sa1));
+
+            printf("%s: %6s[%1s%1s idx %d, mask 0x%x/0x%x] %2s %8d %8d <%s %s>\n", function->fname,
+                   flow->varname, (flow->flow_flags & JDF_FLOW_IS_IN ? "R" : " "),
+                   (flow->flow_flags & JDF_FLOW_IS_OUT ? "W" : " "),
+                   flow->flow_index, flow->flow_dep_mask_in, flow->flow_dep_mask_out,
+                   (JDF_DEP_FLOW_OUT & dep->dep_flags ? "->" : "<-"),
+                   dep->dep_index, dep->dep_datatype_index,
+                   dep->guard->calltrue->func_or_mem,
+                   string_arena_get_string(sa2));
+        }
+        string_arena_free(sa1);
+        string_arena_free(sa2);
+    }
+    printf("\n");
+}
 /**
  * Flatten all the flows of data for the specified function, by creating the
  * indexes and masks used to describe the flow of data and the index of the
@@ -1139,46 +1304,73 @@ int jdf_flatten_function(jdf_function_entry_t* function)
         function->dataflow = reverse_order;
         reverse_order = parent;
     }
-#if 0
-    for( flow = function->dataflow; NULL != flow; flow = flow->next) {
-        string_arena_t* sa1 = string_arena_new(64);
-        string_arena_t* sa2 = string_arena_new(64);
-        expr_info_t linfo;
-        jdf_dep_t *dep;
 
-        linfo.sa = sa1;
-        linfo.prefix = ":";
-        linfo.assignments = "";
-        for(dep = flow->deps; NULL != dep; dep = dep->next) {
-            string_arena_init(sa2);
-            dump_expr((void**)dep->datatype.type, &linfo);
-            if( strlen(string_arena_get_string(sa1)) )
-                string_arena_add_string(sa2, "type = <%s>", string_arena_get_string(sa1));
-            if( dep->datatype.layout != dep->datatype.type ) {
-                dump_expr((void**)dep->datatype.layout, &linfo);
-                if( strlen(string_arena_get_string(sa1)) )
-                    string_arena_add_string(sa2, " layout = <%s>", string_arena_get_string(sa1));
+    DO_DEBUG_VERBOSE(3, jdf_dump_function_flows(function, 1));
+
+    for( flow = function->dataflow; NULL != flow; flow = flow->next ) {
+        jdf_dataflow_t* sflow;
+        jdf_dep_t *dep, *dep2;
+        for( dep = flow->deps; NULL != dep; dep = dep->next ) {
+            for( sflow = flow; NULL != sflow; sflow = sflow->next ) {
+                if( sflow == flow ) dep2 = dep->next;
+                else dep2 = sflow->deps;
+                for( ; NULL != dep2; dep2 = dep2->next) {
+                    jdf_datatype_remove_redundancy(&dep->datatype, &dep2->datatype);
+                }
             }
-            dump_expr((void**)dep->datatype.count, &linfo);
-            if( strlen(string_arena_get_string(sa1)) )
-                string_arena_add_string(sa2, " count = <%s>", string_arena_get_string(sa1));
-            dump_expr((void**)dep->datatype.displ, &linfo);
-            if( strlen(string_arena_get_string(sa1)) )
-                string_arena_add_string(sa2, " displ = <%s>", string_arena_get_string(sa1));
-
-            printf("%s: %6s[%1s%1s idx %d, mask 0x%x/0x%x] %2s %8d %8d <%s %s>\n", function->fname,
-                   flow->varname, (flow->flow_flags & JDF_FLOW_IS_IN ? "R" : " "),
-                   (flow->flow_flags & JDF_FLOW_IS_OUT ? "W" : " "),
-                   flow->flow_index, flow->flow_dep_mask_in, flow->flow_dep_mask_out,
-                   (JDF_DEP_FLOW_OUT & dep->dep_flags ? "->" : "<-"),
-                   dep->dep_index, dep->dep_datatype_index,
-                   dep->guard->calltrue->func_or_mem,
-                   string_arena_get_string(sa2));
         }
-        string_arena_free(sa1);
-        string_arena_free(sa2);
     }
-    printf("\n");
-#endif
+
+    DO_DEBUG_VERBOSE(1, jdf_dump_function_flows(function, 0));
+
     return 0;
+}
+
+/**
+ * Accessors to get typed properties (int and string).
+ */
+int jdf_property_get_int( const jdf_def_list_t* properties,
+                          const char* prop_name,
+                          int ret_if_not_found )
+{
+    jdf_def_list_t* property;
+    jdf_expr_t* expr = jdf_find_property(properties, prop_name, &property);
+
+    if( NULL != expr ) {
+        if( JDF_CST == expr->op )
+            return expr->jdf_cst;
+        printf("Warning: property %s defined at line %d only support ON/OFF\n",
+               prop_name, JDF_OBJECT_LINENO(property));
+    }
+    return ret_if_not_found;  /* ON by default */
+}
+
+const char*jdf_property_get_string( const jdf_def_list_t* properties,
+                                    const char* prop_name,
+                                    const char* ret_if_not_found )
+{
+    jdf_def_list_t* property;
+    jdf_expr_t* expr = jdf_find_property(properties, prop_name, &property);
+
+    if( NULL != expr ) {
+        if( JDF_OP_IS_VAR(expr->op) )
+            return strdup(expr->jdf_var);
+        printf("Warning: property %s defined at line %d only support ON/OFF\n",
+               prop_name, JDF_OBJECT_LINENO(property));
+    }
+    return ret_if_not_found;  /* the expected default */
+}
+
+jdf_def_list_t *jdf_add_string_property(jdf_def_list_t **properties, const char *prop_name, const char *prop_value)
+{
+    jdf_def_list_t* assign = malloc(sizeof(jdf_def_list_t));
+    assign->next              = NULL;
+    assign->name              = strdup(prop_name);
+    assign->expr              = malloc(sizeof(jdf_expr_t));
+    assign->expr->op = JDF_VAR;
+    assign->expr->jdf_var = strdup(prop_value);
+    JDF_OBJECT_LINENO(assign) = -1;
+    assign->next = *properties;
+    *properties = assign;
+    return assign;
 }

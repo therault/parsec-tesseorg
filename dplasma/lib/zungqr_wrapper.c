@@ -10,13 +10,18 @@
  */
 
 #include "dplasma.h"
+#include "dplasma/lib/dplasmatypes.h"
+#include "dplasma/lib/dplasmaaux.h"
+#include "dague/private_mempool.h"
+
+#include "zungqr.h"
 
 /**
  *******************************************************************************
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zungqr_New - Generates the dague object that computes the generation
+ *  dplasma_zungqr_New - Generates the dague handle that computes the generation
  *  of an M-by-N matrix Q with orthonormal columns, which is defined as the
  *  first N columns of a product of K elementary reflectors of order M
  *
@@ -51,7 +56,7 @@
  *******************************************************************************
  *
  * @return
- *          \retval The dague object which describes the operation to perform
+ *          \retval The dague handle which describes the operation to perform
  *                  NULL if one of the parameter is incorrect
  *
  *******************************************************************************
@@ -69,6 +74,9 @@ dplasma_zungqr_New( tiled_matrix_desc_t *A,
                     tiled_matrix_desc_t *T,
                     tiled_matrix_desc_t *Q )
 {
+    dague_zungqr_handle_t* handle;
+    int ib = T->mb;
+
     if ( Q->n > Q->m ) {
         dplasma_error("dplasma_zungqr_New", "illegal size of Q (N should be smaller or equal to M)");
         return NULL;
@@ -82,7 +90,33 @@ dplasma_zungqr_New( tiled_matrix_desc_t *A,
         return NULL;
     }
 
-    return dplasma_zunmqr_New( PlasmaLeft, PlasmaNoTrans, A, T, Q );
+    handle = dague_zungqr_new( (dague_ddesc_t*)A,
+                               (dague_ddesc_t*)T,
+                               (dague_ddesc_t*)Q,
+                               NULL );
+
+    handle->p_work = (dague_memory_pool_t*)malloc(sizeof(dague_memory_pool_t));
+    dague_private_memory_init( handle->p_work, ib * T->nb * sizeof(dague_complex64_t) );
+
+    /* Default type */
+    dplasma_add2arena_tile( handle->arenas[DAGUE_zungqr_DEFAULT_ARENA],
+                            A->mb*A->nb*sizeof(dague_complex64_t),
+                            DAGUE_ARENA_ALIGNMENT_SSE,
+                            dague_datatype_double_complex_t, A->mb );
+
+    /* Lower triangular part of tile without diagonal */
+    dplasma_add2arena_lower( handle->arenas[DAGUE_zungqr_LOWER_TILE_ARENA],
+                             A->mb*A->nb*sizeof(dague_complex64_t),
+                             DAGUE_ARENA_ALIGNMENT_SSE,
+                             dague_datatype_double_complex_t, A->mb, 0 );
+
+    /* Little T */
+    dplasma_add2arena_rectangle( handle->arenas[DAGUE_zungqr_LITTLE_T_ARENA],
+                                 T->mb*T->nb*sizeof(dague_complex64_t),
+                                 DAGUE_ARENA_ALIGNMENT_SSE,
+                                 dague_datatype_double_complex_t, T->mb, T->nb, -1);
+
+    return (dague_handle_t*)handle;
 }
 
 /**
@@ -90,14 +124,14 @@ dplasma_zungqr_New( tiled_matrix_desc_t *A,
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zungqr_Destruct - Free the data structure associated to an object
+ *  dplasma_zungqr_Destruct - Free the data structure associated to an handle
  *  created with dplasma_zungqr_New().
  *
  *******************************************************************************
  *
- * @param[in,out] object
- *          On entry, the object to destroy.
- *          On exit, the object cannot be used anymore.
+ * @param[in,out] handle
+ *          On entry, the handle to destroy.
+ *          On exit, the handle cannot be used anymore.
  *
  *******************************************************************************
  *
@@ -106,9 +140,18 @@ dplasma_zungqr_New( tiled_matrix_desc_t *A,
  *
  ******************************************************************************/
 void
-dplasma_zungqr_Destruct( dague_handle_t *object )
+dplasma_zungqr_Destruct( dague_handle_t *handle )
 {
-    dplasma_zunmqr_Destruct( object );
+    dague_zungqr_handle_t *dague_zungqr = (dague_zungqr_handle_t *)handle;
+
+    dague_matrix_del2arena( dague_zungqr->arenas[DAGUE_zungqr_DEFAULT_ARENA   ] );
+    dague_matrix_del2arena( dague_zungqr->arenas[DAGUE_zungqr_LOWER_TILE_ARENA] );
+    dague_matrix_del2arena( dague_zungqr->arenas[DAGUE_zungqr_LITTLE_T_ARENA  ] );
+
+    dague_private_memory_fini( dague_zungqr->p_work );
+    free( dague_zungqr->p_work );
+
+    dague_handle_free(handle);
 }
 
 /**
@@ -116,7 +159,7 @@ dplasma_zungqr_Destruct( dague_handle_t *object )
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zungqr - Generates of an M-by-N matrix Q with orthonormal columns,
+ *  dplasma_zungqr - Generates an M-by-N matrix Q with orthonormal columns,
  *  which is defined as the first N columns of a product of K elementary
  *  reflectors of order M
  *
@@ -171,6 +214,8 @@ dplasma_zungqr( dague_context_t *dague,
                 tiled_matrix_desc_t *T,
                 tiled_matrix_desc_t *Q )
 {
+    dague_handle_t *dague_zungqr;
+
     if (dague == NULL) {
         dplasma_error("dplasma_zungqr", "dplasma not initialized");
         return -1;
@@ -191,5 +236,12 @@ dplasma_zungqr( dague_context_t *dague,
     if (dplasma_imin(Q->m, dplasma_imin(Q->n, A->n)) == 0)
         return 0;
 
-    return dplasma_zunmqr(dague, PlasmaLeft, PlasmaNoTrans, A, T, Q);
+    dague_zungqr = dplasma_zungqr_New(A, T, Q);
+
+    if ( dague_zungqr != NULL ){
+        dague_enqueue(dague, dague_zungqr);
+        dplasma_progress(dague);
+        dplasma_zungqr_Destruct( dague_zungqr );
+    }
+    return 0;
 }

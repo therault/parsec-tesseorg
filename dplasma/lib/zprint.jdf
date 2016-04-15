@@ -11,8 +11,6 @@ extern "C" %{
 #include "dplasma/lib/dplasmajdf.h"
 #include "data_dist/matrix/matrix.h"
 
-#define PRECISION_z
-
 static inline void dplasma_zprint_tile( int m, int n, tiled_matrix_desc_t descA, dague_complex64_t *M )
 {
     int tempmm = ( m == descA.mt-1 ) ? descA.m - m*descA.mb : descA.mb;
@@ -66,15 +64,15 @@ sizeu   [type = "int" hidden=on default="( descA.mt * descA.nt - (descA.mt * (de
 PRINT_F(k) [profile = off]
   // Execution space
   k = 0..(((uplo != plasma_upper) && (uplo != plasma_lower)) ? sizef - 1 : imone)
-  m = inline_c %{ return k % descA.mt; %}
-  n = inline_c %{ return k / descA.mt; %}
+  m = %{ return k % descA.mt; %}
+  n = %{ return k / descA.mt; %}
 
   // Parallel partitioning
   : dataA(m, n)
 
   // Parameters
 READ A   <- dataA(m, n)
-CTL  ctl <- (k > 0 )      ? ctl PRINT_F(k-1)
+CTL  ctl <- (k > 0)       ? ctl PRINT_F(k-1)
          -> (k < sizef-1) ? ctl PRINT_F(k+1)
 BODY
 {
@@ -91,15 +89,15 @@ END
 PRINT_L(k) [profile = off]
   // Execution space
   k = 0..((uplo == plasma_lower) ? sizel-1 : imone)
-  m = inline_c %{ int new_m = k; int new_n = 0; while ( new_m > descA.mt-1 ) { new_m -= (descA.mt - new_n - 1); new_n++; }; return new_m; %}
-  n = inline_c %{ int new_m = k; int new_n = 0; while ( new_m > descA.mt-1 ) { new_m -= (descA.mt - new_n - 1); new_n++; }; return new_n; %}
+  m = %{ int new_m = k; int new_n = 0; while ( new_m > descA.mt-1 ) { new_m -= (descA.mt - new_n - 1); new_n++; }; return new_m; %}
+  n = %{ int new_m = k; int new_n = 0; while ( new_m > descA.mt-1 ) { new_m -= (descA.mt - new_n - 1); new_n++; }; return new_n; %}
 
   // Parallel partitioning
   : dataA(m, n)
 
   // Parameters
 READ  A   <- dataA(m, n)
-CTL   ctl <- (k > 0 )      ? ctl PRINT_L(k-1)
+CTL   ctl <- (k > 0)       ? ctl PRINT_L(k-1)
           -> (k < sizel-1) ? ctl PRINT_L(k+1)
 BODY
 {
@@ -115,15 +113,15 @@ END
 PRINT_U(k) [profile = off]
   // Execution space
   k = 0..((uplo == plasma_upper) ? sizeu-1 : imone)
-  m = inline_c %{ int new_m = k; int new_n = 0; while ( new_m > new_n ) { new_n++; new_m -= new_n; }; return new_m; %}
-  n = inline_c %{ int new_m = k; int new_n = 0; while ( new_m > new_n ) { new_n++; new_m -= new_n; }; return new_n; %}
+  m = %{ int new_m = k; int new_n = 0; while ( new_m > new_n ) { new_n++; new_m -= new_n; }; return new_m; %}
+  n = %{ int new_m = k; int new_n = 0; while ( new_m > new_n ) { new_n++; new_m -= new_n; }; return new_n; %}
 
   // Parallel partitioning
   : dataA(m, n)
 
   // Parameters
 READ  A   <- dataA(m, n)
-CTL   ctl <- (k > 0 )      ? ctl PRINT_U(k-1)
+CTL   ctl <- (k > 0)       ? ctl PRINT_U(k-1)
           -> (k < sizeu-1) ? ctl PRINT_U(k+1)
 BODY
 {

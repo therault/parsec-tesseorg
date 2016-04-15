@@ -70,14 +70,14 @@
  *     high level tree to reduce communications.
  *     These lines are defined by (i-k)/p = 0.
  */
-#include <dague.h>
+#include "dague.h"
 #include "dplasma.h"
 #include "dplasma_qr_param.h"
 
 #include <math.h>
-#if defined(HAVE_STRING_H)
+#if defined(DAGUE_HAVE_STRING_H)
 #include <string.h>
-#endif  /* defined(HAVE_STRING_H) */
+#endif  /* defined(DAGUE_HAVE_STRING_H) */
 
 #define PRINT_PIVGEN 0
 #ifdef PRINT_PIVGEN
@@ -104,8 +104,8 @@ struct hqr_subpiv_s {
     /*
      * currpiv
      *    @param[in] arg pointer to the qr_piv structure
-     *    @param[in] m   line you want to eliminate
      *    @param[in] k   step in the factorization
+     *    @param[in] m   line you want to eliminate
      *
      *  @return the annihilator p used with m at step k
      */
@@ -113,8 +113,8 @@ struct hqr_subpiv_s {
     /*
      * nextpiv
      *    @param[in] arg pointer to the qr_piv structure
-     *    @param[in] p   line currently used as an annihilator
      *    @param[in] k   step in the factorization
+     *    @param[in] p   line currently used as an annihilator
      *    @param[in] m   line actually annihilated.
      *          m = MT to find the first time p is used as an annihilator during step k
      *
@@ -123,10 +123,10 @@ struct hqr_subpiv_s {
      */
     int (*nextpiv)(const hqr_subpiv_t *arg, int k, int p, int m);
     /*
-     * nextpiv
+     * prevpiv
      *    @param[in] arg pointer to the qr_piv structure
-     *    @param[in] p   line currently used as an annihilator
      *    @param[in] k   step in the factorization
+     *    @param[in] p   line currently used as an annihilator
      *    @param[in] m   line actually annihilated.
      *          m = p to find the last time p has been used as an annihilator during step k
      *

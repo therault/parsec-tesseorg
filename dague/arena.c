@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2015 The University of Tennessee and The University
+ * Copyright (c) 2010-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -8,6 +8,7 @@
 #include "dague/arena.h"
 #include "dague/class/lifo.h"
 #include "dague/data_internal.h"
+#include <limits.h>
 
 #if defined(DAGUE_PROF_TRACE) && defined(DAGUE_PROF_TRACE_ACTIVE_ARENA_SET)
 
@@ -26,8 +27,8 @@ extern int arena_memory_used_key, arena_memory_unused_key;
 
 #define DAGUE_ARENA_MIN_ALIGNMENT(align) ((ptrdiff_t)(align*((sizeof(dague_arena_chunk_t)-1)/align+1)))
 
-size_t dague_arena_max_allocated_memory = 0;  /* unlimited */
-size_t dague_arena_max_cached_memory    = 0;  /* unlimitted */
+size_t dague_arena_max_allocated_memory = SIZE_MAX;  /* unlimited */
+size_t dague_arena_max_cached_memory    = 256*1024*1024; /* limited to 256MB */
 
 int dague_arena_construct_ex(dague_arena_t* arena,
                              size_t elem_size,
@@ -36,8 +37,14 @@ int dague_arena_construct_ex(dague_arena_t* arena,
                              size_t max_allocated_memory,
                              size_t max_cached_memory)
 {
+    arena->elem_size = 0;  /* make sure the arena is marked as uninitialized to allow
+                              the destructor to skip the lifo destruction. */
     /* alignment must be more than zero and power of two */
     if( (alignment <= 1) || (alignment & (alignment - 1)) )
+        return -1;
+
+    /* avoid dividing by zero */
+    if( elem_size == 0 )
         return -1;
 
     assert(0 == (((uintptr_t)arena) % sizeof(uintptr_t))); /* is it aligned */
@@ -47,10 +54,9 @@ int dague_arena_construct_ex(dague_arena_t* arena,
     arena->elem_size    = elem_size;
     arena->opaque_dtt   = opaque_dtt;
     arena->used         = 0;
-    arena->max_used     = max_allocated_memory / elem_size;
+    arena->max_used     = (max_allocated_memory / elem_size > (size_t)INT32_MAX)? INT32_MAX: max_allocated_memory / elem_size;
     arena->released     = 0;
-    arena->max_released = max_cached_memory / elem_size;
-
+    arena->max_released = (max_cached_memory / elem_size > (size_t)INT32_MAX)? INT32_MAX: max_cached_memory / elem_size;
     arena->data_malloc  = dague_data_allocate;
     arena->data_free    = dague_data_free;
     return 0;
@@ -71,15 +77,22 @@ void dague_arena_destruct(dague_arena_t* arena)
 {
     dague_list_item_t* item;
 
-    assert(0 == arena->used);
+    assert( arena->used == arena->released
+         || arena->max_released == 0
+         || arena->max_released == INT32_MAX
+         || arena->max_used == 0
+         || arena->max_used == INT32_MAX );
 
-    while(NULL != (item = dague_lifo_pop(&arena->area_lifo))) {
-        DEBUG3(("Arena:\tfree element base ptr %p, data ptr %p (from arena %p)\n",
-                item, ((dague_arena_chunk_t*)item)->data, arena));
-        TRACE_FREE(arena_memory_free_key, item);
-        arena->data_free(item);
+    /* If elem_size == 0, the arena has not been initialized */
+    if ( 0 != arena->elem_size ) {
+        while(NULL != (item = dague_lifo_pop(&arena->area_lifo))) {
+            DAGUE_DEBUG_VERBOSE(20, dague_debug_output, "Arena:\tfree element base ptr %p, data ptr %p (from arena %p)",
+                                item, ((dague_arena_chunk_t*)item)->data, arena);
+            TRACE_FREE(arena_memory_free_key, item);
+            arena->data_free(item);
+        }
+        OBJ_DESTRUCT(&arena->area_lifo);
     }
-    OBJ_DESTRUCT(&arena->area_lifo);
 }
 
 static inline dague_list_item_t*
@@ -88,8 +101,11 @@ dague_arena_get_chunk( dague_arena_t *arena, size_t size, dague_data_allocate_t 
     dague_lifo_t *list = &arena->area_lifo;
     dague_list_item_t *item;
     item = dague_lifo_pop(list);
-    if( NULL == item ) {
-        if(arena->max_used > 0) {
+    if( NULL != item ) {
+        if( arena->max_released != INT32_MAX ) dague_atomic_dec_32b((uint32_t*)&arena->released);
+    }
+    else {
+        if(arena->max_used != INT32_MAX) {
             int32_t current = dague_atomic_add_32b(&arena->used, 1);
             if(current > arena->max_used) {
                 dague_atomic_dec_32b((uint32_t*)&arena->used);
@@ -112,24 +128,23 @@ dague_arena_release_chunk(dague_arena_t* arena,
 {
     TRACE_FREE(arena_memory_unused_key, chunk);
 
-    if(arena->max_used > 0)
-        dague_atomic_dec_32b((uint32_t*)&arena->used);
-
-    if(chunk->count > 1 || arena->released >= arena->max_released) {
-        DEBUG2(("Arena:\tdeallocate a tile of size %zu x %zu from arena %p, aligned by %zu, base ptr %p, data ptr %p, sizeof prefix %zu(%zd)\n",
-                arena->elem_size, chunk->count, arena, arena->alignment, chunk, chunk->data, sizeof(dague_arena_chunk_t),
-                DAGUE_ARENA_MIN_ALIGNMENT(arena->alignment)));
-        TRACE_FREE(arena_memory_free_key, chunk);
-        arena->data_free(chunk);
-    } else {
-        DEBUG2(("Arena:\tpush a data of size %zu from arena %p, aligned by %zu, base ptr %p, data ptr %p, sizeof prefix %zu(%zd)\n",
+    if( (chunk->count == 1) && (arena->released < arena->max_released) ) {
+        DAGUE_DEBUG_VERBOSE(10, dague_debug_output, "Arena:\tpush a data of size %zu from arena %p, aligned by %zu, base ptr %p, data ptr %p, sizeof prefix %zu(%zd)",
                 arena->elem_size, arena, arena->alignment, chunk, chunk->data, sizeof(dague_arena_chunk_t),
-                DAGUE_ARENA_MIN_ALIGNMENT(arena->alignment)));
-        if(arena->max_released > 0) {
+                DAGUE_ARENA_MIN_ALIGNMENT(arena->alignment));
+        if(arena->max_released != INT32_MAX) {
             dague_atomic_inc_32b((uint32_t*)&arena->released);
         }
         dague_lifo_push(&arena->area_lifo, &chunk->item);
+        return;
     }
+    DAGUE_DEBUG_VERBOSE(10, dague_debug_output, "Arena:\tdeallocate a tile of size %zu x %zu from arena %p, aligned by %zu, base ptr %p, data ptr %p, sizeof prefix %zu(%zd)",
+            arena->elem_size, chunk->count, arena, arena->alignment, chunk, chunk->data, sizeof(dague_arena_chunk_t),
+            DAGUE_ARENA_MIN_ALIGNMENT(arena->alignment));
+    TRACE_FREE(arena_memory_free_key, chunk);
+    if(arena->max_used != 0 && arena->max_used != INT32_MAX)
+        dague_atomic_sub_32b(&arena->used, chunk->count);
+    arena->data_free(chunk);
 }
 
 dague_data_copy_t *dague_arena_get_copy(dague_arena_t *arena, size_t count, int device)
@@ -145,6 +160,13 @@ dague_data_copy_t *dague_arena_get_copy(dague_arena_t *arena, size_t count, int 
         chunk = (dague_arena_chunk_t *)dague_arena_get_chunk( arena, size, arena->data_malloc );
     } else {
         assert(count > 1);
+        if(arena->max_used != INT32_MAX) {
+            int32_t current = dague_atomic_add_32b(&arena->used, count);
+            if(current > arena->max_used) {
+                dague_atomic_sub_32b(&arena->used, count);
+                return NULL;
+            }
+        }
         size = DAGUE_ALIGN(arena->elem_size * count + arena->alignment + sizeof(dague_arena_chunk_t),
                            arena->alignment, size_t);
         chunk = (dague_arena_chunk_t*)arena->data_malloc(size);
@@ -155,7 +177,7 @@ dague_data_copy_t *dague_arena_get_copy(dague_arena_t *arena, size_t count, int 
     }
     if(NULL == chunk) return NULL;  /* no more */
 
-#if defined(DAGUE_DEBUG_ENABLE)
+#if defined(DAGUE_DEBUG_PARANOID)
     DAGUE_LIST_ITEM_SINGLETON( &chunk->item );
 #endif
     TRACE_MALLOC(arena_memory_used_key, size, chunk);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2015 The University of Tennessee and The University
+ * Copyright (c) 2011-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -14,6 +14,7 @@
 #include "dague/devices/device.h"
 #include "dague/vpmap.h"
 #include "dague/data_internal.h"
+#include "dague/interfaces/interface.h"
 
 #if defined(DAGUE_PROF_TRACE)
 int dague_map_operator_profiling_array[2] = {-1};
@@ -162,7 +163,6 @@ static const dep_t flow_of_map_operator_dep_in = {
     .cond = NULL,
     .function_id = 0,  /* dague_map_operator.function_id */
     .flow = &flow_of_map_operator,
-    .datatype = { .type = { .cst = 0 }, .layout = { .fct = NULL}, .count = { .cst = 1 }, .displ = { .cst = 0 } }
 };
 
 static const dep_t flow_of_map_operator_dep_out = {
@@ -170,7 +170,6 @@ static const dep_t flow_of_map_operator_dep_out = {
     .function_id = 0,  /* dague_map_operator.function_id */
     .dep_index = 1,
     .flow = &flow_of_map_operator,
-    .datatype = { .type = { .cst = 0 }, .layout = { .fct = NULL}, .count = { .cst = 1 }, .displ = { .cst = 0 } },
 };
 
 static const dague_flow_t flow_of_map_operator = {
@@ -198,6 +197,7 @@ add_task_to_list(dague_execution_unit_t *eu_context,
 
     memcpy( new_context, newcontext, sizeof(dague_execution_context_t) );
     new_context->super.mempool_owner = mpool;
+    new_context->status = DAGUE_TASK_STATUS_NONE;
     pready_list[vpid_dst] = (dague_execution_context_t*)dague_list_item_ring_push_sorted( (dague_list_item_t*)(pready_list[vpid_dst]),
                                                                                           (dague_list_item_t*)new_context,
                                                                                           dague_execution_context_priority_comparator );
@@ -394,6 +394,7 @@ static const dague_function_t dague_map_operator = {
     .iterate_successors = iterate_successors,
     .release_deps = release_deps,
     .complete_execution = complete_hook,
+    .release_task = dague_release_task_to_mempool_update_nbtasks,
     .fini = NULL,
 };
 
@@ -485,7 +486,8 @@ dague_map_operator_New(const tiled_matrix_desc_t* src,
 #  endif /* defined(DAGUE_PROF_TRACE) */
 
     res->super.super.handle_id = 1111;
-    res->super.super.nb_local_tasks = src->nb_local_tiles;
+    res->super.super.nb_tasks = src->nb_local_tiles;
+    res->super.super.nb_pending_actions = 1;  /* for all local tasks */
     res->super.super.startup_hook = dague_map_operator_startup_fn;
     (void)dague_handle_reserve_id((dague_handle_t *)res);
     return (dague_handle_t*)res;

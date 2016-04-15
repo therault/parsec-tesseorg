@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2009-2015 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -35,11 +35,12 @@ typedef struct jdf_object_t {
 /**
  * Macros to handle the basic information for the jdf_object_t.
  */
-#define JDF_OBJECT_RETAIN(OBJ) (((struct jdf_object_t*)(OBJ))++)
-#define JDF_OBJECT_RELEASE(OBJ)                  \
-    do {                                         \
-    if( --((struct jdf_object_t*)(OBJ)) == 0 ) { \
-        free((OBJ));                             \
+#define JDF_OBJECT_RETAIN(OBJ) ((((struct jdf_object_t*)(OBJ))->refcount)++)
+#define JDF_OBJECT_RELEASE(OBJ)                                         \
+    do {                                                                \
+        if( --(((struct jdf_object_t*)(OBJ))->refcount) == 0 ) {        \
+            free((OBJ));                                                \
+        }                                                               \
     } while(0)
 #define JDF_OBJECT_SET( OBJ, FILENAME, LINENO, COMMENT )                \
     do {                                                                \
@@ -60,6 +61,7 @@ typedef struct jdf_object_t {
  * variable, and can be safely used as a marker.
  */
 #define PARSEC_WRITE_MAGIC_NAME "__parsec_write_type"
+#define PARSEC_NULL_MAGIC_NAME "__parsec_null_type"
 
 /**
  * Checks the sanity of the current_jdf.
@@ -76,7 +78,7 @@ typedef uint64_t jdf_warning_mask_t;
 #define JDF_WARN_MUTUAL_EXCLUSIVE_INPUTS ((jdf_warning_mask_t)(1 <<  1))
 #define JDF_WARN_REMOTE_MEM_REFERENCE    ((jdf_warning_mask_t)(1 <<  2))
 
-#define JDF_WARNINGS_ARE_ERROR           ((jdf_warning_mask_t)(1 <<  3))
+#define JDF_WARNINGS_ARE_ERROR           (jdf_warning_mask_t)(1 <<  3)
 
 #define JDF_WARNINGS_DISABLED_BY_DEFAULT (JDF_WARNINGS_ARE_ERROR)
 #define JDF_ALL_WARNINGS                 ((jdf_warning_mask_t)~JDF_WARNINGS_DISABLED_BY_DEFAULT)
@@ -99,7 +101,7 @@ extern jdf_compiler_global_args_t JDF_COMPILER_GLOBAL_ARGS;
  * Toplevel structure: four linked lists: prologues, epilogues, globals and functions
  */
 typedef struct jdf {
-    struct jdf_object_t       super;
+    struct jdf_object_t        super;
     struct jdf_external_entry *prologue;
     struct jdf_external_entry *epilogue;
     struct jdf_global_entry   *globals;
@@ -108,6 +110,7 @@ typedef struct jdf {
     struct jdf_data_entry     *data;
     struct jdf_name_list      *datatypes;
     struct jdf_expr           *inline_c_functions;
+    const char                *nb_local_tasks_fn_name;
 } jdf_t;
 
 /**
@@ -163,12 +166,26 @@ typedef unsigned int jdf_flags_t;
 #define JDF_FUNCTION_FLAG_HAS_DATA_OUTPUT   ((jdf_flags_t)(1 << 5))
 #define JDF_FUNCTION_FLAG_NO_PREDECESSORS   ((jdf_flags_t)(1 << 6))
 
+#define JDF_FUNCTION_HAS_UD_HASH_FUN           ((jdf_flags_t)(1 << 0))
+#define JDF_PROP_UD_HASH_FN_NAME               "hash_fn"
+
+#define JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME     "nb_local_tasks_fn"
+
+#define JDF_FUNCTION_HAS_UD_STARTUP_TASKS_FUN  ((jdf_flags_t)(1 << 2))
+#define JDF_PROP_UD_STARTUP_TASKS_FN_NAME      "startup_fn"
+
+#define JDF_FUNCTION_HAS_UD_DEPENDENCIES_FUNS  ((jdf_flags_t)(1 << 3))
+#define JDF_PROP_UD_FIND_DEPS_FN_NAME          "find_deps_fn"
+#define JDF_PROP_UD_ALLOC_DEPS_FN_NAME         "alloc_deps_fn"
+#define JDF_PROP_UD_FREE_DEPS_FN_NAME          "free_deps_fn"
+
 typedef struct jdf_function_entry {
     struct jdf_object_t        super;
     struct jdf_function_entry *next;
     char                      *fname;
     struct jdf_name_list      *parameters;
     jdf_flags_t                flags;
+    jdf_flags_t                user_defines;
     int32_t                    function_id;
     struct jdf_def_list       *locals;
     struct jdf_call           *predicate;
@@ -177,6 +194,7 @@ typedef struct jdf_function_entry {
     struct jdf_expr           *simcost;
     struct jdf_def_list       *properties;
     struct jdf_body           *bodies;
+    struct jdf_expr           *inline_c_functions;
 } jdf_function_entry_t;
 
 typedef struct jdf_data_entry {
@@ -192,8 +210,9 @@ typedef struct jdf_data_entry {
 /*******************************************************************/
 
 typedef struct jdf_name_list {
+    struct jdf_object_t   super;
     struct jdf_name_list *next;
-    char *name;
+    char                 *name;
 } jdf_name_list_t;
 
 typedef struct jdf_def_list {
@@ -234,7 +253,6 @@ typedef uint16_t jdf_dep_flags_t;
 
 typedef struct jdf_datatransfer_type {
     struct jdf_object_t           super;
-    struct jdf_datatransfer_type *next;
     struct jdf_expr              *type;    /**< the internal type of the data associated with the dependency */
     struct jdf_expr              *layout;  /**< the basic memory layout in case it is different from the type.
                                             *< InMPI case this must be an MPI datatype, working together with the
@@ -275,8 +293,19 @@ typedef struct jdf_call {
     struct jdf_expr          *parameters;
 } jdf_call_t;
 
-#define JDF_IS_DEP_WRITE_ONLY_INPUT_TYPE(DEP) \
-    ((NULL == (DEP)->guard->guard) && (NULL != (DEP)->guard->calltrue) && (NULL == (DEP)->guard->callfalse) && \
+#define JDF_IS_CALL_WITH_NO_INPUT(CALL)                         \
+    ((NULL == (CALL)->var) && (NULL == (CALL)->parameters))
+
+/**
+ * Return true if the flow is set only to define the global datatype of WRITE-only flow
+ * If it is the case the guard is unconditional with only the NEW keyword and
+ * optionnally some properties as follow:
+ *   WRITE X <- NEW  [type = DEFAULT]
+ */
+#define JDF_IS_DEP_WRITE_ONLY_INPUT_TYPE(DEP)                           \
+    ((NULL == (DEP)->guard->guard) &&                                   \
+     (NULL != (DEP)->guard->calltrue) &&                                \
+     (NULL == (DEP)->guard->callfalse) &&                               \
      (0 == strcmp(PARSEC_WRITE_MAGIC_NAME, (DEP)->guard->calltrue->func_or_mem)))
 
 /*******************************************************************/
@@ -385,6 +414,17 @@ char *malloc_and_dump_jdf_expr_list( const jdf_expr_t *e );
  * @return the expr on the left side of the = otherwise.
  */
 jdf_expr_t* jdf_find_property( const jdf_def_list_t* properties, const char* property_name, jdf_def_list_t** property );
+
+/**
+ * Accessors for the properties
+ */
+int jdf_property_get_int( const jdf_def_list_t* properties, const char* prop_name, int ret_if_not_found );
+const char *jdf_property_get_string( const jdf_def_list_t* properties, const char* prop_name, const char *ret_if_not_found );
+
+/**
+ * Add a new string property
+ */
+jdf_def_list_t *jdf_add_string_property(jdf_def_list_t **properties, const char *prop_name, const char *prop_value);
 
 /**
  * Function cleanup and management. Available in jdf.c

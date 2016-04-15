@@ -5,7 +5,6 @@ extern "C" %{
  *                         reserved.
  */
 
-#include "dague.h"
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include <sys/time.h>
 #include <inttypes.h>
@@ -13,7 +12,6 @@ extern "C" %{
 #include <stdlib.h>
 
 #define BLOCK 10
-#define N     100
 #define NN    10
 #define TYPE  matrix_RealFloat
 
@@ -179,8 +177,7 @@ int main( int argc, char** argv )
     handle->arenas[DAGUE_complex_deps_DEFAULT_ARENA] = &arena;
     dague_enqueue( dague, (dague_handle_t*)handle );
     TIMER_STOP(time_elapsed);
-    printf("DAG construction %d tasks in %ld micro-sec\n",
-           handle->super.nb_local_tasks, time_elapsed);
+    printf("DAG construction in %ld micro-sec\n", time_elapsed);
     if( verbose >= 5 ) {
         printf("<DartMeasurement name=\"no_pri\" type=\"numeric/double\"\n"
                "                 encoding=\"none\" compression=\"none\">\n"

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015 The University of Tennessee and The University
+ * Copyright (c) 2013-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -10,8 +10,11 @@
 #include "dtt_bug_replicator.h"
 #include "dague/arena.h"
 #include <math.h>
-#define N     100
-#define NB    10
+
+#define N     10
+#define NB    3
+
+extern void dump_double_array(char* msg, double* mat, int i, int j, int nb, int mb, int lda);
 
 #define PASTE_CODE_ALLOCATE_MATRIX(DDESC, COND, TYPE, INIT_PARAMS)      \
     TYPE##_t DDESC;                                                     \
@@ -28,14 +31,14 @@ int main( int argc, char** argv )
 {
     dague_context_t* dague;
     dague_handle_t* handle;
-#if defined(HAVE_MPI)
-    MPI_Datatype tile_dtt;
+#if defined(DAGUE_HAVE_MPI)
+    MPI_Datatype tile_dtt, vdtt1, vdtt2, vdtt;
 #endif
     dague_dtt_bug_replicator_handle_t *dtt_handle;;
-    int nodes, rank;
+    int nodes, rank, i, j;
     (void)argc; (void)argv;
 
-#if defined(HAVE_MPI)
+#if defined(DAGUE_HAVE_MPI)
     MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &nodes);
     MPI_Comm_size(MPI_COMM_WORLD, &nodes);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -55,14 +58,29 @@ int main( int argc, char** argv )
     handle = (dague_handle_t*) (dtt_handle = dague_dtt_bug_replicator_new(&ddescA.super.super));
     assert( NULL != handle );
 
-#if defined(HAVE_MPI)
+    /* initialize the first tile */
+    if( 0 == rank ) {
+        for( i = 0; i < NB; i++ )
+            for( j = 0; j < NB; j++ )
+                ((double*)ddescA.mat)[i * NB + j] = (double)(i * NB + j);
+        dump_double_array("Original ", (double*)ddescA.mat, 0, 0, NB, NB, NB);
+    }
+#if defined(DAGUE_HAVE_MPI)
     dague_type_create_contiguous(NB*NB, dague_datatype_double_t, &tile_dtt);
-
     MPI_Type_set_name(tile_dtt, "TILE_DTT");
     MPI_Type_commit(&tile_dtt);
-    dague_arena_construct(dtt_handle->arenas[DAGUE_dtt_bug_replicator_DEFAULT_ARENA],
+    dague_arena_construct(dtt_handle->arenas[DAGUE_dtt_bug_replicator_DTT1_ARENA],
                           NB*NB*sizeof(double),
                           DAGUE_ARENA_ALIGNMENT_SSE, tile_dtt);
+
+    dague_type_create_vector(NB, 1, NB, dague_datatype_double_t, &vdtt1);
+    dague_type_create_resized(vdtt1, 0, sizeof(dague_datatype_double_t), &vdtt2);
+    dague_type_create_contiguous(NB, vdtt2, &vdtt);
+    MPI_Type_set_name(vdtt, "TILE_DTT");
+    MPI_Type_commit(&vdtt);
+    dague_arena_construct(dtt_handle->arenas[DAGUE_dtt_bug_replicator_DTT2_ARENA],
+                          NB*NB*sizeof(double),
+                          DAGUE_ARENA_ALIGNMENT_SSE, vdtt);
 #endif
 
     dague_enqueue( dague, handle );
@@ -70,7 +88,7 @@ int main( int argc, char** argv )
     dague_context_wait(dague);
 
     dague_fini( &dague);
-#if defined(HAVE_MPI)
+#if defined(DAGUE_HAVE_MPI)
     MPI_Finalize();
 #endif
     return 0;

@@ -1,8 +1,16 @@
-/*
+/**
  * Copyright (c) 2009-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
- */
+ **/
+/**
+ *
+ * @file insert_function.h
+ *
+ * @version 2.0.0
+ * @author Reazul Hoque
+ *
+ **/
 
 #ifndef INSERT_FUNCTION_H_HAS_BEEN_INCLUDED
 #define INSERT_FUNCTION_H_HAS_BEEN_INCLUDED
@@ -16,7 +24,7 @@ BEGIN_C_DECLS
 /**
  * To see examples please look at testing_zpotrf_dtd.c, testing_zgeqrf_dtd.c,
  * testing_zgetrf_incpiv_dtd.c files in the directory "root_of_PaRSEC/dplasma/testing/"
- */
+ **/
 
 /*
     **  Details of Flags **
@@ -51,6 +59,7 @@ typedef enum {  REGION_FULL=1<<0,/* 0x1 is reserved for default(FULL tile) */
                 REGION_L=1<<1, /* Lower triangle */
                 REGION_D=1<<2, /* Diagonal */
                 REGION_U=1<<3, /* Upper Triangle */
+                AFFINITY=1<<4, /* Data affinity */
              } dtd_regions;
 
 #define DAGUE_dtd_NB_FUNCTIONS  25 /* Max number of task classes allowed */
@@ -58,7 +67,7 @@ typedef enum {  REGION_FULL=1<<0,/* 0x1 is reserved for default(FULL tile) */
 #define UNPACK_VALUE            1
 #define UNPACK_DATA             2
 #define UNPACK_SCRATCH          3
-#define MAX_DESC                25
+#define MAX_FLOW                25
 
 /* The parameters to pass to get pointer to data
  * 1. dague_dtd_handle_t*
@@ -131,14 +140,15 @@ dague_dtd_tile_t* dague_dtd_tile_of(dague_dtd_handle_t *dague_dtd_handle,
                                                                             specific data dependency.)
       4. "0" indicates the end of paramter list. Must be provided.
  */
-void insert_task_generic_fptr(dague_dtd_handle_t *,
-                              dague_dtd_funcptr_t *, char *, ...);
+void
+dague_insert_task( dague_dtd_handle_t  *dague_dtd_handle,
+                       dague_dtd_funcptr_t *fpointer,
+                       char *name_of_kernel, ... );
 
-/* This funciotn will create a handle and return it.
- * Pass the dague context and the number of different tasks this handle will deal with.
-   (pass 1 as the second parameter if User has confusion).
+/* This function will create a handle and return it. Provide the corresponding
+ * dague context, so that the new handle is associated with.
  */
-dague_dtd_handle_t* dague_dtd_handle_new(dague_context_t *, int );
+dague_dtd_handle_t* dague_dtd_handle_new(dague_context_t *);
 
 /* Destroys the DAGUE  handle
  * Should be called after all tasks are done.
@@ -146,7 +156,7 @@ dague_dtd_handle_t* dague_dtd_handle_new(dague_context_t *, int );
 void dague_dtd_handle_destruct(dague_dtd_handle_t *);
 
 /* Makes the Dague context wait on the handle passed. The context will wait untill all the
- * tasks attached to this handle is over.
+ * tasks attached to this handle are over.
  * User can call this function multiple times in between a dague_dtd_handle_new() and dague_dtd_handle_destruct()
  */
 void dague_dtd_handle_wait( dague_context_t     *dague,

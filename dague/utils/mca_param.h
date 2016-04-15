@@ -51,11 +51,11 @@
 #ifndef DAGUE_MCA_PARAM_H
 #define DAGUE_MCA_PARAM_H
 
-#include <dague_config.h>
-#include <dague/class/dague_object.h>
-#if defined(HAVE_STDBOOL_H)
+#include "dague_config.h"
+#include "dague/class/dague_object.h"
+#if defined(DAGUE_HAVE_STDBOOL_H)
 #include <stdbool.h>
-#endif  /* defined(HAVE_STDBOOL_H) */
+#endif  /* defined(DAGUE_HAVE_STDBOOL_H) */
 #include "dague/class/list.h"
 
 #include "dague/constants.h"
@@ -786,6 +786,28 @@ DAGUE_DECLSPEC void
 dague_mca_show_mca_params(dague_list_t *info,
                           const char *type, const char *component,
                           bool pretty_print);
+
+/**
+ * Set an MCA environment parameter.
+ *
+ * @param param Name of the type containing the variable.
+ * @param value Value of the mca parameter to set.
+ * @param env   Environment in which to store the MCA parameter.
+ *
+ * This function sets an MCA environment parameter. If env = environ,
+ * then the variable is set into the global environment of the application and
+ * is used as the default value for the parameter when it is accessed by the
+ * PaRSEC engine. Thus, an external application can register some parameters that
+ * will later be used by the initialization in the engine.
+ * If env != environ, the value is just added to the given environment. This is
+ * used internally by PaRSEC.
+ *
+ */
+DAGUE_DECLSPEC void
+dague_setenv_mca_param( char *param,
+                        char *value,
+                        char ***env );
+
 END_C_DECLS
 
 #endif /* DAGUE_MCA_PARAM_H */

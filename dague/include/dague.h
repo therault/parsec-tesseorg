@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2014 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -7,9 +7,26 @@
 #ifndef DAGUE_H_HAS_BEEN_INCLUDED
 #define DAGUE_H_HAS_BEEN_INCLUDED
 
+#ifndef PARSEC_BUILDING
+#define PARSEC_BUILDING 0
+#endif
+
+#ifndef DAGUE_CONFIG_H_HAS_BEEN_INCLUDED
 #include "dague_config.h"
+#endif /* #ifndef DAGUE_CONFIG_H */
 
 BEGIN_C_DECLS
+
+/* Define the PaRSEC version */
+#define PARSEC_VERSION    2
+#define PARSEC_SUBVERSION 0
+/* For backward compatibility */
+#define DAGUE_VERSION_MAJOR 2
+#define DAGUE_VERSION_MINOR 0
+
+#if defined(DAGUE_HAVE_STDDEF_H)
+#include <stddef.h>
+#endif
 
 typedef struct dague_handle_s            dague_handle_t;
 typedef struct dague_execution_context_s dague_execution_context_t;
@@ -152,20 +169,37 @@ void dague_handle_unregister(dague_handle_t* handle);
 void dague_handle_sync_ids(void);
 
 /**
- * Compose sequentially two handles. If start is already a composed
- * object, then next will be added sequentially to the list. These
- * handles will execute one after another as if there were sequential.
- * The resulting compound dague_handle is returned.
+ * Sequentially compose two handles, triggering the start of next upon
+ * completion of start. If start is already a composed object, then next will be
+ * appended to the already existing list. These handles will execute one after
+ * another as if there were sequential.  The resulting compound dague_handle is
+ * returned.
  */
 dague_handle_t* dague_compose(dague_handle_t* start, dague_handle_t* next);
 
 /**< Free the resource allocated in the dague handle. The handle should be unregistered first. */
 void dague_handle_free(dague_handle_t *handle);
 
-/**< Update the number of tasks by adding the increment (if the increment is negative
- * the number of tasks is decreased).
+/**
+ * The final step of a handle activation. At this point we assume that all the local
+ * initializations have been successfully completed for all components, and that the
+ * handle is ready to be registered with the system, and any potential pending tasks
+ * ready to go. If distributed is non 0, then the runtime assumes that the handle has
+ * a distributed scope and should be registered with the communication engine.
+ *
+ * The local_task allows for concurrent management of the startup_queue, and provide a way
+ * to prevent a task from being added to the scheduler. As the different tasks classes are
+ * initialized concurrently, we need a way to prevent the beginning of the tasks generation until
+ * all the tasks classes associated with a DAG are completed. Thus, until the synchronization
+ * is complete, the task generators are put on hold in the startup_queue. Once the handle is
+ * ready to advance, and this is the same moment as when the handle is ready to be enabled,
+ * we reactivate all pending tasks, starting the tasks generation step for all type classes.
  */
-void dague_handle_update_nbtask( dague_handle_t* handle, int32_t nb_tasks );
+int dague_handle_enable(dague_handle_t* handle,
+                        dague_execution_context_t** startup_queue,
+                        dague_execution_context_t* local_task,
+                        dague_execution_unit_t * eu,
+                        int nb_tasks);
 
 /**< Print DAGuE usage message */
 void dague_usage(void);

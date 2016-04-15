@@ -135,7 +135,7 @@ int dague_mca_cmd_line_process_args(dague_cmd_line_t *cmd,
 static int process_arg(const char *param, const char *value,
                        char ***params, char ***values)
 {
-    int i;
+    int i, rc;
     char *new_str;
 
     /* Look to see if we've already got an -mca argument for the same
@@ -144,7 +144,7 @@ static int process_arg(const char *param, const char *value,
 
     for (i = 0; NULL != *params && NULL != (*params)[i]; ++i) {
         if (0 == strcmp(param, (*params)[i])) {
-            asprintf(&new_str, "%s,%s", (*values)[i], value);
+            rc = asprintf(&new_str, "%s,%s", (*values)[i], value);
             free((*values)[i]);
             (*values)[i] = new_str;
 
@@ -152,12 +152,13 @@ static int process_arg(const char *param, const char *value,
         }
     }
 
-    /* If we didn't already have an value for the same param, save
+    /* If we didn't already have a value for the same param, save
        this one away */
 
     dague_argv_append_nosize(params, param);
     dague_argv_append_nosize(values, value);
 
+    (void)rc;
     return DAGUE_SUCCESS;
 }
 
@@ -165,14 +166,11 @@ static int process_arg(const char *param, const char *value,
 static void add_to_env(char **params, char **values, char ***env)
 {
     int i;
-    char *name;
 
     /* Loop through all the args that we've gotten and make env
        vars of the form OMPI_MCA_*=value. */
 
     for (i = 0; NULL != params && NULL != params[i]; ++i) {
-        (void) dague_mca_var_env_name (params[i], &name);
-        dague_setenv(name, values[i], true, env);
-        free(name);
+        dague_setenv_mca_param( params[i], values[i], env );
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015 The University of Tennessee and The University
+ * Copyright (c) 2012-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
@@ -31,9 +31,6 @@ typedef struct dague_data_pair_s       dague_data_pair_t;
 typedef struct dague_dependencies_s    dague_dependencies_t;
 typedef struct data_repo_s             data_repo_t;
 
-/**< The most basic execution flow. Each virtual process includes
- *   multiple execution units (posix threads + local data) */
-//typedef struct dague_execution_unit_s  dague_execution_unit_t;
 /**< Each MPI process includes multiple virtual processes (and a
  *   single comm. thread) */
 typedef struct dague_vp_s              dague_vp_t;
@@ -46,13 +43,27 @@ typedef void (*dague_startup_fn_t)(dague_context_t *context,
 typedef void (*dague_destruct_fn_t)(dague_handle_t* dague_handle);
 
 struct dague_handle_s {
-    dague_list_item_t             super;
-    /** All dague_handle_t structures hold these two arrays **/
+    dague_list_item_t          super;
     uint32_t                   handle_id;
-    volatile uint32_t          nb_local_tasks;
-    uint32_t                   nb_functions;
+    volatile int32_t           nb_tasks;  /**< A placeholder for the upper level to count (if necessary) the tasks
+                                           *   in the handle. This value is checked upon each task completion by
+                                           *   the runtime, to see if the handle is completed (a nb_tasks equal
+                                           *   to zero signal a completed handle). However, in order to prevent
+                                           *   multiple completions of the handle due to multiple tasks completing
+                                           *   simultaneously, the runtime reuse this value (once set to zero), for
+                                           *   internal purposes (in which case it is atomically set to
+                                           *   DAGUE_RUNTIME_RESERVED_NB_TASKS).
+                                           */
+    uint16_t                   nb_functions;
+    uint16_t                   devices_mask;
+    int32_t                    initial_number_tasks;
     int32_t                    priority;
-    uint32_t                   devices_mask;
+    volatile uint32_t          nb_pending_actions;  /**< Internal counter of pending actions tracking all runtime
+                                                     *   activities (such as communications, data movement, and
+                                                     *   so on). Also, its value is increase by one for all the tasks
+                                                     *   in the handle. This extra reference will be removed upon
+                                                     *   completion of all tasks.
+                                                     */
     dague_context_t           *context;
     dague_startup_fn_t         startup_hook;
     const dague_function_t**   functions_array;
@@ -69,13 +80,13 @@ struct dague_handle_s {
     dague_event_cb_t           on_complete;
     void*                      on_complete_data;
     dague_destruct_fn_t        destructor;
-    dague_dependencies_t**     dependencies_array;
+    void**                     dependencies_array;
     data_repo_t**              repo_array;
 };
 
 DAGUE_DECLSPEC OBJ_CLASS_DECLARATION(dague_handle_t);
 
-#define DAGUE_DEVICES_ALL				   UINT32_MAX
+#define DAGUE_DEVICES_ALL                                  UINT16_MAX
 
 /* There is another loop after this one. */
 #define DAGUE_DEPENDENCIES_FLAG_NEXT       0x01
@@ -83,6 +94,13 @@ DAGUE_DECLSPEC OBJ_CLASS_DECLARATION(dague_handle_t);
 #define DAGUE_DEPENDENCIES_FLAG_FINAL      0x02
 /* This loops array is allocated */
 #define DAGUE_DEPENDENCIES_FLAG_ALLOCATED  0x04
+
+/* When providing user-defined functions to count the number of tasks,
+ * the user can return DAGUE_UNDETERMINED_NB_TASKS to say explicitely
+ * that they will call the object termination function themselves.
+ */
+#define DAGUE_UNDETERMINED_NB_TASKS (0x0fffffff)
+#define DAGUE_RUNTIME_RESERVED_NB_TASKS (int32_t)(0xffffffff)
 
 /* The first time the IN dependencies are
  *       checked leave a trace in order to avoid doing it again.
@@ -98,10 +116,10 @@ typedef union {
 } dague_dependencies_union_t;
 
 struct dague_dependencies_s {
-    int                     flags;
-    const symbol_t*         symbol;
-    int                     min;
-    int                     max;
+    int                   flags;
+    const symbol_t*       symbol;
+    int                   min;
+    int                   max;
     dague_dependencies_t* prev;
     /* keep this as the last field in the structure */
     dague_dependencies_union_t u;
@@ -155,6 +173,34 @@ typedef uint64_t (dague_functionkey_fn_t)(const dague_handle_t *dague_handle,
 typedef float (dague_evaluate_function_t)(const dague_execution_context_t* task);
 
 /**
+ * Retrieve the datatype for each flow (for input) or dependency (for output)
+ * for a particular task. This function behave as an iterator: flow_mask
+ * contains the mask of dependencies or flows that should be monitored, the left
+ * most bit set to 1 to indicate input flows, and to 0 for output flows. If we
+ * want to extract the input flows then the mask contains a bit set to 1 for
+ * each index of a flow we are interested on. For the output flows, the mask
+ * contains the bits for the dependencies we need to extract the datatype. Once
+ * the data structure has been updated, the flow_mask is updated to contain only
+ * the remaining flows for this task. Thus, iterating until flow_mask is 0 is
+ * the way to extract all the datatypes for a particular task.
+ *
+ * @return DAGUE_HOOK_RETURN_NEXT if the data structure has been updated (in
+ * which case the function is safe to be called again), and
+ * DAGUE_HOOK_RETURN_DONE otherwise (the data structure has not been updated and
+ * there is no reason to call this function again for the same task.
+ */
+typedef int (dague_datatype_lookup_t)(struct dague_execution_unit_s* eu,
+                                      const dague_execution_context_t * this_task,
+                                      uint32_t * flow_mask,
+                                      dague_dep_data_description_t * data);
+
+/**
+ * Allocate a new task that matches the function_t type. This can also be a task
+ * of a generic type (such as dague_execution_context_t).
+ */
+typedef int (dague_new_task_function_t)(const dague_execution_context_t** task);
+
+/**
  *
  */
 typedef enum dague_hook_return_e {
@@ -179,18 +225,20 @@ typedef struct dague_data_ref_s {
 typedef int (dague_data_ref_fn_t)(dague_execution_context_t *exec_context,
                                   dague_data_ref_t *ref);
 
-/**
- *
- */
-typedef int (dague_task_fct_t)(dague_execution_context_t *exec_context);
-
 #define DAGUE_HAS_IN_IN_DEPENDENCIES     0x0001
 #define DAGUE_HAS_OUT_OUT_DEPENDENCIES   0x0002
-#define DAGUE_HAS_IN_STRONG_DEPENDENCIES 0x0004
 #define DAGUE_HIGH_PRIORITY_TASK         0x0008
 #define DAGUE_IMMEDIATE_TASK             0x0010
 #define DAGUE_USE_DEPS_MASK              0x0020
 #define DAGUE_HAS_CTL_GATHER             0X0040
+
+/**
+ * Find the dependency corresponding to a given execution context.
+ */
+typedef dague_dependency_t *(dague_find_dependency_fn_t)(const dague_handle_t *dague_handle,
+                                                         const dague_execution_context_t* exec_context);
+dague_dependency_t *dague_default_find_deps(const dague_handle_t *dague_handle,
+                                            const dague_execution_context_t* exec_context);
 
 typedef struct __dague_internal_incarnation_s {
     int32_t                    type;
@@ -224,14 +272,18 @@ struct dague_function_s {
 #if defined(DAGUE_SIM)
     dague_sim_cost_fct_t        *sim_cost_fct;
 #endif
+    dague_datatype_lookup_t     *get_datatype;
     dague_hook_t                *prepare_input;
     const __dague_chore_t       *incarnations;
     dague_hook_t                *prepare_output;
+
+    dague_find_dependency_fn_t  *find_deps;
 
     dague_traverse_function_t   *iterate_successors;
     dague_traverse_function_t   *iterate_predecessors;
     dague_release_deps_t        *release_deps;
     dague_hook_t                *complete_execution;
+    dague_new_task_function_t   *new_task;
     dague_hook_t                *release_task;
     dague_hook_t                *fini;
 };
@@ -243,15 +295,22 @@ struct dague_data_pair_s {
 };
 
 /**
+ * Global configuration variables controling the startup mechanism
+ * and directly the startup speed.
+ */
+DAGUE_DECLSPEC extern size_t dague_task_startup_iter;
+DAGUE_DECLSPEC extern size_t dague_task_startup_chunk;
+
+/**
  * Description of the state of the task. It indicates what will be the next
  * next stage in the life-time of a task to be executed.
  */
-#define DAGUE_TASK_STATUS_NONE           0x00
-#define DAGUE_TASK_STATUS_PREPARE_INPUT  0x01
-#define DAGUE_TASK_STATUS_EVAL           0x02
-#define DAGUE_TASK_STATUS_HOOK           0x03
-#define DAGUE_TASK_STATUS_PREPARE_OUTPUT 0x04
-#define DAGUE_TASK_STATUS_COMPLETE       0x05
+#define DAGUE_TASK_STATUS_NONE           (uint8_t)0x00
+#define DAGUE_TASK_STATUS_PREPARE_INPUT  (uint8_t)0x01
+#define DAGUE_TASK_STATUS_EVAL           (uint8_t)0x02
+#define DAGUE_TASK_STATUS_HOOK           (uint8_t)0x03
+#define DAGUE_TASK_STATUS_PREPARE_OUTPUT (uint8_t)0x04
+#define DAGUE_TASK_STATUS_COMPLETE       (uint8_t)0x05
 
 /**
  * The minimal execution context contains only the smallest amount of information
@@ -266,9 +325,8 @@ struct dague_data_pair_s {
     const  dague_function_t       *function;         \
     int32_t                        priority;         \
     uint8_t                        status;           \
-    uint8_t                        hook_id;          \
     uint8_t                        chore_id;         \
-    uint8_t                        unused;
+    uint8_t                        unused[2];
 
 struct dague_minimal_execution_context_s {
     DAGUE_MINIMAL_EXECUTION_CONTEXT
@@ -291,7 +349,6 @@ struct dague_execution_context_s {
 #if defined(PINS_ENABLE)
     int                        creator_core;
     int                        victim_core;
-    int                        execution_core;
 #endif /* defined(PINS_ENABLE) */
 #if defined(DAGUE_SIM)
     int                        sim_exec_date;
@@ -333,7 +390,7 @@ extern int device_delegate_begin, device_delegate_end;
 #define DAGUE_TASK_PROF_TRACE(PROFILE, KEY, TASK)                       \
     DAGUE_PROFILING_TRACE((PROFILE),                                    \
                           (KEY),                                        \
-                          (TASK)->function->key((TASK)->dague_handle, (TASK)->locals), \
+                          (TASK)->function->key((TASK)->dague_handle, (assignment_t *)&(TASK)->locals), \
                           (TASK)->dague_handle->handle_id, (void*)&(TASK)->prof_info)
 
 #define DAGUE_TASK_PROF_TRACE_IF(COND, PROFILE, KEY, TASK)   \
@@ -407,12 +464,6 @@ int dague_release_local_OUT_dependencies(dague_execution_unit_t* eu_context,
     } while (0)
 
 #define dague_execution_context_priority_comparator offsetof(dague_execution_context_t, priority)
-
-/**
- * Search the dague_handle_t for a function named fname, and return it if such
- * a function exists. Returns NULL otherwise.
- */
-const dague_function_t* dague_find(const dague_handle_t *dague_handle, const char *fname);
 
 #if defined(DAGUE_SIM)
 int dague_getsimulationdate( dague_context_t *dague_context );
