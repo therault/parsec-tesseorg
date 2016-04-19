@@ -164,8 +164,9 @@ static void* __dague_thread_init( __dague_temporary_thread_initialization_t* sta
     dague_execution_unit_t* eu;
     int pi;
 
-    /* Bind to the specified CORE */
-    dague_bindthread(startup->bindto, startup->bindto_ht);
+    /* Bind to the specified CORE if we're not the main thread */
+    if( startup->th_id != 0 )
+        dague_bindthread(startup->bindto, startup->bindto_ht);
     DAGUE_DEBUG_VERBOSE(10, dague_debug_output, "VP %i : bind thread %i.%i on core %i [HT %i]",
             startup->virtual_process->vp_id, startup->virtual_process->vp_id,
             startup->th_id, startup->bindto, startup->bindto_ht);
