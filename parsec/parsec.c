@@ -755,9 +755,9 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
 
     /* Play with the thread placement */
     if( NULL != comm_binding_parameter )
-        dague_parse_comm_binding_parameter(comm_binding_parameter, context);
+        parsec_parse_comm_binding_parameter(comm_binding_parameter, context);
     if( NULL != binding_parameter )
-        dague_parse_binding_parameter(binding_parameter, context, startup);
+        parsec_parse_binding_parameter(binding_parameter, context, startup);
 
     if( display_vpmap )
         vpmap_display_map();
