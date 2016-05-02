@@ -88,8 +88,10 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
                    dague_complex64_t alpha, const tiled_matrix_desc_t* A, const tiled_matrix_desc_t* B,
                    dague_complex64_t beta,  tiled_matrix_desc_t* C)
 {
+    two_dim_block_cyclic_t *Cdist;
     dague_handle_t* zgemm_handle;
     dague_arena_t* arena;
+    int P, Q, m, n;
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
@@ -100,6 +102,33 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
         dplasma_error("dplasma_zgemm_New", "illegal value of transB");
         return NULL /*-2*/;
     }
+    if ( !(C->dtype & two_dim_block_cyclic_type) ) {
+        dplasma_error("dplasma_zgemm_New", "illegal type of descriptor for C (must be two_dim_block_cyclic_t)");
+        return NULL;
+    }
+
+    P = ((two_dim_block_cyclic_t*)C)->grid.rows;
+    Q = ((two_dim_block_cyclic_t*)C)->grid.cols;
+
+    m = dplasma_imax(C->mt, P);
+    n = dplasma_imax(C->nt, Q);
+
+    /* Create a copy of the A matrix to be used as a data distribution metric.
+     * As it is used as a NULL value we must have a data_copy and a data associated
+     * with it, so we can create them here.
+     * Create the task distribution */
+    Cdist = (two_dim_block_cyclic_t*)malloc(sizeof(two_dim_block_cyclic_t));
+
+    two_dim_block_cyclic_init(
+        Cdist, matrix_RealDouble, matrix_Tile,
+        C->super.nodes, C->super.myrank,
+        1, 1, /* Dimensions of the tiles              */
+        m, n, /* Dimensions of the matrix             */
+        0, 0, /* Starting points (not important here) */
+        m, n, /* Dimensions of the submatrix          */
+        1, 1, P);
+    Cdist->super.super.data_of = NULL;
+    Cdist->super.super.data_of_key = NULL;
 
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
@@ -107,7 +136,8 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
             handle = dague_zgemm_NN_new(transA, transB, alpha, beta,
                                         (dague_ddesc_t*)A,
                                         (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C);
+                                        (dague_ddesc_t*)C,
+                                        (dague_ddesc_t*)Cdist);
             arena = handle->arenas[DAGUE_zgemm_NN_DEFAULT_ARENA];
             zgemm_handle = (dague_handle_t*)handle;
         } else {
@@ -115,7 +145,8 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
             handle = dague_zgemm_NT_new(transA, transB, alpha, beta,
                                         (dague_ddesc_t*)A,
                                         (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C);
+                                        (dague_ddesc_t*)C,
+                                        (dague_ddesc_t*)Cdist);
             arena = handle->arenas[DAGUE_zgemm_NT_DEFAULT_ARENA];
             zgemm_handle = (dague_handle_t*)handle;
         }
@@ -125,15 +156,18 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
             handle = dague_zgemm_TN_new(transA, transB, alpha, beta,
                                         (dague_ddesc_t*)A,
                                         (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C);
+                                        (dague_ddesc_t*)C,
+                                        (dague_ddesc_t*)Cdist);
             arena = handle->arenas[DAGUE_zgemm_TN_DEFAULT_ARENA];
             zgemm_handle = (dague_handle_t*)handle;
-        } else {
+        }
+        else {
             dague_zgemm_TT_handle_t* handle;
             handle = dague_zgemm_TT_new(transA, transB, alpha, beta,
                                         (dague_ddesc_t*)A,
                                         (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C);
+                                        (dague_ddesc_t*)C,
+                                        (dague_ddesc_t*)Cdist);
             arena = handle->arenas[DAGUE_zgemm_TT_DEFAULT_ARENA];
             zgemm_handle = (dague_handle_t*)handle;
         }
@@ -170,6 +204,10 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
 void
 dplasma_zgemm_Destruct( dague_handle_t *handle )
 {
+    dague_zgemm_NN_handle_t *zgemm_handle = (dague_zgemm_NN_handle_t *)handle;
+    tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zgemm_handle->Cdist) );
+    free( zgemm_handle->Cdist );
+
     dague_matrix_del2arena( ((dague_zgemm_NN_handle_t *)handle)->arenas[DAGUE_zgemm_NN_DEFAULT_ARENA] );
     dague_handle_free(handle);
 }
@@ -304,6 +342,11 @@ dplasma_zgemm( dague_context_t *dague,
     if ( (Ai != C->i) || (Aj != Bi) || (Bj != C->j) ) {
         dplasma_error("dplasma_zgemm", "start indexes have to match");
         return -101;
+    }
+
+    if ( !(C->dtype & two_dim_block_cyclic_type) ) {
+        dplasma_error("dplasma_zgemm", "illegal type of descriptor for C");
+        return -3.;
     }
 
     M = C->m;
