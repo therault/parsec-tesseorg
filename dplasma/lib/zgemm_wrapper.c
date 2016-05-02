@@ -94,6 +94,7 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
                    parsec_complex64_t alpha, const tiled_matrix_desc_t* A, const tiled_matrix_desc_t* B,
                    parsec_complex64_t beta,  tiled_matrix_desc_t* C)
 {
+    two_dim_block_cyclic_t *Cdist;
     parsec_handle_t* zgemm_handle;
     parsec_arena_t* arena;
     two_dim_block_cyclic_t *Cdist;
@@ -108,6 +109,33 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
         dplasma_error("dplasma_zgemm_New", "illegal value of transB");
         return NULL /*-2*/;
     }
+    if ( !(C->dtype & two_dim_block_cyclic_type) ) {
+        dplasma_error("dplasma_zgemm_New", "illegal type of descriptor for C (must be two_dim_block_cyclic_t)");
+        return NULL;
+    }
+
+    P = ((two_dim_block_cyclic_t*)C)->grid.rows;
+    Q = ((two_dim_block_cyclic_t*)C)->grid.cols;
+
+    m = dplasma_imax(C->mt, P);
+    n = dplasma_imax(C->nt, Q);
+
+    /* Create a copy of the A matrix to be used as a data distribution metric.
+     * As it is used as a NULL value we must have a data_copy and a data associated
+     * with it, so we can create them here.
+     * Create the task distribution */
+    Cdist = (two_dim_block_cyclic_t*)malloc(sizeof(two_dim_block_cyclic_t));
+
+    two_dim_block_cyclic_init(
+        Cdist, matrix_RealDouble, matrix_Tile,
+        C->super.nodes, C->super.myrank,
+        1, 1, /* Dimensions of the tiles              */
+        m, n, /* Dimensions of the matrix             */
+        0, 0, /* Starting points (not important here) */
+        m, n, /* Dimensions of the submatrix          */
+        1, 1, P);
+    Cdist->super.super.data_of = NULL;
+    Cdist->super.super.data_of_key = NULL;
 
     if ( C->dtype & two_dim_block_cyclic_type ) {
         P = ((two_dim_block_cyclic_t*)C)->grid.rows;
@@ -373,6 +401,11 @@ dplasma_zgemm( parsec_context_t *parsec,
     if ( (Ai != C->i) || (Aj != Bi) || (Bj != C->j) ) {
         dplasma_error("dplasma_zgemm", "start indexes have to match");
         return -101;
+    }
+
+    if ( !(C->dtype & two_dim_block_cyclic_type) ) {
+        dplasma_error("dplasma_zgemm", "illegal type of descriptor for C");
+        return -3.;
     }
 
     M = C->m;
