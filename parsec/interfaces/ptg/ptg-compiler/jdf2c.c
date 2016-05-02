@@ -2754,7 +2754,7 @@ static void jdf_generate_simulation_cost_fct(const jdf_t *jdf, const jdf_functio
     coutput("#if defined(PARSEC_SIM)\n"
             "static int %s(const %s *this_task)\n"
             "{\n"
-            "  const __parsec_%s_internal_handle_t *__parsec_handle = (const __parsec_%s_internal_handle_t *)this_task->dague_handle;\n"
+            "  const __parsec_%s_internal_handle_t *__parsec_handle = (const __parsec_%s_internal_handle_t *)this_task->parsec_handle;\n"
             "%s"
             "  (void)__parsec_handle;\n",
             prefix, parsec_get_name(jdf, f, "task_t"),
@@ -4561,7 +4561,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
                 fl->varname);
     }
     coutput("    if( this_task->function->sim_cost_fct != NULL ) {\n"
-            "      this_task->sim_exec_date += this_task->function->sim_cost_fct((dague_execution_context_t*)this_task);\n"
+            "      this_task->sim_exec_date += this_task->function->sim_cost_fct((parsec_execution_context_t*)this_task);\n"
             "    }\n"
             "    if( context->largest_simulation_date < this_task->sim_exec_date )\n"
             "      context->largest_simulation_date = this_task->sim_exec_date;\n"
@@ -4846,7 +4846,7 @@ static void jdf_generate_code_hook(const jdf_t *jdf,
                 fl->varname);
     }
     coutput("    if( this_task->function->sim_cost_fct != NULL ) {\n"
-            "      this_task->sim_exec_date += this_task->function->sim_cost_fct((dague_execution_context_t*)this_task);\n"
+            "      this_task->sim_exec_date += this_task->function->sim_cost_fct((parsec_execution_context_t*)this_task);\n"
             "    }\n"
             "    if( context->largest_simulation_date < this_task->sim_exec_date )\n"
             "      context->largest_simulation_date = this_task->sim_exec_date;\n"
