@@ -35,6 +35,7 @@ int main(int argc, char ** argv)
     iparam[IPARAM_SNB] = 1;
     iparam[IPARAM_LDA] = -'m';
     iparam[IPARAM_LDB] = -'m';
+    iparam[IPARAM_QR_HLVL_SZE] = -'P';
 
     /* Initialize DAGuE */
     dague = setup_dague(argc, argv, iparam);
