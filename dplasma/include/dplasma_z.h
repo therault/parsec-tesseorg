@@ -100,6 +100,7 @@ double dplasma_zlantr( dague_context_t *dague, PLASMA_enum ntype, PLASMA_enum up
 int    dplasma_zlascal(dague_context_t *dague, PLASMA_enum type, dague_complex64_t alpha, tiled_matrix_desc_t *A);
 int    dplasma_zlaset( dague_context_t *dague, PLASMA_enum uplo, dague_complex64_t alpha, dague_complex64_t beta, tiled_matrix_desc_t *A);
 int    dplasma_zlaswp( dague_context_t *dague, tiled_matrix_desc_t *A, const tiled_matrix_desc_t *IPIV, int inc);
+int    dplasma_zlatms( dague_context_t *dague, PLASMA_enum mtxtype, double cond, tiled_matrix_desc_t *A, unsigned long long int seed);
 int    dplasma_zplghe( dague_context_t *dague, double            bump, PLASMA_enum uplo, tiled_matrix_desc_t *A, unsigned long long int seed);
 int    dplasma_zplgsy( dague_context_t *dague, dague_complex64_t bump, PLASMA_enum uplo, tiled_matrix_desc_t *A, unsigned long long int seed);
 int    dplasma_zplrnt( dague_context_t *dague, int diagdom,                              tiled_matrix_desc_t *A, unsigned long long int seed);
