@@ -119,7 +119,9 @@ int dague_data_fini(dague_context_t* context)
  */
 dague_data_t* dague_data_new(void)
 {
-    dague_data_t* item = (dague_data_t*)dague_lifo_pop(&dague_data_lifo);
+    /*FIXME: lifo is always empty, nobody calls dague_data_delete*/
+    dague_data_t* item = NULL; /* (dague_data_t*)dague_lifo_pop(&dague_data_lifo); */
+
     if( NULL == item ) {
         item = OBJ_NEW(dague_data_t);
         if( NULL == item ) return NULL;

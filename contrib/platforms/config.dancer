@@ -26,6 +26,20 @@ elif [ "x$USER" = "xrhoque" ]; then
     FC="/opt/gcc-5.1/bin/gfortran"
     PLASMA_DIR="/opt/plasma-2.7.1-gcc-5.1"
 
+elif [ "x$USER" = "xdgenet" ]; then
+    HWLOC_DIR="/opt/hwloc/current"
+    if [ "x$1" = "xICC" ]; then
+        CC=icc
+        CXX=icpc
+        FC=ifort
+        PLASMA_DIR="/opt/plasma-intel"
+    else
+        CC="/opt/gcc/5.3.0/bin/gcc"
+        CXX="/opt/gcc/5.3.0/bin/c++"
+        FC="/opt/gcc/5.3.0/bin/gfortran"
+        PLASMA_DIR="/opt/plasma-gcc"
+    fi
+
 elif [ "x$USER" = "xYOURSELF" ]; then
     PLASMA_DIR="SOMEWHERE"
     USER_OPTIONS+="-DDAGUE_OPTION=ON"

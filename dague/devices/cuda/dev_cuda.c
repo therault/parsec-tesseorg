@@ -132,6 +132,10 @@ static int dague_cuda_memory_register(dague_device_t* device, dague_ddesc_t* des
     cudaError_t status;
     int rc = DAGUE_ERROR;
 
+    if (NULL == ptr) {
+        return DAGUE_SUCCESS;
+    }
+
     if (desc->memory_registration_status == MEMORY_STATUS_REGISTERED) {
         rc = DAGUE_SUCCESS;
         return rc;
@@ -143,6 +147,7 @@ static int dague_cuda_memory_register(dague_device_t* device, dague_ddesc_t* des
      * (cuda_scheduling.h), and we do not set a device since we register it for
      * all devices.
      */
+
     status = cudaHostRegister(ptr, length, cudaHostRegisterPortable );
     DAGUE_CUDA_CHECK_ERROR( "(dague_cuda_memory_register) cudaHostRegister ", status,
                             { goto restore_and_return; } );
@@ -830,6 +835,9 @@ dague_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
         if(!(flow->flow_flags)) continue;
 
         temp_loc[i] = NULL;
+        if (this_task->data[i].data_in == NULL)
+            continue;
+
         master   = this_task->data[i].data_in->original;
         gpu_elem = DAGUE_DATA_GET_COPY(master, gpu_device->super.device_index);
         this_task->data[i].data_out = gpu_elem;
@@ -1094,6 +1102,8 @@ static inline int dague_gpu_check_space_needed(gpu_device_t *gpu_device, dague_g
         if(!(flow->flow_flags)) continue;
 
         data = this_task->data[i].data_in;
+        if (data == NULL) continue;
+
         original = data->original;
         if( NULL != DAGUE_DATA_GET_COPY(original, gpu_device->super.device_index) ) {
             continue;
@@ -1435,6 +1445,7 @@ progress_stream( gpu_device_t* gpu_device,
                     assert( flow );
                     assert( flow->flow_index == i );
                     if(!flow->flow_flags) continue;
+                    if(this_task->data[i].data_in == NULL) continue;
                     if (this_task->data[i].data_out->push_task == this_task) {   /* only the task who did this PUSH can modify the status */
                         this_task->data[i].data_out->data_transfer_status = DATA_STATUS_COMPLETE_TRANSFER;
                         continue;
@@ -1603,6 +1614,7 @@ dague_gpu_kernel_push( gpu_device_t            *gpu_device,
         flow = gpu_task->flow[i];
         /* Skip CTL flows */
         if(!(flow->flow_flags)) continue;
+        if(this_task->data[i].data_in == NULL) continue;
 
         assert( NULL != dague_data_copy_get_ptr(this_task->data[i].data_in) );
 
@@ -1915,9 +1927,9 @@ dague_gpu_kernel_scheduler( dague_execution_unit_t *eu_context,
                             dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
                             gpu_task->ec->priority );
     }
-    if (out_task_submit == NULL && out_task_push == NULL) {
-        gpu_task = dague_gpu_create_W2R_task(gpu_device, eu_context);
-    }
+    /* if (out_task_submit == NULL && out_task_push == NULL) { */
+    /*     gpu_task = dague_gpu_create_W2R_task(gpu_device, eu_context); */
+    /* } */
     /* Task is ready to move the data back to main memory */
     rc = progress_stream( gpu_device,
                           &(gpu_device->exec_stream[1]),
