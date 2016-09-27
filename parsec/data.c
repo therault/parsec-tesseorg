@@ -120,6 +120,7 @@ int parsec_data_fini(parsec_context_t* context)
  */
 parsec_data_t* parsec_data_new(void)
 {
+    /*FIXME: lifo is always empty, nobody calls dague_data_delete*/
     parsec_data_t* item = (parsec_data_t*)parsec_lifo_pop(&parsec_data_lifo);
     if( NULL == item ) {
         item = OBJ_NEW(parsec_data_t);
