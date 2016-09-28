@@ -1,0 +1,16 @@
+
+
+
+
+
+dague_data_t* irregular_tile_data_new(void)
+{
+    dague_data_t* item = (dague_data_t*)dague_lifo_pop(&dague_data_lifo);
+    if( NULL == item ) {
+        item = OBJ_NEW(irregular_tile_desc_t);
+        if( NULL == item ) return NULL;
+    } else {
+        OBJ_CONSTRUCT(item, irregular_tile_desc_t);
+    }
+    return item;
+}
