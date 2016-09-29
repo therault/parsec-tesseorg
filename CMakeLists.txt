@@ -690,6 +690,8 @@ ENDIF( BUILD_PARSEC )
 #
 
 add_subdirectory(dplasma)
+add_subdirectory(summa)
+
 add_subdirectory(tests)
 
 # Configuration header
