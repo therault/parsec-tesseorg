@@ -8,8 +8,8 @@
  *
  */
 
-/* #include "dplasma.h" */
-/* #include "dplasma/lib/dplasmatypes.h" */
+#include "dplasma.h"
+#include "dplasma/lib/dplasmatypes.h"
 /* #include "data_dist/matrix/two_dim_rectangle_cyclic.h" */
 
 #include "irregular_tiled_matrix.h"
@@ -90,7 +90,7 @@ summa_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
                  const irregular_tiled_matrix_desc_t* B,
                  irregular_tiled_matrix_desc_t* C)
 {
-    two_dim_block_cyclic_t *Cdist;
+    irregular_tiled_matrix_desc_t *Cdist;
     dague_handle_t* zgemm_handle;
     dague_arena_t* arena;
     int P, Q, m, n;
@@ -104,13 +104,13 @@ summa_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
         dplasma_error("dplasma_zgemm_New", "illegal value of transB");
         return NULL /*-2*/;
     }
-    if ( !(C->dtype & two_dim_block_cyclic_type) ) {
-        dplasma_error("dplasma_zgemm_New", "illegal type of descriptor for C (must be two_dim_block_cyclic_t)");
+    if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
+        dplasma_error("dplasma_zgemm_New", "illegal type of descriptor for C (must be irregular_tiled_matrix_desc_t)");
         return NULL;
     }
 
-    P = ((two_dim_block_cyclic_t*)C)->grid.rows;
-    Q = ((two_dim_block_cyclic_t*)C)->grid.cols;
+    P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
+    Q = ((irregular_tiled_matrix_desc_t*)C)->grid.cols;
 
     m = dplasma_imax(C->mt, P);
     n = dplasma_imax(C->nt, Q);
@@ -119,16 +119,23 @@ summa_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
      * As it is used as a NULL value we must have a data_copy and a data associated
      * with it, so we can create them here.
      * Create the task distribution */
-    Cdist = (two_dim_block_cyclic_t*)malloc(sizeof(two_dim_block_cyclic_t));
+    Cdist = (irregular_tiled_matrix_desc_t*)malloc(sizeof(irregular_tiled_matrix_desc_t));
 
-    two_dim_block_cyclic_init(
-        Cdist, matrix_RealDouble, matrix_Tile,
+    unsigned int *itil = (unsigned int*)malloc((C->mt+1)*sizeof(unsigned int));
+    unsigned int *jtil = (unsigned int*)malloc((C->nt+1)*sizeof(unsigned int));
+    int k;
+    for (k = 0; k < C->mt; ++k) itil[k] = C->itiling[k];
+    for (k = 0; k < C->nt; ++k) jtil[k] = C->jtiling[k];
+
+    irregular_tiled_matrix_desc_init(
+        Cdist, tile_coll_RealDouble,
         C->super.nodes, C->super.myrank,
-        1, 1, /* Dimensions of the tiles              */
         m, n, /* Dimensions of the matrix             */
+        C->mt, C->nt,
+        itil, jtil,
         0, 0, /* Starting points (not important here) */
-        m, n, /* Dimensions of the submatrix          */
-        1, 1, P);
+        0, 0);
+
     Cdist->super.super.data_of = NULL;
     Cdist->super.super.data_of_key = NULL;
 
@@ -262,7 +269,7 @@ dplasma_zgemm_Destruct( dague_handle_t *handle )
  * @param[in,out] C
  *          Descriptor of the distributed matrix C.
  *          On exit, the data described by C are overwritten by the matrix (
- *          alpha*op( A )*op( B ) + beta*C )
+ *          alpha*op( A )*op( B ))
  *
  *******************************************************************************
  *
@@ -288,8 +295,8 @@ summa_zgemm( dague_context_t *dague,
 {
     dague_handle_t *dague_zgemm = NULL;
     int M, N, K;
-    int Am, An, Ai, Aj, Amb, Anb;
-    int Bm, Bn, Bi, Bj, Bmb, Bnb;
+    int Am, An, Ai, Aj, Amt, Ant;
+    int Bm, Bn, Bi, Bj, Bmt, Bnt;
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
@@ -301,20 +308,29 @@ summa_zgemm( dague_context_t *dague,
         return -2;
     }
 
+    unsigned int *iAtiling = A->itiling;
+    unsigned int *jAtiling = A->jtiling;
+    unsigned int *iBtiling = B->itiling;
+    unsigned int *jBtiling = B->jtiling;
+    unsigned int *iCtiling = C->itiling;
+    unsigned int *jCtiling = C->jtiling;
+
     if ( transA == PlasmaNoTrans ) {
         Am  = A->m;
         An  = A->n;
-        Amb = A->mb;
-        Anb = A->nb;
         Ai  = A->i;
         Aj  = A->j;
+        Amt = A->mt;
+        Ant = A->nt;
     } else {
         Am  = A->n;
         An  = A->m;
-        Amb = A->nb;
-        Anb = A->mb;
+        iAtiling = A->jtiling;
+        jAtiling = A->itiling;
         Ai  = A->j;
         Aj  = A->i;
+        Amt = A->nt;
+        Ant = A->mt;
     }
 
     if ( transB == PlasmaNoTrans ) {
@@ -324,21 +340,51 @@ summa_zgemm( dague_context_t *dague,
         Bnb = B->nb;
         Bi  = B->i;
         Bj  = B->j;
+        Bmt = B->mt;
+        Bnt = B->nt;
     } else {
         Bm  = B->n;
         Bn  = B->m;
-        Bmb = B->nb;
-        Bnb = B->mb;
+        iBtiling = B->jtiling;
+        jBtiling = B->itiling;
         Bi  = B->j;
         Bj  = B->i;
+        Bmt = B->nt;
+        Bnt = B->mt;
     }
 
-    if ( (Amb != C->mb) || (Anb != Bmb) || (Bnb != C->nb) ) {
-        dplasma_error("summa_zgemm", "tile sizes have to match");
-        return -101;
+    int b = 1, i;
+    unsigned int *iAsubtiling = iAtiling+Ai;
+    unsigned int *jAsubtiling = jAtiling+Aj;
+    unsigned int *iBsubtiling = iBtiling+Bi;
+    unsigned int *jBsubtiling = jBtiling+Bj;
+    unsigned int *iCsubtiling = iCtiling+C->i;
+    unsigned int *jCsubtiling = jCtiling+C->j;
+
+    if (Amt != Cmt || Ant != Bmt || Bnt != Cnt) {
+	    dplasma_error("summa_zgemm","Symbolic tilings differ");
+	    return -101;
     }
+
+    for (i = 0; i < Amt; ++i)
+	    if (iAsubtiling[i] != jCsubtiling[i])
+		    b = -102;
+
+    for (i = 0; i < Ant; ++i)
+	    if (jAsubtiling[i] != iBsubtiling[i])
+		    b = -103;
+
+    for (i = 0; i < Bnt; ++i)
+	    if (iAsubtiling[i] != jCsubtiling[i])
+		    b = -104;
+
+    if (b < -100) {
+	    dplasma_error("summa_zgemm", "Tile sizes differ");
+	    return b;
+    }
+
     if ( (Am != C->m) || (An != Bm) || (Bn != C->n) ) {
-        dplasma_error("summa_zgemm", "sizes of matrices have to match");
+        dplasma_error("summa_zgemm", "sizes of submatrices have to match");
         return -101;
     }
     if ( (Ai != C->i) || (Aj != Bi) || (Bj != C->j) ) {
@@ -346,7 +392,7 @@ summa_zgemm( dague_context_t *dague,
         return -101;
     }
 
-    if ( !(C->dtype & irregular_tiled_matrix_type) ) {
+    if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
         dplasma_error("summa_zgemm", "illegal type of descriptor for C");
         return -3.;
     }

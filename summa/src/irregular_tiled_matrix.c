@@ -157,34 +157,38 @@ static uint32_t tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 
 static int tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key_t key, char * buffer, uint32_t buffer_size)
 {
+	(void)key;
+	(void)buffer;
+	(void)buffer_size;
+
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 
 
 }
 
 
-void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
-                       enum matrix_type mtype,
-                       unsigned int nodes, unsigned int myrank,
-                       unsigned int lm, unsigned int ln,
-                       unsigned int lmt, unsigned int lnt,
-                       unsigned int* itiling, unsigned int* jtiling,
-                       unsigned int i, unsigned int j)
+void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
+                                      enum tile_coll_type mtype,
+                                      unsigned int nodes, unsigned int myrank,
+                                      unsigned int lm, unsigned int ln,
+                                      unsigned int lmt, unsigned int lnt,
+                                      unsigned int* itiling, unsigned int* jtiling,
+                                      unsigned int i, unsigned int j,
+                                      unsigned int mt, unsigned int nt)
 {
-	int i, j;
 	dague_ddesc_t *d = (dague_ddesc_t*)ddesc;
 	dague_ddesc_init(d, nodes, myrank);
 
 
-	d->super.rank_of     = tiled_matrix_rank_of;
-	d->super.rank_of_key = tiled_matrix_rank_of_key;
-	d->super.vpid_of     = tiled_matrix_vpid_of;
-	d->super.vpid_of_key = tiled_matrix_vpid_of_key;
-	d->super.data_of     = tiled_matrix_data_of;
-	d->super.data_of_key = tiled_matrix_data_of_key;
+	d->rank_of     = tiled_matrix_rank_of;
+	d->rank_of_key = tiled_matrix_rank_of_key;
+	d->vpid_of     = tiled_matrix_vpid_of;
+	d->vpid_of_key = tiled_matrix_vpid_of_key;
+	d->data_of     = tiled_matrix_data_of;
+	d->data_of_key = tiled_matrix_data_of_key;
 
 #if defined(DAGUE_PROF_TRACE)
-	d->super.key_to_string = tiled_matrix_key_to_string;
+	d->key_to_string = tiled_matrix_key_to_string;
 #endif
 
 	ddesc->mtype = mtype;
@@ -192,6 +196,8 @@ void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
 	ddesc->ln = ln;
 	ddesc->lmt = lmt;
 	ddesc->lnt = lnt;
+	ddesc->mt = mt;
+	ddesc->nt = nt;
 	/* lmt+1, lnt+1 sized arrays */
 	ddesc->itiling = itiling;
 	ddesc->jtiling = jtiling;
@@ -204,34 +210,59 @@ void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
 	ddesc->nb_local_tiles = 0;
 }
 
-void tiled_matrix_destroy(irregular_tiled_matrix_desc_t* ddesc)
+void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
 {
+	(void)ddesc;
+
+}
+
+void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc)
+{
+	(void)ddesc;
+
+
 
 
 }
 
-void tiled_matrix_build(irregular_tiled_matrix_t *ddesc)
+
+void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
 {
-
-
-
-
-
-}
-
-
-void tiled_matrix_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
-{
-
-
+	(void)actual_data;
+	(void)i;
+	(void)j;
+	(void)nb;
+	(void)mb;
+	(void)vpid;
+	(void)rank;
 
 	irregular_tile_data_t *T = get_tile(ddesc, i, j);
 	if (NULL == T) {
-		irregular_
 
 
-			}
+	}
 
 
 
+}
+
+int
+summa_aux_getGEMMLookahead( irregular_tiled_matrix_desc_t *ddesc )
+{
+    /**
+     * Assume that the number of threads per node is constant, and compute the
+     * look ahead based on the global information to get the same one on all
+     * nodes.
+     */
+    int nbunits = vpmap_get_nb_total_threads() * ddesc->super.nodes;
+    double alpha =  3. * (double)nbunits / ( ddesc->mt * ddesc->nt );
+
+    if ( ddesc->super.nodes == 1 ) {
+        /* No look ahaead */
+        return dplasma_imax( ddesc->mt, ddesc->nt );
+    }
+    else {
+        /* Look ahead of at least 2, and that provides 3 tiles per computational units */
+        return dplasma_imax( ceil( alpha ), 2 );
+    }
 }

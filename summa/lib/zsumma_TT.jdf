@@ -8,10 +8,9 @@ extern "C" %{
  * $COPYRIGHT
  *
  */
-#include "dplasma/lib/dplasmajdf.h"
-#include "dplasma/lib/dplasmaaux.h"
-#include "data_dist/matrix/matrix.h"
-#include "data_dist/matrix/two_dim_rectangle_cyclic.h"
+#include "summa/lib/dplasmajdf.h"
+#include "summa/lib/dplasmaaux.h"
+#include "irregular_tiled_matrix.h"
 #include <math.h>
 
 #if defined(DAGUE_HAVE_CUDA)
@@ -29,19 +28,19 @@ transB [type = int]
 alpha  [type = dague_complex64_t]
 beta   [type = dague_complex64_t]
 
-dataA  [type = "irregular_tile_data_t *"]
+dataA  [type = "dague_ddesc_t *"]
 descA  [type = "irregular_tiled_matrix_desc_t" hidden = on default = "*((irregular_tiled_matrix_desc_t*)dataA)"]
-dataB  [type = "irregular_tile_data_t *"]
+dataB  [type = "dague_ddesc_t *"]
 descB  [type = "irregular_tiled_matrix_desc_t" hidden = on default = "*((irregular_tiled_matrix_desc_t*)dataB)"]
-dataC  [type = "irregular_tile_data_t *"]
+dataC  [type = "dague_ddesc_t *"]
 descC  [type = "irregular_tiled_matrix_desc_t" hidden = on default = "*((irregular_tiled_matrix_desc_t*)dataC)"]
-Cdist  [type = "irregular_tile_data_t *"]
+Cdist  [type = "dague_ddesc_t *"]
 
-P      [type = "int" hidden=on default="((two_dim_block_cyclic_t*)dataC)->grid.rows"]
-Q      [type = "int" hidden=on default="((two_dim_block_cyclic_t*)dataC)->grid.cols"]
+P      [type = "int" hidden=on default="descC.grid.rows"]
+Q      [type = "int" hidden=on default="descC.grid.cols"]
 /* Look ahead on both dimensions */
-lookP  [type = "int" hidden=on default="dplasma_aux_getGEMMLookahead(&descC)"]
-lookQ  [type = "int" hidden=on default="dplasma_aux_getGEMMLookahead(&descC)"]
+lookP  [type = "int" hidden=on default="summa_aux_getGEMMLookahead(&descC)"]
+lookQ  [type = "int" hidden=on default="summa_aux_getGEMMLookahead(&descC)"]
 
 /**************************************************
  *                       READ_A                   *
@@ -157,12 +156,16 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k == 0) ? beta : 1.0;
 #endif
-    int tempmm = m == descC.mt-1 ? descC.m - m * descC.mb : descC.mb;
-    int tempnn = n == descC.nt-1 ? descC.n - n * descC.nb : descC.nb;
-    int tempkk = k == descA.nt-1 ? descA.m - k * descA.mb : descA.mb;
-    int ldam = BLKLDD(descA, m);
-    int ldbn = BLKLDD(descB, n);
-    int ldcm = BLKLDD(descC, m);
+
+    irregular_tile_data_t *tA = (irregular_tile_data_t*)gA->original;
+    irregular_tile_data_t *tB = (irregular_tile_data_t*)gB->original;
+    irregular_tile_data_t *tC = (irregular_tile_data_t*)gC->original;
+    int tempmm = m == descC.mt-1 ? descC.m - m * tC->mb : tC->mb;
+    int tempnn = n == descC.nt-1 ? descC.n - n * tC->nb : tC->nb;
+    int tempkk = k == descA.nt-1 ? descA.m - k * tA->mb : tA->mb;
+    int ldam = SUMMABLKLDD(*tA, m);
+    int ldbn = SUMMABLKLDD(*tB, n);
+    int ldcm = SUMMABLKLDD(*tC, m);
 
     cublasStatus_t status;
     cublasSetKernelStream( dague_body.stream );
@@ -180,12 +183,15 @@ END
 BODY
 {
     dague_complex64_t lbeta = (k == 0) ? beta : (dague_complex64_t)1.0;
-    int tempmm = m == descC.mt-1 ? descC.m - m * descC.mb : descC.mb;
-    int tempnn = n == descC.nt-1 ? descC.n - n * descC.nb : descC.nb;
-    int tempkk = k == descA.mt-1 ? descA.m - k * descA.mb : descA.mb;
-    int ldak = BLKLDD(descA, k);
-    int ldbn = BLKLDD(descB, n);
-    int ldcm = BLKLDD(descC, m);
+    irregular_tile_data_t *tA = (irregular_tile_data_t*)gA->original;
+    irregular_tile_data_t *tB = (irregular_tile_data_t*)gB->original;
+    irregular_tile_data_t *tC = (irregular_tile_data_t*)gC->original;
+    int tempmm = m == descC.mt-1 ? descC.m - m * tC->mb : tC->mb;
+    int tempnn = n == descC.nt-1 ? descC.n - n * tC->nb : tC->nb;
+    int tempkk = k == descA.mt-1 ? descA.m - k * tA->mb : tA->mb;
+    int ldak = SUMMABLKLDD(*tA, k);
+    int ldbn = SUMMABLKLDD(*tB, n);
+    int ldcm = SUMMABLKLDD(*tC, m);
 
 #if !defined(DAGUE_DRY_RUN)
     CORE_zgemm(transA, transB,

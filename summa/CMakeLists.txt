@@ -8,7 +8,20 @@ endif(NOT BUILD_SUMMA)
 
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testing/")
+message("-- ${CMAKE_CURRENT_SOURCE_DIR}/testing -- ${CMAKE_MODULE_PATH} --")
 
+set(DPLASMA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../dplasma)
+set(DPLASMA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/../dplasma)
+
+set(DAGUE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(DAGUE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/..)
+
+include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
+include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/lib )
+include_directories( ${DPLASMA_BINARY_DIR}/include )
+include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
+include_directories( ${DAGUE_SOURCE_DIR}/data_dist/matrix )
 
 option(SUMMA_WITH_RECURSIVE
   "Enable recursive kernels to be called when available" OFF)
@@ -25,6 +38,7 @@ set(EXTRA_SOURCES
   )
 
 include(RulesPrecisions)
+include(RulesTestings)
 include(RulesJDF)
 include(AddDocumentedFiles)
 
@@ -50,7 +64,7 @@ jdf_rules(generated_files "${generated_jdf}")
 message( "--- ${SUMMA_JDF} --- ${DPLASMA_PRECISIONS} --- ${generated_jdf} --- ${generated_files} ---")
 
 set(SUMMA_WRAPPER_SRC
-  zgemm_wrapper.c
+  lib/zgemm_wrapper.c
   )
 
 precisions_rules_py(generated_wrappers
@@ -81,13 +95,8 @@ install(FILES
   DESTINATION include)
 
 
-
-
-
 set(TESTING_SUMMA_SRC
-  testing/testing_summa.c
+  testing/testing_zsumma.c
   )
-
-include(RulesTestings.cmake)
 
 testings_addexec(targets "${DPLASMA_PRECISIONS}" "${TESTING_SUMMA_SRC}")
