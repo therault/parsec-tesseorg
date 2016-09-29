@@ -688,6 +688,8 @@ ENDIF( BUILD_DAGUE )
 SET( PARSEC_ALL_SRCS "" CACHE INTERNAL "List of sources with internal documentation" )
 
 add_subdirectory(dplasma)
+add_subdirectory(summa)
+
 add_subdirectory(tests)
 
 # Configuration header

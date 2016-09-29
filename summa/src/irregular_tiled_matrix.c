@@ -163,15 +163,16 @@ static int tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key_t key, ch
 }
 
 
-void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
-                       enum matrix_type mtype,
-                       unsigned int nodes, unsigned int myrank,
-                       unsigned int lm, unsigned int ln,
-                       unsigned int lmt, unsigned int lnt,
-                       unsigned int* itiling, unsigned int* jtiling,
-                       unsigned int i, unsigned int j)
+void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
+                                      enum tile_coll_type mtype,
+                                      unsigned int nodes, unsigned int myrank,
+                                      unsigned int lm, unsigned int ln,
+                                      unsigned int lmt, unsigned int lnt,
+                                      unsigned int* itiling, unsigned int* jtiling,
+                                      unsigned int i, unsigned int j,
+                                      unsigned int mt, unsigned int nt)
 {
-	int i, j;
+	int ii, jj;
 	dague_ddesc_t *d = (dague_ddesc_t*)ddesc;
 	dague_ddesc_init(d, nodes, myrank);
 
@@ -192,6 +193,8 @@ void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
 	ddesc->ln = ln;
 	ddesc->lmt = lmt;
 	ddesc->lnt = lnt;
+	ddesc->mt = mt;
+	ddesc->nt = nt;
 	/* lmt+1, lnt+1 sized arrays */
 	ddesc->itiling = itiling;
 	ddesc->jtiling = jtiling;
@@ -204,13 +207,13 @@ void tiled_matrix_init(irregular_tiled_matrix_desc_t* ddesc,
 	ddesc->nb_local_tiles = 0;
 }
 
-void tiled_matrix_destroy(irregular_tiled_matrix_desc_t* ddesc)
+void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
 {
 
 
 }
 
-void tiled_matrix_build(irregular_tiled_matrix_t *ddesc)
+void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc)
 {
 
 
@@ -220,7 +223,7 @@ void tiled_matrix_build(irregular_tiled_matrix_t *ddesc)
 }
 
 
-void tiled_matrix_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
+void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
 {
 
 
@@ -234,4 +237,25 @@ void tiled_matrix_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_da
 
 
 
+}
+
+int
+summa_aux_getGEMMLookahead( irregular_tiled_matrix_desc_t *ddesc )
+{
+    /**
+     * Assume that the number of threads per node is constant, and compute the
+     * look ahead based on the global information to get the same one on all
+     * nodes.
+     */
+    int nbunits = vpmap_get_nb_total_threads() * ddesc->super.nodes;
+    double alpha =  3. * (double)nbunits / ( ddesc->mt * ddesc->nt );
+
+    if ( ddesc->super.nodes == 1 ) {
+        /* No look ahaead */
+        return dplasma_imax( ddesc->mt, ddesc->nt );
+    }
+    else {
+        /* Look ahead of at least 2, and that provides 3 tiles per computational units */
+        return dplasma_imax( ceil( alpha ), 2 );
+    }
 }
