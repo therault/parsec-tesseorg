@@ -157,6 +157,10 @@ static uint32_t tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 
 static int tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key_t key, char * buffer, uint32_t buffer_size)
 {
+	(void)key;
+	(void)buffer;
+	(void)buffer_size;
+
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 
 
@@ -172,20 +176,19 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                                       unsigned int i, unsigned int j,
                                       unsigned int mt, unsigned int nt)
 {
-	int ii, jj;
 	dague_ddesc_t *d = (dague_ddesc_t*)ddesc;
 	dague_ddesc_init(d, nodes, myrank);
 
 
-	d->super.rank_of     = tiled_matrix_rank_of;
-	d->super.rank_of_key = tiled_matrix_rank_of_key;
-	d->super.vpid_of     = tiled_matrix_vpid_of;
-	d->super.vpid_of_key = tiled_matrix_vpid_of_key;
-	d->super.data_of     = tiled_matrix_data_of;
-	d->super.data_of_key = tiled_matrix_data_of_key;
+	d->rank_of     = tiled_matrix_rank_of;
+	d->rank_of_key = tiled_matrix_rank_of_key;
+	d->vpid_of     = tiled_matrix_vpid_of;
+	d->vpid_of_key = tiled_matrix_vpid_of_key;
+	d->data_of     = tiled_matrix_data_of;
+	d->data_of_key = tiled_matrix_data_of_key;
 
 #if defined(DAGUE_PROF_TRACE)
-	d->super.key_to_string = tiled_matrix_key_to_string;
+	d->key_to_string = tiled_matrix_key_to_string;
 #endif
 
 	ddesc->mtype = mtype;
@@ -209,13 +212,13 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 
 void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
 {
-
+	(void)ddesc;
 
 }
 
 void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc)
 {
-
+	(void)ddesc;
 
 
 
@@ -225,15 +228,19 @@ void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc)
 
 void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
 {
-
-
+	(void)actual_data;
+	(void)i;
+	(void)j;
+	(void)nb;
+	(void)mb;
+	(void)vpid;
+	(void)rank;
 
 	irregular_tile_data_t *T = get_tile(ddesc, i, j);
 	if (NULL == T) {
-		irregular_
 
 
-			}
+	}
 
 
 
