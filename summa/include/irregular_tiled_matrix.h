@@ -123,11 +123,17 @@ void irregular_tiled_matrix_desc_init(
 	irregular_tiled_matrix_desc_t* ddesc,
 	enum tile_coll_type mtype,
 	unsigned int nodes, unsigned int myrank,
-	unsigned int lm, unsigned int ln, /* global number of rows/cols */
-	unsigned int lmt, unsigned int lnt, /* global number of tiles */
-	unsigned int*itiling, unsigned int* jtiling, /* tiling of the submatrix */
+	/* global number of rows/cols */
+	unsigned int lm, unsigned int ln,
+	/* global number of tiles */
+	unsigned int lmt, unsigned int lnt,
+	/* tiling of the submatrix */
+	unsigned int*itiling, unsigned int* jtiling,
+	/* first tile of the submatrix */
 	unsigned int i, unsigned int j,
-	unsigned int mt, unsigned int nt); /* first tile of the submatrix */
+	/* number of tiles of the submatrix */
+	unsigned int mt, unsigned int nt,
+	unsigned int P);
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */
@@ -139,7 +145,7 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 
 void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc);
 
-int summa_aux_getGEMMLookahead( irregular_tiled_matrix_desc_t *ddesc );
+int summa_aux_getSUMMALookahead( irregular_tiled_matrix_desc_t *ddesc );
 
 #  if 0
 /* Alternative */

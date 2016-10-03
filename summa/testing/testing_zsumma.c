@@ -10,6 +10,12 @@
 #include "common.h"
 #include "irregular_tiled_matrix.h"
 
+
+#define FMULS_SUMMA(__m, __n, __k) ((double)(__m) * (double)(__n) * (double)(__k))
+#define FADDS_SUMMA(__m, __n, __k) ((double)(__m) * (double)(__n) * (double)(__k))
+#define FLOPS_ZSUMMA(__m, __n, __k) (6. * FMULS_SUMMA((__m), (__n), (__k)) + 2.0 * FADDS_SUMMA((__m), (__n), (__k)) )
+
+
 static int check_solution( dague_context_t *dague, int loud,
                            PLASMA_enum transA, PLASMA_enum transB,
                            dague_complex64_t alpha, int Am, int An, int Aseed,
@@ -28,11 +34,9 @@ int main(int argc, char ** argv)
     int tA = PlasmaNoTrans;
     int tB = PlasmaNoTrans;
     dague_complex64_t alpha =  0.51;
-    dague_complex64_t beta  = -0.42;
 
 #if defined(PRECISION_z) || defined(PRECISION_c)
     alpha -= I * 0.32;
-    beta  += I * 0.21;
 #endif
 
     /* Set defaults for non argv iparams */
@@ -43,30 +47,86 @@ int main(int argc, char ** argv)
 #endif
     /* Initialize DAGuE */
     dague = setup_dague(argc, argv, iparam);
-    PASTE_CODE_IPARAM_LOCALS(iparam);
 
-    PASTE_CODE_FLOPS(FLOPS_ZGEMM, ((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K));
+    int rank  = iparam[IPARAM_RANK];
+    int nodes = iparam[IPARAM_NNODES];
+    int cores = iparam[IPARAM_NCORES];
+    int gpus  = iparam[IPARAM_NGPUS];
+    int P     = iparam[IPARAM_P];
+    int Q     = iparam[IPARAM_Q];
+    int M     = iparam[IPARAM_M];
+    int N     = iparam[IPARAM_N];
+    int K     = iparam[IPARAM_K];
+    int NRHS  = K;
+    int LDA   = max(M, iparam[IPARAM_LDA]);
+    int LDB   = max(N, iparam[IPARAM_LDB]);
+    int LDC   = max(K, iparam[IPARAM_LDC]);
+    int IB    = iparam[IPARAM_IB];
+    int MB    = iparam[IPARAM_MB];
+    int NB    = iparam[IPARAM_NB];
+    int SMB   = iparam[IPARAM_SMB];
+    int SNB   = iparam[IPARAM_SNB];
+    int HMB   = iparam[IPARAM_HMB];
+    int HNB   = iparam[IPARAM_HNB];
+    int MT    = (M%MB==0) ? (M/MB) : (M/MB+1);
+    int NT    = (N%NB==0) ? (N/NB) : (N/NB+1);
+    int KT    = (K%MB==0) ? (K/MB) : (K/MB+1);
+    int check = iparam[IPARAM_CHECK];
+    int check_inv = iparam[IPARAM_CHECKINV];
+    int loud  = iparam[IPARAM_VERBOSE];
+    int scheduler = iparam[IPARAM_SCHEDULER];
+    int random_seed = iparam[IPARAM_RANDOM_SEED];
+    int matrix_init = iparam[IPARAM_MATRIX_INIT];
+    int butterfly_level = iparam[IPARAM_BUT_LEVEL];
+    int async = iparam[IPARAM_ASYNC];
+    (void)cores;(void)gpus;(void)P;(void)Q;(void)M;(void)N;(void)K;(void)NRHS; \
+    (void)LDA;(void)LDB;(void)LDC;(void)IB;(void)MB;(void)NB;(void)MT;(void)NT;(void)KT; \
+    (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async; \
+    (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;
+
+    PASTE_CODE_FLOPS(FLOPS_ZSUMMA, ((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K));
 
     LDA = max(LDA, max(M, K));
     LDB = max(LDB, max(K, N));
     LDC = max(LDC, M);
 
-    PASTE_CODE_ALLOCATE_MATRIX(ddescC, 1,
-        irregular_tiled_matrix_desc, (&ddescC, matrix_ComplexDouble, matrix_Tile,
-                               nodes, rank, MB, NB, LDC, N, 0, 0,
-                               M, N, SMB, SNB, P));
+    unsigned int *iAtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
+    unsigned int *jAtiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+    unsigned int *iBtiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+    unsigned int *jBtiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+
+    int i;
+    for (i = 0; i < MT; ++i) iAtiling[i] = MB;
+    if (M%MB != 0) iAtiling[MT-1] = M%MB;
+    int KB = 1+(K-1)/KT;
+    for (i = 0; i < KT; ++i) jAtiling[i] = iBtiling[i] = KB;
+    if (K%KB != 0) jAtiling[KT-1] = iBtiling[KT-1] = K%KB;
+    for (i = 0; i < NT; ++i) jBtiling[i] = NB;
+    if (N%NB != 0) jBtiling[NT-1] = N%NB;
+
+
+    irregular_tiled_matrix_desc_t ddescC;
+    irregular_tiled_matrix_desc_init(&ddescC, tile_coll_ComplexDouble, tile_coll_Tile,
+                                     nodes, rank, M, N, MT, NT,
+                                     iAtiling, jBtiling,
+                                     0, 0, 0, 0, P);
 
     /* initializing matrix structure */
     if(!check)
     {
-        PASTE_CODE_ALLOCATE_MATRIX(ddescA, 1,
-            irregular_tiled_matrix_desc, (&ddescA, matrix_ComplexDouble, matrix_Tile,
-                                   nodes, rank, MB, NB, LDA, K, 0, 0,
-                                   M, K, SMB, SNB, P));
-        PASTE_CODE_ALLOCATE_MATRIX(ddescB, 1,
-            irregular_tiled_matrix_desc, (&ddescB, matrix_ComplexDouble, matrix_Tile,
-                                   nodes, rank, MB, NB, LDB, N, 0, 0,
-                                   K, N, SMB, SNB, P));
+	    irregular_tiled_matrix_desc_t ddescA;
+	    irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble, tile_coll_Tile,
+	                                     nodes, rank, M, K, MT, KT,
+	                                     iAtiling, jAtiling,
+	                                     0, 0, 0, 0, P);
+
+	    irregular_tiled_matrix_desc_t ddescB;
+	    irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble, tile_coll_Tile,
+	                                     nodes, rank, K, N, KT, NT,
+	                                     iBtiling, jBtiling,
+	                                     0, 0, 0, 0, P);
+
+
 
         /* matrix generation */
         if(loud > 2) printf("+++ Generate matrices ... ");
