@@ -48,10 +48,10 @@ set(generated_jdf "")
 add_documented_files(PARSEC_ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}" ${EXTRA_SOURCES})
 
 set(SUMMA_JDF
-  lib/zgemm_TT.jdf
-  lib/zgemm_TN.jdf
-  lib/zgemm_NN.jdf
-  lib/zgemm_NT.jdf
+  lib/zsumma_TT.jdf
+  lib/zsumma_TN.jdf
+  lib/zsumma_NN.jdf
+  lib/zsumma_NT.jdf
   )
 
 
@@ -64,7 +64,8 @@ jdf_rules(generated_files "${generated_jdf}")
 message( "--- ${SUMMA_JDF} --- ${DPLASMA_PRECISIONS} --- ${generated_jdf} --- ${generated_files} ---")
 
 set(SUMMA_WRAPPER_SRC
-  lib/zgemm_wrapper.c
+  lib/zsumma_wrapper.c
+  lib/tiled_zplrnt_wrapper.c
   )
 
 precisions_rules_py(generated_wrappers
@@ -98,5 +99,6 @@ install(FILES
 set(TESTING_SUMMA_SRC
   testing/testing_zsumma.c
   )
+
 
 testings_addexec(targets "${DPLASMA_PRECISIONS}" "${TESTING_SUMMA_SRC}")
