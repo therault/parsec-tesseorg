@@ -40,9 +40,9 @@ enum criteria_e {
  * No macro with the name max or min is acceptable as there is
  * no way to correctly define them without borderline effects.
  */
-static inline int dplasma_imax(int a, int b) { return (a > b) ? a : b; };
-static inline int dplasma_imin(int a, int b) { return (a < b) ? a : b; };
-static inline int dplasma_iceil(int a, int b) { return (a + b - 1) / b; };
+static inline int summa_imax(int a, int b) { return (a > b) ? a : b; };
+static inline int summa_imin(int a, int b) { return (a < b) ? a : b; };
+static inline int summa_iceil(int a, int b) { return (a + b - 1) / b; };
 
 /* sqrt function */
 #define dplasma_zsqrt csqrt
