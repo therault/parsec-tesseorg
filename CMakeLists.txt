@@ -745,6 +745,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/constants.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_config_bottom.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/data_distribution.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_description_structures.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/datatype.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/profiling.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/data.h

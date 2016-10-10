@@ -31,19 +31,19 @@ static int check_solution( dague_context_t *dague, int loud,
 #define RndF_Mul 5.4210108624275222e-20f
 #define RndD_Mul 5.4210108624275222e-20
 
-static void init_tile(irregular_tile_data_t *t, unsigned long long int *seed)
+static void* init_tile(int mb, int nb, unsigned long long int *seed)
 {
     unsigned long long int ran = *seed;
     int i, j;
-    dague_complex64_t *array = (dague_complex64_t*)malloc(sizeof(dague_complex64_t)*t->mb*t->nb);
+    dague_complex64_t *array = (dague_complex64_t*)malloc(sizeof(dague_complex64_t)*mb*nb);
 
-    for (i = 0; i < t->mb; ++i)
-        for (j = 0; j < t->nb; ++j) {
-            array[i*t->mb+j] = ran;
+    for (i = 0; i < mb; ++i)
+        for (j = 0; j < nb; ++j) {
+            array[i*mb+j] = ran;
             ran = Rnd64_A * ran + Rnd64_C;
         }
     *seed = ran;
-    t->data = array;
+    return array;
 }
 
 int main(int argc, char ** argv)
@@ -112,60 +112,75 @@ int main(int argc, char ** argv)
     LDB = max(LDB, max(K, N));
     LDC = max(LDC, M);
 
-    unsigned int *iAtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
-    unsigned int *jAtiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-    unsigned int *iBtiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-    unsigned int *jBtiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+    unsigned int *Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
+    unsigned int *Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+    unsigned int *Ntiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
 
     int i, j, k, l;
-    for (i = 0; i < MT; ++i) iAtiling[i] = MB;
-    if (M%MB != 0) iAtiling[MT-1] = M%MB;
+    for (i = 0; i < MT; ++i) Mtiling[i] = MB;
+    if (M%MB != 0) Mtiling[MT-1] = M%MB;
     int KB = 1+(K-1)/KT;
-    for (i = 0; i < KT; ++i) jAtiling[i] = iBtiling[i] = KB;
-    if (K%KB != 0) jAtiling[KT-1] = iBtiling[KT-1] = K%KB;
-    for (i = 0; i < NT; ++i) jBtiling[i] = NB;
-    if (N%NB != 0) jBtiling[NT-1] = N%NB;
+    for (i = 0; i < KT; ++i) Ktiling[i] = KB;
+    if (K%KB != 0) Ktiling[KT-1] = K%KB;
+    for (i = 0; i < NT; ++i) Ntiling[i] = NB;
+    if (N%NB != 0) Ntiling[NT-1] = N%NB;
 
+
+    fprintf(stdout, "(MT = %d, MB = %d) x (KT = %d, KB = %d) x (NT = %d, NB = %d)\n", MT, MB, KT, KB, NT, NB);
+    fprintf(stdout, "M tiling:");
+    for (i = 0; i < MT; ++i) fprintf(stdout, " %d", Mtiling[i]);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "K tiling:");
+    for (i = 0; i < KT; ++i) fprintf(stdout, " %d", Ktiling[i]);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "N tiling:");
+    for (i = 0; i < NT; ++i) fprintf(stdout, " %d", Ntiling[i]);
+    fprintf(stdout, "\n");
 
     irregular_tiled_matrix_desc_t ddescC;
     irregular_tiled_matrix_desc_init(&ddescC, tile_coll_ComplexDouble,
                                      nodes, rank, M, N, MT, NT,
-                                     iAtiling, jBtiling,
+                                     Mtiling, Ntiling,
                                      0, 0, 0, 0, P);
 
+    fprintf(stdout, "check = %d\n", check);
     /* initializing matrix structure */
     if(!check) {
 	    irregular_tiled_matrix_desc_t ddescA;
 	    irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
                                          nodes, rank, M, K, MT, KT,
-	                                     iAtiling, jAtiling,
+	                                     Mtiling, Ktiling,
                                          0, 0, 0, 0, P);
 
         irregular_tiled_matrix_desc_t ddescB;
         irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble,
                                          nodes, rank, K, N, KT, NT,
-                                         iBtiling, jBtiling,
+                                         Ktiling, Ntiling,
                                          0, 0, 0, 0, P);
 
-
-
         /* matrix generation */
-        if(loud > 2) printf("+++ Generate matrices ... ");
+        void *ptr;
+        if(1 || loud > 2) printf("+++ Generate matrices ... ");
         for (i = ddescA.grid.rrank*ddescA.grid.strows; i < MT; i+=ddescA.grid.rows*ddescA.grid.strows)
 	        for (k = 0; k < ddescA.grid.stcols; ++k)
 		        for (j = ddescA.grid.crank*ddescA.grid.stcols; j < KT; j+=ddescA.grid.cols*ddescA.grid.stcols)
-			        for (l = 0; l < ddescA.grid.stcols; ++l)
-				        init_tile(ddescA.data_map[(k+i+ddescA.i)*ddescA.lmt+(l+j+ddescA.j)], &Aseed);
+			        for (l = 0; l < ddescA.grid.stcols; ++l) {
+				        ptr = init_tile(Mtiling[i+k], Ktiling[j+l], &Aseed);
+				        irregular_tiled_matrix_desc_set_data(&ddescA, ptr, i+k, j+l, Mtiling[i+k], Ktiling[j+l], 0, rank);
+			        }
+
 
         for (i = ddescB.grid.rrank*ddescB.grid.strows; i < KT; i+=ddescB.grid.rows*ddescB.grid.strows)
 	        for (k = 0; k < ddescB.grid.stcols; ++k)
 		        for (j = ddescB.grid.crank*ddescB.grid.stcols; j < NT; j+=ddescB.grid.cols*ddescB.grid.stcols)
-			        for (l = 0; l < ddescB.grid.stcols; ++l)
-				        init_tile(ddescB.data_map[(k+i+ddescB.i)*ddescB.lmt+(l+j+ddescB.j)], &Bseed);
+			        for (l = 0; l < ddescB.grid.stcols; ++l) {
+				        ptr = init_tile(Ktiling[i+k], Ntiling[j+l], &Bseed);
+				        irregular_tiled_matrix_desc_set_data(&ddescB, ptr, i+k, j+l, Ktiling[i+k], Ntiling[j+l], 0, rank);
+			        }
 
         /* summa_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescA, Aseed); */
         /* summa_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescB, Bseed); */
-        if(loud > 2) printf("Done\n");
+        if(1 || loud > 2) printf("Done\n");
 
         /* Create DAGuE */
         SYNC_TIME_START();
@@ -180,7 +195,7 @@ int main(int argc, char ** argv)
         /* lets rock! */
         PASTE_CODE_PROGRESS_KERNEL(dague, zsumma);
 
-        dplasma_zgemm_Destruct( DAGUE_zsumma );
+        summa_zsumma_Destruct( DAGUE_zsumma );
 
         /* dague_data_free(ddescA.mat); */
         irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
