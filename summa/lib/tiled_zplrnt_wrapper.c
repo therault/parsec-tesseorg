@@ -9,7 +9,7 @@
  */
 
 #include "dplasma.h"
-#include "summa/lib/dplasmatypes.h"
+#include "dplasma/lib/dplasmatypes.h"
 
 #include "map.h"
 
@@ -21,7 +21,7 @@ typedef struct zplrnt_args_s zplrnt_args_t;
 
 static int
 summa_zplrnt_operator( dague_execution_unit_t *eu,
-                       const tiled_matrix_desc_t *descA,
+                       const irregular_tiled_matrix_desc_t *descA,
                        void *_A,
                        PLASMA_enum uplo, int m, int n,
                        void *op_data )
@@ -35,6 +35,15 @@ summa_zplrnt_operator( dague_execution_unit_t *eu,
     tempmm = ((m)==((descA->mt)-1)) ? ((descA->m)-(m*(descA->mb))) : (descA->mb);
     tempnn = ((n)==((descA->nt)-1)) ? ((descA->n)-(n*(descA->nb))) : (descA->nb);
     ldam   = BLKLDD( *descA, m );
+
+    int i, j;
+    for (i = 0; i < descA->mt; ++i) {
+	    for (j = 0; j <descA->nt; ++j) {
+		    irregular_tile_data_t *t = descA->data_map[(i+descA->i)*desc->lmt+(j+descA->j)];
+
+
+	    }
+    }
 
     CORE_zplrnt(
         tempmm, tempnn, A, ldam,
@@ -106,16 +115,16 @@ summa_zplrnt_operator( dague_execution_unit_t *eu,
  *
  ******************************************************************************/
 dague_handle_t*
-dplasma_zplrnt_New( int diagdom,
-                    tiled_matrix_desc_t *A,
-                    unsigned long long int seed)
+summa_zplrnt_New( int diagdom,
+                  tiled_matrix_desc_t *A,
+                  unsigned long long int seed)
 {
     zplrnt_args_t *params = (zplrnt_args_t*)malloc(sizeof(zplrnt_args_t));
 
     params->diagdom = diagdom;
     params->seed    = seed;
 
-    return dplasma_map_New( PlasmaUpperLower, A, dplasma_zplrnt_operator, params );
+    return summa_map_New( PlasmaUpperLower, A, summa_zplrnt_operator, params );
 }
 
 /**
@@ -139,9 +148,9 @@ dplasma_zplrnt_New( int diagdom,
  *
  ******************************************************************************/
 void
-dplasma_zplrnt_Destruct( dague_handle_t *handle )
+summa_zplrnt_Destruct( dague_handle_t *handle )
 {
-    dplasma_map_Destruct(handle);
+    summa_map_Destruct(handle);
 }
 
 /**
@@ -186,18 +195,18 @@ dplasma_zplrnt_Destruct( dague_handle_t *handle )
  *
  ******************************************************************************/
 int
-dplasma_zplrnt( dague_context_t *dague,
+summa_zplrnt( dague_context_t *dague,
                 int diagdom,
                 tiled_matrix_desc_t *A,
                 unsigned long long int seed)
 {
     dague_handle_t *dague_zplrnt = NULL;
 
-    dague_zplrnt = dplasma_zplrnt_New(diagdom, A, seed);
+    dague_zplrnt = summa_zplrnt_New(diagdom, A, seed);
 
     dague_enqueue(dague, (dague_handle_t*)dague_zplrnt);
     dplasma_progress(dague);
 
-    dplasma_zplrnt_Destruct( dague_zplrnt );
+    summa_zplrnt_Destruct( dague_zplrnt );
     return 0;
 }

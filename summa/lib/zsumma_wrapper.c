@@ -24,7 +24,7 @@
  *
  * @ingroup summa_dsumma
  *
- *  dplasma_zsumma_New - Generates the handle that performs one of the following
+ *  summa_zsumma_New - Generates the handle that performs one of the following
  *  matrix-matrix operations. WARNING: The computations are not done by this call.
  *
  *    \f[ C = \alpha [op( A )\times op( B )],
@@ -71,15 +71,15 @@
  *          \retval NULL if incorrect parameters are given.
  *          \retval The dague handle describing the operation that can be
  *          enqueued in the runtime with dague_enqueue(). It, then, needs to be
- *          destroy with dplasma_zsumma_Destruct();
+ *          destroy with summa_zsumma_Destruct();
  *
  *******************************************************************************
  *
- * @sa dplasma_zsumma
- * @sa dplasma_zsumma_Destruct
- * @sa dplasma_csumma_New
- * @sa dplasma_dsumma_New
- * @sa dplasma_ssumma_New
+ * @sa summa_zsumma
+ * @sa summa_zsumma_Destruct
+ * @sa summa_csumma_New
+ * @sa summa_dsumma_New
+ * @sa summa_ssumma_New
  *
  ******************************************************************************/
 dague_handle_t*
@@ -95,15 +95,15 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
-        dplasma_error("dplasma_zsumma_New", "illegal value of transA");
+        dplasma_error("summa_zsumma_New", "illegal value of transA");
         return NULL /*-1*/;
     }
     if ((transB != PlasmaNoTrans) && (transB != PlasmaTrans) && (transB != PlasmaConjTrans)) {
-        dplasma_error("dplasma_zsumma_New", "illegal value of transB");
+        dplasma_error("summa_zsumma_New", "illegal value of transB");
         return NULL /*-2*/;
     }
     if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
-        dplasma_error("dplasma_zsumma_New", "illegal type of descriptor for C (must be irregular_tiled_matrix_desc_t)");
+        dplasma_error("summa_zsumma_New", "illegal type of descriptor for C (must be irregular_tiled_matrix_desc_t)");
         return NULL;
     }
 
@@ -119,17 +119,17 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
      * Create the task distribution */
     Cdist = (irregular_tiled_matrix_desc_t*)malloc(sizeof(irregular_tiled_matrix_desc_t));
 
-    unsigned int *itil = (unsigned int*)malloc((C->mt+1)*sizeof(unsigned int));
-    unsigned int *jtil = (unsigned int*)malloc((C->nt+1)*sizeof(unsigned int));
+    unsigned int *itil = (unsigned int*)malloc((C->lmt)*sizeof(unsigned int));
+    unsigned int *jtil = (unsigned int*)malloc((C->lnt)*sizeof(unsigned int));
     int i, j, k;
-    for (k = 0; k < C->mt; ++k) itil[k] = C->itiling[k];
-    for (k = 0; k < C->nt; ++k) jtil[k] = C->jtiling[k];
+    for (k = 0; k < C->lmt; ++k) itil[k] = C->itiling[k];
+    for (k = 0; k < C->lnt; ++k) jtil[k] = C->jtiling[k];
 
     unsigned int max_tile_size = 0, max_tile_mb = 0;
-    for (i = 0; i < C->mt; ++i) {
+    for (i = 0; i < C->lmt; ++i) {
 	    if (C->jtiling[i] > max_tile_mb)
 		    max_tile_mb = C->jtiling[i];
-	    for (j = 0; j < C->nt; ++j)
+	    for (j = 0; j < C->lnt; ++j)
 		    if (C->itiling[i]*C->jtiling[j] > max_tile_size)
 			    /* Worst case scenario */
 			    max_tile_size = C->itiling[i]*C->jtiling[j];
@@ -204,8 +204,8 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zsumma_Destruct - Free the data structure associated to an handle
- *  created with dplasma_zsumma_New().
+ *  summa_zsumma_Destruct - Free the data structure associated to an handle
+ *  created with summa_zsumma_New().
  *
  *******************************************************************************
  *
@@ -215,12 +215,12 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
  *
  *******************************************************************************
  *
- * @sa dplasma_zsumma_New
- * @sa dplasma_zsumma
+ * @sa summa_zsumma_New
+ * @sa summa_zsumma
  *
  ******************************************************************************/
 void
-dplasma_zsumma_Destruct( dague_handle_t *handle )
+summa_zsumma_Destruct( dague_handle_t *handle )
 {
     dague_zsumma_NN_handle_t *zsumma_handle = (dague_zsumma_NN_handle_t *)handle;
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)(zsumma_handle->Cdist) );
@@ -235,7 +235,7 @@ dplasma_zsumma_Destruct( dague_handle_t *handle )
  *
  * @ingroup dplasma_complex64
  *
- *  dplasma_zsumma - Performs one of the following matrix-matrix operations
+ *  summa_zsumma - Performs one of the following matrix-matrix operations
  *
  *    \f[ C = \alpha [op( A )\times op( B )],
  *
@@ -286,11 +286,11 @@ dplasma_zsumma_Destruct( dague_handle_t *handle )
  *
  *******************************************************************************
  *
- * @sa dplasma_zsumma_New
- * @sa dplasma_zsumma_Destruct
- * @sa dplasma_csumma
- * @sa dplasma_dsumma
- * @sa dplasma_ssumma
+ * @sa summa_zsumma_New
+ * @sa summa_zsumma_Destruct
+ * @sa summa_csumma
+ * @sa summa_dsumma
+ * @sa summa_ssumma
  *
  ******************************************************************************/
 int
@@ -422,7 +422,7 @@ summa_zsumma( dague_context_t *dague,
     if ( dague_zsumma != NULL ) {
         dague_enqueue( dague, (dague_handle_t*)dague_zsumma);
         dplasma_progress(dague);
-        dplasma_zsumma_Destruct( dague_zsumma );
+        summa_zsumma_Destruct( dague_zsumma );
         return 0;
     }
     else {
