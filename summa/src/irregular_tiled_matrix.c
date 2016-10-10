@@ -322,7 +322,7 @@ void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc)
 }
 
 
-void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int nb, int mb, int vpid, int rank)
+void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, int mb, int nb, int vpid, int rank)
 {
 	(void)actual_data;
 	(void)i;
