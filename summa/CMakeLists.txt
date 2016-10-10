@@ -9,7 +9,6 @@ endif(NOT BUILD_SUMMA)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testing/")
-message("-- ${CMAKE_CURRENT_SOURCE_DIR}/testing -- ${CMAKE_MODULE_PATH} --")
 
 set(DPLASMA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../dplasma)
 set(DPLASMA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/../dplasma)
@@ -31,8 +30,6 @@ if(DPLASMA_WITH_RECURSIVE)
 endif()
 
 
-
-
 set(EXTRA_SOURCES
   src/irregular_tiled_matrix.c
   )
@@ -44,6 +41,7 @@ include(AddDocumentedFiles)
 
 set(generated_files "")
 set(generated_jdf "")
+set(generated_hdrs "")
 
 add_documented_files(PARSEC_ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}" ${EXTRA_SOURCES})
 
@@ -53,26 +51,36 @@ set(SUMMA_JDF
   lib/zsumma_NN.jdf
   lib/zsumma_NT.jdf
   )
-
-
-precisions_rules_py(generated_jdf
-                    "${SUMMA_JDF}"
-                    PRECISIONS "${DPLASMA_PRECISIONS}")
-
-jdf_rules(generated_files "${generated_jdf}")
-
-message( "--- ${SUMMA_JDF} --- ${DPLASMA_PRECISIONS} --- ${generated_jdf} --- ${generated_files} ---")
-
+message("--- ${SUMMA_JDF} ---")
 set(SUMMA_WRAPPER_SRC
   lib/zsumma_wrapper.c
-  lib/tiled_zplrnt_wrapper.c
   )
+message("--- ${SUMMA_WRAPPER_SRC} ---")
+set(SUMMA_HDRS
+  include/summa_z.h
+  )
+
+precisions_rules_py(generated_jdf
+  "${SUMMA_JDF}"
+  PRECISIONS "${DPLASMA_PRECISIONS}")
 
 precisions_rules_py(generated_wrappers
   "${SUMMA_WRAPPER_SRC}"
   PRECISIONS "${DPLASMA_PRECISIONS}")
 
-add_documented_files( PARSEC_ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/" ${generated_wrappers} )
+precisions_rules_py(generated_hdrs
+  "${SUMMA_HDRS}"
+  PRECISIONS "d;s;c;z")
+
+add_custom_target(summa_includes ALL DEPENDS ${generated_hdrs})
+
+foreach(generated_hdr ${generated_hdrs})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${generated_hdr} DESTINATION include)
+endforeach()
+
+jdf_rules(generated_files "${generated_jdf}")
+
+add_documented_files( PARSEC_ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}" ${generated_wrappers} )
 
 add_library(summa
   ${generated_files}
@@ -87,6 +95,8 @@ if (MPI_C_FOUND)
   set_target_properties(summa PROPERTIES COMPILE_FLAGS "${MPI_C_COMPILE_FLAGS}")
 endif (MPI_C_FOUND)
 
+set(SUMMA_LIBRARIES summa)
+
 install(TARGETS summa
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib)
@@ -100,5 +110,7 @@ set(TESTING_SUMMA_SRC
   testing/testing_zsumma.c
   )
 
+
+link_directories(${COREBLAS_LIBRARY_DIRS})
 
 testings_addexec(targets "${DPLASMA_PRECISIONS}" "${TESTING_SUMMA_SRC}")

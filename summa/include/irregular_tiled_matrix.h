@@ -76,6 +76,8 @@ static inline int dague_translate_irregular_tiled_matrix_type( enum tile_coll_ty
 #define SUMMABLKLDD( _desc_, _m_ ) ( (_desc_).mb )
 
 #define irregular_tiled_matrix_desc_type 0x10
+#define LET_THE_MAGIC_HAPPENS 0xCAFECAFE
+
 
 typedef struct irregular_tile_data_s {
 	dague_data_t super;
@@ -118,6 +120,8 @@ typedef struct irregular_tiled_matrix_desc_s {
 } irregular_tiled_matrix_desc_t;
 
 DAGUE_DECLSPEC dague_data_t* irregular_tile_data_new(void);
+
+int tile_is_local(int i, int j, grid_2Dcyclic_t* g);
 
 void irregular_tiled_matrix_desc_init(
 	irregular_tiled_matrix_desc_t* ddesc,

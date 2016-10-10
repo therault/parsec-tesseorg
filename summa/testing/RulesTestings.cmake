@@ -17,6 +17,7 @@ macro(testings_addexec OUTPUTLIST PRECISIONS ZSOURCES)
   precisions_rules_py(testings_addexec_GENFILES
     "${ZSOURCES}"
     PRECISIONS "${PRECISIONS}")
+
   foreach(testings_addexec_GENFILE ${testings_addexec_GENFILES})
     string(REGEX REPLACE "\\.c" "" testings_addexec_EXEC ${testings_addexec_GENFILE})
 
@@ -31,7 +32,7 @@ macro(testings_addexec OUTPUTLIST PRECISIONS ZSOURCES)
                               COMPILE_FLAGS "${testings_addexec_CFLAGS}"
                               LINK_FLAGS "${testings_addexec_LDFLAGS} ${COREBLAS_LDFLAGS}")
     endif( PLASMA_F_COMPILE_SUCCESS )
-    target_link_libraries(${testings_addexec_EXEC} ${testings_addexec_LIBS} ${COREBLAS_LIBRARIES})
+    target_link_libraries(${testings_addexec_EXEC} ${testings_addexec_LIBS} ${SUMMA_LIBRARIES} ${COREBLAS_LIBRARIES})
     #    install(TARGETS ${testings_addexec_EXEC} RUNTIME DESTINATION bin)
     list(APPEND ${OUTPUTLIST} ${testings_addexec_EXEC})
   endforeach()
