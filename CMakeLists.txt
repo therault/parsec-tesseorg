@@ -744,11 +744,39 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_config_bottom.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/data_distribution.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_description_structures.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/datatype.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/profiling.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/data.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/private_mempool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/data_internal.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/parsec_internal.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/mempool.h
   DESTINATION include/parsec)
+
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/barrier.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/parsec_object.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/parsec_value_array.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/dequeue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/fifo.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/lifo.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/class/list_item.h
+  DESTINATION include/parsec/class)
+
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-gcc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-macosx.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-ppc-bgp.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-ppc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-x86_32.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-x86_64.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic-xlc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/sys/atomic.h
+  DESTINATION include/parsec/sys)
+
 
 install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/datatype/datatype_mpi.h

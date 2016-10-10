@@ -1,17 +1,13 @@
-
-
-
 #ifndef _TILE_COLLECTION_H_
 #define _TILE_COLLECTION_H_
 
 #include "dague_config.h"
 #include <assert.h>
-#include "dague/data_distribution.h"
 #include "dague/data.h"
 #include "dague/data_internal.h"
+#include "dague/data_distribution.h"
 #include "data_dist/matrix/grid_2Dcyclic.h"
-#include "precision.h"
-#include "dague/data.h"
+#include "data_dist/matrix/precision.h"
 
 BEGIN_C_DECLS
 
@@ -165,5 +161,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, unsigned int mb, unsigned int nb, int vpid, int rank);
 
 #  endif
+
+END_C_DECLS
 
 #endif /* _TILE_COLLECTION_H_ */
