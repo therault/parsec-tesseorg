@@ -29,6 +29,8 @@ static int32_t       irregular_tiled_matrix_vpid_of_key(dague_ddesc_t* ddesc, da
 
 static dague_data_t* irregular_tiled_matrix_data_of(    dague_ddesc_t* ddesc, ...);
 static dague_data_t* irregular_tiled_matrix_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key);
+static dague_data_t* irregular_tiled_matrix_C_data_of(    dague_ddesc_t* ddesc, ...);
+static dague_data_t* irregular_tiled_matrix_C_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key);
 
 static uint32_t      irregular_tiled_matrix_data_key(   dague_ddesc_t *ddesc, ...);
 
@@ -104,12 +106,48 @@ static dague_data_t* irregular_tiled_matrix_data_of(dague_ddesc_t* d, ...)
 	irregular_tile_data_t* t = get_tile(desc, i, j);
 
 #if defined(DISTRIBUTED)
-	assert(d->myrank == tiled_matrix_rank_of(d, i, j));
+	assert(d->myrank == irregular_tiled_matrix_rank_of(d, i, j));
 #endif
 
 	if (NULL != t)
 		return t->data;
 	return (dague_data_t*)NULL;
+}
+
+static dague_data_t* irregular_tiled_matrix_C_data_of(dague_ddesc_t* d, ...)
+{
+	int i, j;
+	va_list ap;
+
+	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
+
+	va_start(ap, d);
+	i = va_arg(ap, int);
+	j = va_arg(ap, int);
+	va_end(ap);
+
+	irregular_tile_data_t* t = get_tile(desc, i, j);
+
+#if defined(DISTRIBUTED)
+	assert(d->myrank == irregular_tiled_matrix_rank_of(d, i, j));
+#endif
+
+	if (NULL != t)
+		return t->data;
+	return (dague_data_t*)NULL;
+}
+
+static void* irregular_tiled_matrix_allocate_if_null(dague_ddesc_t *d, int i, int j)
+{
+	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
+	irregular_tile_data_t* t = get_tile(desc, i, j);
+
+	if (NULL == t->data) {
+		/* void *buf = malloc(sizeof()*desc->itiling[i]*desc->jtiling[j]); */
+
+
+	}
+	return NULL;
 }
 
 static void irregular_tiled_matrix_key_to_coords(dague_ddesc_t* d, dague_data_key_t key, int *i, int *j)
@@ -140,13 +178,21 @@ static dague_data_t* irregular_tiled_matrix_data_of_key(dague_ddesc_t* ddesc, da
 	return irregular_tiled_matrix_data_of(ddesc, i, j);
 }
 
+static dague_data_t* irregular_tiled_matrix_C_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key)
+{
+	int i, j;
+	irregular_tiled_matrix_key_to_coords(ddesc, key, &i, &j);
+	irregular_tiled_matrix_allocate_if_null(ddesc, i, j);
+	return irregular_tiled_matrix_C_data_of(ddesc, i, j);
+}
+
 static uint32_t irregular_tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 {
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 	int i, j;
 	va_list ap;
 
-	va_start(ap, desc);
+	va_start(ap, d);
 	i = va_arg(ap, unsigned int);
 	j = va_arg(ap, unsigned int);
 	va_end(ap);
@@ -171,6 +217,26 @@ static int irregular_tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key
 }
 #endif
 
+
+int tile_is_local(int i, int j, grid_2Dcyclic_t* g)
+{
+	return (((i/g->strows)%g->rows == g->rrank)&&((j/g->strows)%g->cols == g->crank));
+}
+
+int tile_owner(int i, int j, grid_2Dcyclic_t* g)
+{
+	int rows_tile = g->strows*g->rows;
+	int cols_tile = g->stcols*g->cols;
+
+	int iP = i%rows_tile;
+	int iQ = j%cols_tile;
+
+	iP /= g->strows;
+	iQ /= g->stcols;
+
+	return iP*g->cols+iQ;
+}
+
 void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                                       enum tile_coll_type mtype,
                                       unsigned int nodes, unsigned int myrank,
@@ -190,7 +256,6 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
     if(nodes != P*Q)
         dague_warning("Block Cyclic Distribution:\tNumber of nodes %d doesn't match the process grid %dx%d", nodes, P, Q);
 
-    assert( (storage != matrix_Lapack) || (P==1) );
     grid_2Dcyclic_init(&ddesc->grid, myrank, P, Q, 1, 1);
 
 	d->rank_of     = irregular_tiled_matrix_rank_of;
@@ -204,6 +269,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	d->key_to_string = tiled_matrix_key_to_string;
 #endif
 
+	ddesc->dtype = irregular_tiled_matrix_desc_type;
 	ddesc->mtype = mtype;
 	ddesc->lm = lm;
 	ddesc->ln = ln;
@@ -211,15 +277,32 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	ddesc->lnt = lnt;
 	ddesc->mt = mt;
 	ddesc->nt = nt;
-	/* lmt+1, lnt+1 sized arrays */
-	ddesc->itiling = itiling;
-	ddesc->jtiling = jtiling;
+	/* lmt, lnt sized arrays */
+	ddesc->itiling = (unsigned int*)malloc(lmt*sizeof(unsigned int));
+	ddesc->jtiling = (unsigned int*)malloc(lnt*sizeof(unsigned int));
+	unsigned int k;
+	for (k = 0; k < lmt; ++k) ddesc->itiling[k] = itiling[k];
+	for (k = 0; k < lnt; ++k) ddesc->jtiling[k] = jtiling[k];
 	ddesc->i = i;
 	ddesc->j = j;
 
 	ddesc->data_map = (irregular_tile_data_t**)malloc(lmt*lnt*sizeof(irregular_tile_data_t*));
-	for (i = 0; i < lmt*lnt; ++i)
-		ddesc->data_map[i] = NULL;
+	for (i = 0; i < lmt; ++i) {
+		for (j = 0; j < lnt; ++j) {
+			int idx = i*lnt+j;
+			irregular_tile_data_t *t = (irregular_tile_data_t*)malloc(sizeof(irregular_tile_data_t));
+#if defined(DAGUE_DEBUG)
+			t->magic = LET_THE_MAGIC_HAPPENS;
+#endif
+			t->rank = tile_owner(i, j, &(ddesc->grid));
+			t->vpid = 0;
+			t->tileld = -1;
+			t->mb = -1;
+			t->nb = -1;
+			t->data = NULL;
+			ddesc->data_map[idx] = t;
+		}
+	}
 	ddesc->nb_local_tiles = 0;
 }
 
@@ -249,14 +332,22 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 	(void)vpid;
 	(void)rank;
 
-	irregular_tile_data_t *T = get_tile(ddesc, i, j);
-	if (NULL == T) {
+	int idx = (ddesc->i+i)*ddesc->lnt+(ddesc->j+j);
+	irregular_tile_data_t *t = ddesc->data_map[idx];
 
-
+	if (tile_is_local(i, j, &(ddesc->grid))) {
+		ddesc->itiling[ddesc->i+i] = mb;
+		ddesc->jtiling[ddesc->j+j] = nb;
+#if defined(DAGUE_DEBUG)
+		t->magic = LET_THE_MAGIC_HAPPENS;
+#endif
+		t->rank = rank;
+		t->vpid = vpid;
+		t->data = actual_data;
+		dague_data_create((dague_data_t**)ddesc->data_map+idx, (dague_ddesc_t*)ddesc,
+		                  (dague_data_key_t)(idx), actual_data, nb*mb);
 	}
-
-
-
+	ddesc->nb_local_tiles++;
 }
 
 int

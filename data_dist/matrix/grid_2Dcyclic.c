@@ -21,7 +21,7 @@ int default_vp_data_dist();
 
 void grid_2Dcyclic_init(grid_2Dcyclic_t *grid, int myrank, int P, int Q, int nrst, int ncst)
 {
-    /* Filling matrix description woth user parameter */
+    /* Filling matrix description with user parameter */
     grid->rank = myrank ;
     grid->rows = P;
     grid->cols = Q;
