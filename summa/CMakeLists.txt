@@ -6,6 +6,11 @@ if(NOT BUILD_SUMMA)
   return()
 endif(NOT BUILD_SUMMA)
 
+LIST(APPEND CMAKE_MODULE_PATH "${DAGUE_SOURCE_DIR}/dplasma/cmake_modules/")
+ find_package(COREBLAS REQUIRED)
+if(NOT COREBLAS_FOUND)
+  return()
+endif(NOT COREBLAS_FOUND)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testing/")
@@ -16,11 +21,12 @@ set(DPLASMA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/../dplasma)
 set(DAGUE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(DAGUE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
+include_directories( ${CMAKE_CURRENT_BINARY_DIR}/include )
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/lib )
 include_directories( ${DPLASMA_BINARY_DIR}/include )
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
 include_directories( ${DAGUE_SOURCE_DIR}/data_dist/matrix )
+include_directories( ${COREBLAS_INCLUDE_DIRS} )
 
 option(SUMMA_WITH_RECURSIVE
   "Enable recursive kernels to be called when available" OFF)
@@ -56,9 +62,6 @@ set(SUMMA_WRAPPER_SRC
   lib/zsumma_wrapper.c
   )
 message("--- ${SUMMA_WRAPPER_SRC} ---")
-set(SUMMA_HDRS
-  include/summa_z.h
-  )
 
 precisions_rules_py(generated_jdf
   "${SUMMA_JDF}"
@@ -68,28 +71,19 @@ precisions_rules_py(generated_wrappers
   "${SUMMA_WRAPPER_SRC}"
   PRECISIONS "${DPLASMA_PRECISIONS}")
 
-precisions_rules_py(generated_hdrs
-  "${SUMMA_HDRS}"
-  PRECISIONS "d;s;c;z")
-
-add_custom_target(summa_includes ALL DEPENDS ${generated_hdrs})
-
-foreach(generated_hdr ${generated_hdrs})
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${generated_hdr} DESTINATION include)
-endforeach()
-
 jdf_rules(generated_files "${generated_jdf}")
 
 add_documented_files( PARSEC_ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}" ${generated_wrappers} )
+
+Add_Subdirectory(include)
 
 add_library(summa
   ${generated_files}
   ${generated_wrappers}
   ${EXTRA_SOURCES})
+add_dependencies(summa summa_includes)
 
-target_link_libraries(summa
-  ${DPLASMA_LIBRARIES}
-)
+target_link_libraries(summa ${DPLASMA_LIBRARIES})
 
 if (MPI_C_FOUND)
   set_target_properties(summa PROPERTIES COMPILE_FLAGS "${MPI_C_COMPILE_FLAGS}")
