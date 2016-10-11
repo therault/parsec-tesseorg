@@ -96,7 +96,7 @@ install(TARGETS summa
   LIBRARY DESTINATION lib)
 
 install(FILES
-  ${CMAKE_SOURCE_DIR}/include/irregular_tiled_matrix.h
+  ${CMAKE_SOURCE_DIR}/summa/include/irregular_tiled_matrix.h
   DESTINATION include)
 
 

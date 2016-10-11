@@ -708,11 +708,39 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/dague_config_bottom.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/data_distribution.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/dague_description_structures.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/datatype.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/profiling.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/data.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/data_internal.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/dague_internal.h
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/private_mempool.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/mempool.h
   DESTINATION include/dague)
+
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/barrier.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/dague_object.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/dague_value_array.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/dequeue.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/fifo.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/hash_table.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/lifo.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/list.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/class/list_item.h
+  DESTINATION include/dague/class)
+
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-gcc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-macosx.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-ppc-bgp.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-ppc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-x86_32.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-x86_64.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic-xlc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/dague/include/dague/sys/atomic.h
+  DESTINATION include/dague/sys)
+
 
 install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/dague/datatype/datatype_mpi.h

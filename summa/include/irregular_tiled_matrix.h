@@ -1,17 +1,13 @@
-
-
-
 #ifndef _TILE_COLLECTION_H_
 #define _TILE_COLLECTION_H_
 
 #include "dague_config.h"
 #include <assert.h>
-#include "dague/data_distribution.h"
 #include "dague/data.h"
 #include "dague/data_internal.h"
+#include "dague/data_distribution.h"
 #include "data_dist/matrix/grid_2Dcyclic.h"
 #include "data_dist/matrix/precision.h"
-#include "dague/data.h"
 
 BEGIN_C_DECLS
 
