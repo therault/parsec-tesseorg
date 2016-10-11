@@ -109,6 +109,8 @@ static dague_data_t* irregular_tiled_matrix_data_of(dague_ddesc_t* d, ...)
 	assert(d->myrank == irregular_tiled_matrix_rank_of(d, i, j));
 #endif
 
+	fprintf(stdout, "data_of (%d;%d), size (%d;%d)\n", i, j, t->mb, t->nb);
+
 	if (NULL != t)
 		return t->data;
 	return (dague_data_t*)NULL;
@@ -200,7 +202,10 @@ static uint32_t irregular_tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 	i += desc->i;
 	j += desc->j;
 
-	return ((i * desc->lnt) + j);
+	uint32_t k = (i * desc->lnt) + j;
+
+	fprintf(stdout, "Generating key for tile (%d;%d) -> %d\n",i,j,k);
+	return k;
 }
 
 #if defined(DAGUE_PROF_TRACE)
@@ -264,6 +269,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	d->vpid_of_key = irregular_tiled_matrix_vpid_of_key;
 	d->data_of     = irregular_tiled_matrix_data_of;
 	d->data_of_key = irregular_tiled_matrix_data_of_key;
+	d->data_key    = irregular_tiled_matrix_data_key;
 
 #if defined(DAGUE_PROF_TRACE)
 	d->key_to_string = tiled_matrix_key_to_string;
@@ -341,6 +347,7 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 #if defined(DAGUE_DEBUG)
 		t->magic = LET_THE_MAGIC_HAPPENS;
 #endif
+		t->super.key = ddesc->super.data_key((dague_ddesc_t*)ddesc, i, j);
 		t->rank = rank;
 		t->vpid = vpid;
 		t->data = actual_data;
