@@ -743,6 +743,7 @@ int parsec_enqueue( parsec_context_t* context, parsec_handle_t* handle )
 
                 OBJ_CONSTRUCT( &temp, parsec_list_t );
                 /* Order the tasks by priority */
+                /* FIXME: check chain_sorted effect */
                 parsec_list_chain_sorted(&temp, (parsec_list_item_t*)startup_list[p],
                                         parsec_execution_context_priority_comparator);
                 startup_list[p] = (parsec_execution_context_t*)parsec_list_nolock_unchain(&temp);

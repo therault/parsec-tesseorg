@@ -23,6 +23,7 @@ static int check_solution( dague_context_t *dague, int loud,
                            int M,  int N,
                            irregular_tiled_matrix_desc_t *ddescCfinal );
 
+dague_complex64_t *checkA, *checkB, *checkC;
 
 
 //static unsigned long long int Rnd64seed = 100;
@@ -39,11 +40,33 @@ static void* init_tile(int mb, int nb, unsigned long long int *seed)
 
     for (i = 0; i < mb; ++i)
         for (j = 0; j < nb; ++j) {
-            array[i*mb+j] = ran;
+            array[i*nb+j] = ran%10;
             ran = Rnd64_A * ran + Rnd64_C;
         }
     *seed = ran;
     return array;
+}
+
+static void print_matrix_data(irregular_tiled_matrix_desc_t* A)
+{
+
+}
+
+static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
+{
+    fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
+    fprintf(stdout, "  M=%d, N=%d, MT=%d, NT=%d\n", A->m, A->n, A->mt, A->nt);
+
+    int i;
+    fprintf(stdout, "  M tiling:");
+    for (i = 0; i < A->mt; ++i) fprintf(stdout, " %d", A->Mtiling[i]);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "  N tiling:");
+    for (i = 0; i < A->nt; ++i) fprintf(stdout, " %d", A->Ntiling[i]);
+    fprintf(stdout, "\n");
+
+    fprintf(stdout, "  i=%d, j=%d, nb_local_tiles=%d\n", A->i, A->j, A->nb_local_tiles);
+    fprintf(stdout, "  lm=%d, ln=%d, lmt=%d, lnt=%d\n", A->lm, A->ln, A->lmt, A->lnt);
 }
 
 int main(int argc, char ** argv)
@@ -55,7 +78,7 @@ int main(int argc, char ** argv)
     unsigned long long int Bseed = 4674;
     int tA = PlasmaNoTrans;
     int tB = PlasmaNoTrans;
-    dague_complex64_t alpha =  0.51;
+    dague_complex64_t alpha = 1.;
 
 #if defined(PRECISION_z) || defined(PRECISION_c)
     alpha -= I * 0.32;
@@ -141,46 +164,62 @@ int main(int argc, char ** argv)
     irregular_tiled_matrix_desc_init(&ddescC, tile_coll_ComplexDouble,
                                      nodes, rank, M, N, MT, NT,
                                      Mtiling, Ntiling,
-                                     0, 0, 0, 0, P);
+                                     0, 0, MT, NT, P);
 
-    fprintf(stdout, "check = %d\n", check);
+    void *ptr;
+    for (i = ddescC.grid.rrank*ddescC.grid.strows; i < MT; i+=ddescC.grid.rows*ddescC.grid.strows)
+        for (k = 0; k < ddescC.grid.stcols; ++k)
+            for (j = ddescC.grid.crank*ddescC.grid.stcols; j < NT; j+=ddescC.grid.cols*ddescC.grid.stcols)
+                for (l = 0; l < ddescC.grid.stcols; ++l) {
+                    ptr = calloc(Mtiling[i+k]*Ntiling[j+l], sizeof(dague_complex64_t));
+                    irregular_tiled_matrix_desc_set_data(&ddescC, ptr, i+k, j+l, Mtiling[i+k], Ntiling[j+l], 0, rank);
+                }
+
+    checkA = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+    checkB = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+    checkC = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+
     /* initializing matrix structure */
     if(!check) {
+
 	    irregular_tiled_matrix_desc_t ddescA;
-	    irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
+        irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
                                          nodes, rank, M, K, MT, KT,
-	                                     Mtiling, Ktiling,
-                                         0, 0, 0, 0, P);
+                                         Mtiling, Ktiling,
+                                         0, 0, MT, KT, P);
 
         irregular_tiled_matrix_desc_t ddescB;
         irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble,
                                          nodes, rank, K, N, KT, NT,
                                          Ktiling, Ntiling,
-                                         0, 0, 0, 0, P);
+                                         0, 0, KT, NT, P);
 
         /* matrix generation */
-        void *ptr;
         if(1 || loud > 2) printf("+++ Generate matrices ... ");
         for (i = ddescA.grid.rrank*ddescA.grid.strows; i < MT; i+=ddescA.grid.rows*ddescA.grid.strows)
-	        for (k = 0; k < ddescA.grid.stcols; ++k)
-		        for (j = ddescA.grid.crank*ddescA.grid.stcols; j < KT; j+=ddescA.grid.cols*ddescA.grid.stcols)
-			        for (l = 0; l < ddescA.grid.stcols; ++l) {
-				        ptr = init_tile(Mtiling[i+k], Ktiling[j+l], &Aseed);
-				        irregular_tiled_matrix_desc_set_data(&ddescA, ptr, i+k, j+l, Mtiling[i+k], Ktiling[j+l], 0, rank);
-			        }
-
+            for (k = 0; k < ddescA.grid.stcols; ++k)
+                for (j = ddescA.grid.crank*ddescA.grid.stcols; j < KT; j+=ddescA.grid.cols*ddescA.grid.stcols)
+                    for (l = 0; l < ddescA.grid.stcols; ++l) {
+                        ptr = init_tile(Mtiling[i+k], Ktiling[j+l], &Aseed);
+                        irregular_tiled_matrix_desc_set_data(&ddescA, ptr, i+k, j+l, Mtiling[i+k], Ktiling[j+l], 0, rank);
+                    }
 
         for (i = ddescB.grid.rrank*ddescB.grid.strows; i < KT; i+=ddescB.grid.rows*ddescB.grid.strows)
-	        for (k = 0; k < ddescB.grid.stcols; ++k)
-		        for (j = ddescB.grid.crank*ddescB.grid.stcols; j < NT; j+=ddescB.grid.cols*ddescB.grid.stcols)
-			        for (l = 0; l < ddescB.grid.stcols; ++l) {
-				        ptr = init_tile(Ktiling[i+k], Ntiling[j+l], &Bseed);
-				        irregular_tiled_matrix_desc_set_data(&ddescB, ptr, i+k, j+l, Ktiling[i+k], Ntiling[j+l], 0, rank);
-			        }
+            for (k = 0; k < ddescB.grid.stcols; ++k)
+                for (j = ddescB.grid.crank*ddescB.grid.stcols; j < NT; j+=ddescB.grid.cols*ddescB.grid.stcols)
+                    for (l = 0; l < ddescB.grid.stcols; ++l) {
+                        ptr = init_tile(Ktiling[i+k], Ntiling[j+l], &Bseed);
+                        irregular_tiled_matrix_desc_set_data(&ddescB, ptr, i+k, j+l, Ktiling[i+k], Ntiling[j+l], 0, rank);
+                    }
 
-        /* summa_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescA, Aseed); */
-        /* summa_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescB, Bseed); */
         if(1 || loud > 2) printf("Done\n");
+
+        fprintf(stdout, "Matrix A:\n");
+        print_matrix_meta(&ddescA);
+        fprintf(stdout, "Matrix B:\n");
+        print_matrix_meta(&ddescB);
+        fprintf(stdout, "Matrix C:\n");
+        print_matrix_meta(&ddescC);
 
         /* Create DAGuE */
         SYNC_TIME_START();
@@ -193,9 +232,103 @@ int main(int argc, char ** argv)
         if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
         /* lets rock! */
-        PASTE_CODE_PROGRESS_KERNEL(dague, zsumma);
+        /* PASTE_CODE_PROGRESS_KERNEL(dague, zsumma); */
+        SYNC_TIME_START();
+        TIME_START();
+        dague_context_wait(dague);
+        SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
+                               P, Q, NB, N,
+                               gflops=(flops/1e9)/sync_time_elapsed));
 
         summa_zsumma_Destruct( DAGUE_zsumma );
+
+
+
+
+
+        {
+	        dague_ddesc_t*dA = (dague_ddesc_t*)&ddescA;
+	        int ipos = 0;
+	        for (i = 0; i < MT; ++i) {
+		        int jpos = 0;
+		        for (j = 0; j < KT; ++j) {
+			        dague_data_t *t_ij = dA->data_of(dA, i, j);
+			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
+			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
+			        for (k = 0; k < Ktiling[j]; ++k) {
+				        memcpy(checkA+(ipos+(jpos+k)*M),
+				               ptr+k*ct_ij->mb,
+				               ct_ij->mb*sizeof(dague_complex64_t));
+			        }
+			        jpos += Ktiling[j];
+		        }
+		        ipos += Mtiling[i];
+	        }
+        }
+
+        {
+	        dague_ddesc_t*dB = (dague_ddesc_t*)&ddescB;
+	        int ipos = 0;
+	        for (i = 0; i < KT; ++i) {
+		        int jpos = 0;
+		        for (j = 0; j < NT; ++j) {
+			        dague_data_t *t_ij = dB->data_of(dB, i, j);
+			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
+			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
+			        for (k = 0; k < Ntiling[j]; ++k) {
+				        memcpy(checkB+(ipos+(jpos+k)*K),
+				               ptr+k*ct_ij->mb,
+				               ct_ij->mb*sizeof(dague_complex64_t));
+			        }
+			        jpos += Ntiling[j];
+		        }
+		        ipos += Ktiling[i];
+	        }
+        }
+
+        {
+	        dague_ddesc_t*dC = (dague_ddesc_t*)&ddescC;
+	        int ipos = 0;
+	        for (i = 0; i < MT; ++i) {
+		        int jpos = 0;
+		        for (j = 0; j < NT; ++j) {
+			        dague_data_t *t_ij = dC->data_of(dC, i, j);
+			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
+			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
+			        for (k = 0; k < Ntiling[j]; ++k) {
+				        memcpy(checkC+(ipos+(jpos+k)*M),
+				               ptr+k*ct_ij->mb,
+				               ct_ij->mb*sizeof(dague_complex64_t));
+			        }
+			        jpos += Ntiling[j];
+		        }
+		        ipos += Mtiling[i];
+	        }
+        }
+
+
+        fprintf(stdout, "Matrix A:\n");
+        for (i = 0; i < M; i++) {
+	        for (j = 0; j < K; ++j)
+		        fprintf(stdout, " %f", checkA[i+M*j]);
+	        fprintf(stdout, "\n");
+        }
+
+        fprintf(stdout, "Matrix B:\n");
+        for (i = 0; i < K; i++) {
+	        for (j = 0; j < N; ++j)
+		        fprintf(stdout, " %f", checkB[i+K*j]);
+	        fprintf(stdout, "\n");
+        }
+
+        fprintf(stdout, "Matrix C:\n");
+        for (i = 0; i < M; i++) {
+	        for (j = 0; j < N; ++j)
+		        fprintf(stdout, " %f", checkC[i+M*j]);
+	        fprintf(stdout, "\n");
+        }
+
+
 
         /* dague_data_free(ddescA.mat); */
         irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
@@ -204,7 +337,7 @@ int main(int argc, char ** argv)
     }
     else {
 #if 0
-	    int Am, An, Bm, Bn;
+        int Am, An, Bm, Bn;
         PASTE_CODE_ALLOCATE_MATRIX(ddescC2, check,
             irregular_tiled_matrix_desc, (&ddescC2, matrix_ComplexDouble, matrix_Tile,
                                    nodes, rank, MB, NB, LDC, N, 0, 0,

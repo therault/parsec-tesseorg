@@ -10,10 +10,7 @@
 
 #include "dplasma.h"
 #include "dplasma/lib/dplasmatypes.h"
-/* #include "data_dist/matrix/two_dim_rectangle_cyclic.h" */
-
 #include "irregular_tiled_matrix.h"
-
 #include "zsumma_NN.h"
 #include "zsumma_NT.h"
 #include "zsumma_TN.h"
@@ -92,6 +89,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     dague_handle_t* zsumma_handle;
     dague_arena_t* arena;
     int P, Q, m, n;
+    int i, j, k, l;
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
@@ -119,20 +117,14 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
      * Create the task distribution */
     Cdist = (irregular_tiled_matrix_desc_t*)malloc(sizeof(irregular_tiled_matrix_desc_t));
 
-    unsigned int *itil = (unsigned int*)malloc((C->lmt)*sizeof(unsigned int));
-    unsigned int *jtil = (unsigned int*)malloc((C->lnt)*sizeof(unsigned int));
-    int i, j, k;
-    for (k = 0; k < C->lmt; ++k) itil[k] = C->itiling[k];
-    for (k = 0; k < C->lnt; ++k) jtil[k] = C->jtiling[k];
-
     unsigned int max_tile_size = 0, max_tile_mb = 0;
     for (i = 0; i < C->lmt; ++i) {
-	    if (C->jtiling[i] > max_tile_mb)
-		    max_tile_mb = C->jtiling[i];
+	    if (C->Ntiling[i] > max_tile_mb)
+		    max_tile_mb = C->Ntiling[i];
 	    for (j = 0; j < C->lnt; ++j)
-		    if (C->itiling[i]*C->jtiling[j] > max_tile_size)
+		    if (C->Mtiling[i]*C->Ntiling[j] > max_tile_size)
 			    /* Worst case scenario */
-			    max_tile_size = C->itiling[i]*C->jtiling[j];
+			    max_tile_size = C->Mtiling[i]*C->Ntiling[j];
     }
 
     irregular_tiled_matrix_desc_init(
@@ -140,9 +132,16 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         C->super.nodes, C->super.myrank,
         m, n, /* Dimensions of the matrix             */
         C->mt, C->nt,
-        itil, jtil,
+        C->Mtiling, C->Ntiling,
         0, 0, /* Starting points (not important here) */
-        0, 0, P);
+        C->mt, C->nt, P);
+
+    for (i = Cdist->grid.rrank*Cdist->grid.strows; i < C->mt; i+=Cdist->grid.rows*Cdist->grid.strows)
+        for (k = 0; k < Cdist->grid.stcols; ++k)
+            for (j = Cdist->grid.crank*Cdist->grid.stcols; j < C->nt; j+=Cdist->grid.cols*Cdist->grid.stcols)
+                for (l = 0; l < Cdist->grid.stcols; ++l) {
+	                irregular_tiled_matrix_desc_set_data(Cdist, NULL, i+k, j+l, C->Mtiling[i+k], C->Ntiling[j+l], 0, ((dague_ddesc_t*)C)->rank_of((dague_ddesc_t*)C, i+k, j+l));
+                }
 
     Cdist->super.data_of = NULL;
     Cdist->super.data_of_key = NULL;
@@ -151,19 +150,21 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         if( PlasmaNoTrans == transB ) {
             dague_zsumma_NN_handle_t* handle;
             handle = dague_zsumma_NN_new(transA, transB, alpha,
-                                        (dague_ddesc_t*)A,
-                                        (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C,
-                                        (dague_ddesc_t*)Cdist);
+                                         (dague_ddesc_t*)A,
+                                         (dague_ddesc_t*)B,
+                                         (dague_ddesc_t*)C,
+                                         (dague_ddesc_t*)Cdist,
+                                         0);
             arena = handle->arenas[DAGUE_zsumma_NN_DEFAULT_ARENA];
             zsumma_handle = (dague_handle_t*)handle;
         } else {
             dague_zsumma_NT_handle_t* handle;
             handle = dague_zsumma_NT_new(transA, transB, alpha,
-                                        (dague_ddesc_t*)A,
-                                        (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C,
-                                        (dague_ddesc_t*)Cdist);
+                                         (dague_ddesc_t*)A,
+                                         (dague_ddesc_t*)B,
+                                         (dague_ddesc_t*)C,
+                                         (dague_ddesc_t*)Cdist,
+                                         0);
             arena = handle->arenas[DAGUE_zsumma_NT_DEFAULT_ARENA];
             zsumma_handle = (dague_handle_t*)handle;
         }
@@ -171,20 +172,22 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         if( PlasmaNoTrans == transB ) {
             dague_zsumma_TN_handle_t* handle;
             handle = dague_zsumma_TN_new(transA, transB, alpha,
-                                        (dague_ddesc_t*)A,
-                                        (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C,
-                                        (dague_ddesc_t*)Cdist);
+                                         (dague_ddesc_t*)A,
+                                         (dague_ddesc_t*)B,
+                                         (dague_ddesc_t*)C,
+                                         (dague_ddesc_t*)Cdist,
+                                         0);
             arena = handle->arenas[DAGUE_zsumma_TN_DEFAULT_ARENA];
             zsumma_handle = (dague_handle_t*)handle;
         }
         else {
             dague_zsumma_TT_handle_t* handle;
             handle = dague_zsumma_TT_new(transA, transB, alpha,
-                                        (dague_ddesc_t*)A,
-                                        (dague_ddesc_t*)B,
-                                        (dague_ddesc_t*)C,
-                                        (dague_ddesc_t*)Cdist);
+                                         (dague_ddesc_t*)A,
+                                         (dague_ddesc_t*)B,
+                                         (dague_ddesc_t*)C,
+                                         (dague_ddesc_t*)Cdist,
+                                         0);
             arena = handle->arenas[DAGUE_zsumma_TT_DEFAULT_ARENA];
             zsumma_handle = (dague_handle_t*)handle;
         }
@@ -315,12 +318,12 @@ summa_zsumma( dague_context_t *dague,
         return -2;
     }
 
-    unsigned int *iAtiling = A->itiling;
-    unsigned int *jAtiling = A->jtiling;
-    unsigned int *iBtiling = B->itiling;
-    unsigned int *jBtiling = B->jtiling;
-    unsigned int *iCtiling = C->itiling;
-    unsigned int *jCtiling = C->jtiling;
+    unsigned int *mAtiling = A->Mtiling;
+    unsigned int *nAtiling = A->Ntiling;
+    unsigned int *mBtiling = B->Mtiling;
+    unsigned int *nBtiling = B->Ntiling;
+    unsigned int *mCtiling = C->Mtiling;
+    unsigned int *nCtiling = C->Ntiling;
 
     if ( transA == PlasmaNoTrans ) {
         Am  = A->m;
@@ -332,8 +335,8 @@ summa_zsumma( dague_context_t *dague,
     } else {
         Am  = A->n;
         An  = A->m;
-        iAtiling = A->jtiling;
-        jAtiling = A->itiling;
+        mAtiling = A->Ntiling;
+        nAtiling = A->Mtiling;
         Ai  = A->j;
         Aj  = A->i;
         Amt = A->nt;
@@ -350,8 +353,8 @@ summa_zsumma( dague_context_t *dague,
     } else {
         Bm  = B->n;
         Bn  = B->m;
-        iBtiling = B->jtiling;
-        jBtiling = B->itiling;
+        mBtiling = B->Ntiling;
+        nBtiling = B->Mtiling;
         Bi  = B->j;
         Bj  = B->i;
         Bmt = B->nt;
@@ -362,12 +365,12 @@ summa_zsumma( dague_context_t *dague,
 
 
     int b = 1, i;
-    unsigned int *iAsubtiling = iAtiling+Ai;
-    unsigned int *jAsubtiling = jAtiling+Aj;
-    unsigned int *iBsubtiling = iBtiling+Bi;
-    unsigned int *jBsubtiling = jBtiling+Bj;
-    unsigned int *iCsubtiling = iCtiling+C->i;
-    unsigned int *jCsubtiling = jCtiling+C->j;
+    unsigned int *mAsubtiling = mAtiling+Ai;
+    unsigned int *nAsubtiling = nAtiling+Aj;
+    unsigned int *mBsubtiling = mBtiling+Bi;
+    unsigned int *nBsubtiling = nBtiling+Bj;
+    unsigned int *mCsubtiling = mCtiling+C->i;
+    unsigned int *nCsubtiling = nCtiling+C->j;
 
     if (Amt != C->mt || Ant != Bmt || Bnt != C->nt) {
 	    dplasma_error("summa_zsumma","Symbolic tilings differ");
@@ -375,15 +378,15 @@ summa_zsumma( dague_context_t *dague,
     }
 
     for (i = 0; i < Amt; ++i)
-	    if (iAsubtiling[i] != iCsubtiling[i])
+	    if (mAsubtiling[i] != mCsubtiling[i])
 		    b = -102;
 
     for (i = 0; i < Ant; ++i)
-	    if (jAsubtiling[i] != iBsubtiling[i])
+	    if (nAsubtiling[i] != mBsubtiling[i])
 		    b = -103;
 
     for (i = 0; i < Bnt; ++i)
-	    if (jBsubtiling[i] != jCsubtiling[i])
+	    if (nBsubtiling[i] != nCsubtiling[i])
 		    b = -104;
 
     if (b < -100) {
@@ -415,9 +418,9 @@ summa_zsumma( dague_context_t *dague,
         return 0;
 
     dague_zsumma = summa_zsumma_New(transA, transB,
-                                  alpha, A,
-                                  B,
-                                  C);
+                                    alpha, A,
+                                    B,
+                                    C);
 
     if ( dague_zsumma != NULL ) {
         dague_enqueue( dague, (dague_handle_t*)dague_zsumma);
