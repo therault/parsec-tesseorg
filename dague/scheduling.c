@@ -684,6 +684,7 @@ int dague_enqueue( dague_context_t* context, dague_handle_t* handle )
 
                 OBJ_CONSTRUCT( &temp, dague_list_t );
                 /* Order the tasks by priority */
+                /* FIXME: check chain_sorted effect */
                 dague_list_chain_sorted(&temp, (dague_list_item_t*)startup_list[p],
                                         dague_execution_context_priority_comparator);
                 startup_list[p] = (dague_execution_context_t*)dague_list_nolock_unchain(&temp);
