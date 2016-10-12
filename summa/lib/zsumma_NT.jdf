@@ -152,20 +152,20 @@ BODY [type=CUDA
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
-    cuDoubleComplex lbeta  = make_cuDoubleComplex(0.0, 0.0);
+    cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
 #else
     double lalpha = alpha;
-    double lbeta  = 0.0;
+    double lbeta  = (k==0) ? 0.0:1.0;
 #endif
     irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)gA;
     irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)gB;
     irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)gC;
-    int tempmm = m == descC.mt-1 ? descC.m - m * cC->mb : cC->mb;
-    int tempnn = n == descC.nt-1 ? descC.n - n * cC->nb : cC->nb;
-    int tempkk = k == descA.nt-1 ? descA.n - k * cA->nb : cA->nb;
-    int ldam = SUMMABLKLDD(*cA, m);
-    int ldbn = SUMMABLKLDD(*cB, n);
-    int ldcm = SUMMABLKLDD(*cC, m);
+    int tempmm = cC->mb;
+    int tempnn = cC->nb;
+    int tempkk = cA->nb;
+    int ldam = cA->mb;
+    int ldbn = cB->nb;
+    int ldcm = cC->mb;
 
     cublasStatus_t status;
     cublasSetKernelStream( dague_body.stream );
@@ -182,17 +182,25 @@ END
 
 BODY
 {
-    dague_complex64_t lbeta = (dague_complex64_t)0.0;
+    dague_complex64_t lbeta = (k==0) ? (dague_complex64_t)0.0 : (dague_complex64_t)1.0;
     irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)gA;
     irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)gB;
     irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)gC;
-    int tempmm = m == descC.mt-1 ? descC.m - m * cC->mb : cC->mb;
-    int tempnn = n == descC.nt-1 ? descC.n - n * cC->nb : cC->nb;
-    int tempkk = k == descA.nt-1 ? descA.n - k * cA->nb : cA->nb;
-    int ldam = SUMMABLKLDD(*cA, m);
-    int ldbn = SUMMABLKLDD(*cB, n);
-    int ldcm = SUMMABLKLDD(*cC, m);
+    int tempmm = cC->mb;
+    int tempnn = cC->nb;
+    int tempkk = cA->nb;
+    int ldam = cA->mb;
+    int ldbn = cB->nb;
+    int ldcm = cC->mb;
 
+    fprintf(stdout, "summa( %d, %d, %d )\n"
+             "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",
+             m, n, k,
+             plasma_const( transA ), plasma_const( transB ),
+             tempmm, tempnn, tempkk,
+             creal(alpha), m, k, ldam,
+                           n, k, ldbn,
+             creal(lbeta), m, n, ldcm);
 #if !defined(DAGUE_DRY_RUN)
     CORE_zgemm(transA, transB,
                tempmm, tempnn, tempkk,

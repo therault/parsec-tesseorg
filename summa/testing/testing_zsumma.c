@@ -23,8 +23,6 @@ static int check_solution( dague_context_t *dague, int loud,
                            int M,  int N,
                            irregular_tiled_matrix_desc_t *ddescCfinal );
 
-dague_complex64_t *checkA, *checkB, *checkC;
-
 
 //static unsigned long long int Rnd64seed = 100;
 #define Rnd64_A 6364136223846793005ULL
@@ -32,26 +30,113 @@ dague_complex64_t *checkA, *checkB, *checkC;
 #define RndF_Mul 5.4210108624275222e-20f
 #define RndD_Mul 5.4210108624275222e-20
 
+static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M)
+{
+	int t, p;
+	unsigned long long int ran = *seed;
+
+	for (t = 0; t < MT; ++t) T[t] = MB;
+	if (M%MB != 0) T[MT-1] = M%MB;
+	/* good old regular tiling with smaller last tile */
+
+	unsigned int lower_bound = (MB*3)/5;
+	unsigned int upper_bound = (MB*8)/5;
+	for (p = 0; p < 5*MT; ++p) {
+		int t1 = ran%MT;
+		ran = Rnd64_A * ran +Rnd64_C;
+		int t2 = t1;
+		while (t2 ==t1) {
+			t2 = ran%MT;
+			ran = Rnd64_A * ran + Rnd64_C;
+		}
+
+		/* steal 1 from t1, give it to t2 if the boundaries are respected */
+		if (T[t1] > lower_bound && T[t2] < upper_bound) {
+			T[t1]--;
+			T[t2]++;
+		}
+	}
+    *seed = ran;
+}
+
 static void* init_tile(int mb, int nb, unsigned long long int *seed)
 {
     unsigned long long int ran = *seed;
     int i, j;
     dague_complex64_t *array = (dague_complex64_t*)malloc(sizeof(dague_complex64_t)*mb*nb);
 
-    for (i = 0; i < mb; ++i)
-        for (j = 0; j < nb; ++j) {
-            array[i*nb+j] = ran%10;
+    for (j = 0; j < nb; ++j)
+	    for (i = 0; i < mb; ++i) {
+		    array[i+j*mb] = ran%10;
             ran = Rnd64_A * ran + Rnd64_C;
         }
     *seed = ran;
     return array;
 }
 
-static void print_matrix_data(irregular_tiled_matrix_desc_t* A)
+static void init_random_matrix(irregular_tiled_matrix_desc_t* M, unsigned long long int seed)
 {
-
+	int i, j, k, l;
+	int rank = M->grid.rank;
+	for (i = M->grid.rrank*M->grid.strows; i < M->mt; i+=M->grid.rows*M->grid.strows)
+		for (k = 0; k < M->grid.stcols; ++k)
+			for (j = M->grid.crank*M->grid.stcols; j < M->nt; j+=M->grid.cols*M->grid.stcols)
+				for (l = 0; l < M->grid.stcols; ++l) {
+					void *ptr = init_tile(M->Mtiling[i+k], M->Ntiling[j+l], &seed);
+					irregular_tiled_matrix_desc_set_data(M, ptr, i+k, j+l, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
+				}
 }
 
+static void init_empty_matrix(irregular_tiled_matrix_desc_t* M)
+{
+	int i, j, k, l;
+	int rank = M->grid.rank;
+	for (i = M->grid.rrank*M->grid.strows; i < M->mt; i+=M->grid.rows*M->grid.strows)
+        for (k = 0; k < M->grid.stcols; ++k)
+            for (j = M->grid.crank*M->grid.stcols; j < M->nt; j+=M->grid.cols*M->grid.stcols)
+                for (l = 0; l < M->grid.stcols; ++l) {
+                    void *ptr = calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(dague_complex64_t));
+                    irregular_tiled_matrix_desc_set_data(M, ptr, i+k, j+l, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
+                }
+}
+
+static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
+{
+	irregular_tiled_matrix_desc_t *descM = (irregular_tiled_matrix_desc_t*)M;
+	int i, j, k, ipos, jpos;
+	ipos = 0;
+	for (i = 0; i < descM->mt; ++i) {
+		jpos = 0;
+		for (j = 0; j < descM->nt; ++j) {
+			dague_data_t *t_ij = M->data_of(M, i, j);
+			irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
+			dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
+			for (k = 0; k < ct_ij->nb; ++k) {
+				/* copy each column of tile ij at the right position in M */
+				memcpy(check+(ipos+(jpos+k)*descM->lm),
+				       ptr+k*ct_ij->mb,
+				       ct_ij->mb*sizeof(dague_complex64_t));
+			}
+			/* move the column cursor to the next tile */
+			jpos += descM->Ntiling[j];
+		}
+		/* move the row cursor to the next tile */
+		ipos += descM->Mtiling[i];
+	}
+}
+
+static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid, dague_complex64_t* checkA)
+{
+	/* print the matrix in scilab-friendly-ready-to-c/c format */
+	int i, j;
+	fprintf(stdout, "Matrix_%s = [\n", Aid);
+	for (i = 0; i < A->m; i++)
+		for (j = 0; j < A->n; ++j)
+			fprintf(stdout, " %f%s", checkA[i+A->m*j],
+			        (j!=A->n-1)?",":(i!=A->m-1)?";\n":"];\n");
+}
+
+/* prints meta deta of the matrix */
 static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 {
     fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
@@ -69,13 +154,21 @@ static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
     fprintf(stdout, "  lm=%d, ln=%d, lmt=%d, lnt=%d\n", A->lm, A->ln, A->lmt, A->lnt);
 }
 
+
+
+
+
+
+
 int main(int argc, char ** argv)
 {
-    dague_context_t* dague;
+	int i;
+	dague_context_t* dague;
     int iparam[IPARAM_SIZEOF];
     int info_solution = 0;
     unsigned long long int Aseed = 3872;
     unsigned long long int Bseed = 4674;
+    unsigned long long int Tseed = 4242;
     int tA = PlasmaNoTrans;
     int tB = PlasmaNoTrans;
     dague_complex64_t alpha = 1.;
@@ -124,9 +217,9 @@ int main(int argc, char ** argv)
     int matrix_init = iparam[IPARAM_MATRIX_INIT];
     int butterfly_level = iparam[IPARAM_BUT_LEVEL];
     int async = iparam[IPARAM_ASYNC];
-    (void)cores;(void)gpus;(void)P;(void)Q;(void)M;(void)N;(void)K;(void)NRHS; \
-    (void)LDA;(void)LDB;(void)LDC;(void)IB;(void)MB;(void)NB;(void)MT;(void)NT;(void)KT; \
-    (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async; \
+    (void)cores;(void)gpus;(void)P;(void)Q;(void)M;(void)N;(void)K;(void)NRHS;
+    (void)LDA;(void)LDB;(void)LDC;(void)IB;(void)MB;(void)NB;(void)MT;(void)NT;(void)KT;
+    (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async;
     (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;
 
     PASTE_CODE_FLOPS(FLOPS_ZSUMMA, ((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K));
@@ -137,19 +230,17 @@ int main(int argc, char ** argv)
 
     unsigned int *Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
     unsigned int *Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-    unsigned int *Ntiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+    unsigned int *Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
 
-    int i, j, k, l;
-    for (i = 0; i < MT; ++i) Mtiling[i] = MB;
-    if (M%MB != 0) Mtiling[MT-1] = M%MB;
     int KB = 1+(K-1)/KT;
-    for (i = 0; i < KT; ++i) Ktiling[i] = KB;
-    if (K%KB != 0) Ktiling[KT-1] = K%KB;
-    for (i = 0; i < NT; ++i) Ntiling[i] = NB;
-    if (N%NB != 0) Ntiling[NT-1] = N%NB;
 
+    init_tiling(Mtiling, &Tseed, MT, MB, M);
+    init_tiling(Ntiling, &Tseed, NT, NB, N);
+    init_tiling(Ktiling, &Tseed, KT, KB, K);
 
-    fprintf(stdout, "(MT = %d, MB = %d) x (KT = %d, KB = %d) x (NT = %d, NB = %d)\n", MT, MB, KT, KB, NT, NB);
+#if defined(DAGUE_DEBUG_NOISIER)
+    fprintf(stdout, "(MT = %d, mean(MB) = %d) x (KT = %d, mean(KB) = %d) x (NT = %d, mean(NB) = %d)\n",
+            MT, MB, KT, KB, NT, NB);
     fprintf(stdout, "M tiling:");
     for (i = 0; i < MT; ++i) fprintf(stdout, " %d", Mtiling[i]);
     fprintf(stdout, "\n");
@@ -159,273 +250,104 @@ int main(int argc, char ** argv)
     fprintf(stdout, "N tiling:");
     for (i = 0; i < NT; ++i) fprintf(stdout, " %d", Ntiling[i]);
     fprintf(stdout, "\n");
+#endif
 
+    dague_complex64_t *checkA, *checkB, *checkC;
+    if (check) {
+	    checkA      = (dague_complex64_t*)calloc(M*K,sizeof(dague_complex64_t));
+	    checkB      = (dague_complex64_t*)calloc(K*N,sizeof(dague_complex64_t));
+	    checkC      = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+    }
+
+
+    /* initializing matrix structure */
+    irregular_tiled_matrix_desc_t ddescA;
+    irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
+                                     nodes, rank, M, K, MT, KT,
+                                     Mtiling, Ktiling,
+                                     0, 0, MT, KT, P);
+    irregular_tiled_matrix_desc_t ddescB;
+    irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble,
+                                     nodes, rank, K, N, KT, NT,
+                                     Ktiling, Ntiling,
+                                     0, 0, KT, NT, P);
     irregular_tiled_matrix_desc_t ddescC;
     irregular_tiled_matrix_desc_init(&ddescC, tile_coll_ComplexDouble,
                                      nodes, rank, M, N, MT, NT,
                                      Mtiling, Ntiling,
                                      0, 0, MT, NT, P);
 
-    void *ptr;
-    for (i = ddescC.grid.rrank*ddescC.grid.strows; i < MT; i+=ddescC.grid.rows*ddescC.grid.strows)
-        for (k = 0; k < ddescC.grid.stcols; ++k)
-            for (j = ddescC.grid.crank*ddescC.grid.stcols; j < NT; j+=ddescC.grid.cols*ddescC.grid.stcols)
-                for (l = 0; l < ddescC.grid.stcols; ++l) {
-                    ptr = calloc(Mtiling[i+k]*Ntiling[j+l], sizeof(dague_complex64_t));
-                    irregular_tiled_matrix_desc_set_data(&ddescC, ptr, i+k, j+l, Mtiling[i+k], Ntiling[j+l], 0, rank);
-                }
+    free(Mtiling);
+    free(Ntiling);
+    free(Ktiling);
 
-    checkA = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
-    checkB = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
-    checkC = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+    /* matrix generation */
+    if(1 || loud > 2) printf("+++ Generate matrices ... ");
+    init_random_matrix(&ddescA, Aseed);
+    init_random_matrix(&ddescB, Bseed);
+    init_empty_matrix(&ddescC);
+    if(1 || loud > 2) printf("Done\n");
 
-    /* initializing matrix structure */
-    if(!check) {
-
-	    irregular_tiled_matrix_desc_t ddescA;
-        irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
-                                         nodes, rank, M, K, MT, KT,
-                                         Mtiling, Ktiling,
-                                         0, 0, MT, KT, P);
-
-        irregular_tiled_matrix_desc_t ddescB;
-        irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble,
-                                         nodes, rank, K, N, KT, NT,
-                                         Ktiling, Ntiling,
-                                         0, 0, KT, NT, P);
-
-        /* matrix generation */
-        if(1 || loud > 2) printf("+++ Generate matrices ... ");
-        for (i = ddescA.grid.rrank*ddescA.grid.strows; i < MT; i+=ddescA.grid.rows*ddescA.grid.strows)
-            for (k = 0; k < ddescA.grid.stcols; ++k)
-                for (j = ddescA.grid.crank*ddescA.grid.stcols; j < KT; j+=ddescA.grid.cols*ddescA.grid.stcols)
-                    for (l = 0; l < ddescA.grid.stcols; ++l) {
-                        ptr = init_tile(Mtiling[i+k], Ktiling[j+l], &Aseed);
-                        irregular_tiled_matrix_desc_set_data(&ddescA, ptr, i+k, j+l, Mtiling[i+k], Ktiling[j+l], 0, rank);
-                    }
-
-        for (i = ddescB.grid.rrank*ddescB.grid.strows; i < KT; i+=ddescB.grid.rows*ddescB.grid.strows)
-            for (k = 0; k < ddescB.grid.stcols; ++k)
-                for (j = ddescB.grid.crank*ddescB.grid.stcols; j < NT; j+=ddescB.grid.cols*ddescB.grid.stcols)
-                    for (l = 0; l < ddescB.grid.stcols; ++l) {
-                        ptr = init_tile(Ktiling[i+k], Ntiling[j+l], &Bseed);
-                        irregular_tiled_matrix_desc_set_data(&ddescB, ptr, i+k, j+l, Ktiling[i+k], Ntiling[j+l], 0, rank);
-                    }
-
-        if(1 || loud > 2) printf("Done\n");
-
-        fprintf(stdout, "Matrix A:\n");
-        print_matrix_meta(&ddescA);
-        fprintf(stdout, "Matrix B:\n");
-        print_matrix_meta(&ddescB);
-        fprintf(stdout, "Matrix C:\n");
-        print_matrix_meta(&ddescC);
-
-        /* Create DAGuE */
-        SYNC_TIME_START();
-        dague_handle_t* DAGUE_zsumma = summa_zsumma_New(tA, tB, alpha,
-                                                        (irregular_tiled_matrix_desc_t*)&ddescA,
-                                                        (irregular_tiled_matrix_desc_t*)&ddescB,
-                                                        (irregular_tiled_matrix_desc_t*)&ddescC);
-
-        dague_enqueue(dague, DAGUE_zsumma);
-        if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
-
-        /* lets rock! */
-        /* PASTE_CODE_PROGRESS_KERNEL(dague, zsumma); */
-        SYNC_TIME_START();
-        TIME_START();
-        dague_context_wait(dague);
-        SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
-                               P, Q, NB, N,
-                               gflops=(flops/1e9)/sync_time_elapsed));
-
-        summa_zsumma_Destruct( DAGUE_zsumma );
-
-
-
-
-
-        {
-	        dague_ddesc_t*dA = (dague_ddesc_t*)&ddescA;
-	        int ipos = 0;
-	        for (i = 0; i < MT; ++i) {
-		        int jpos = 0;
-		        for (j = 0; j < KT; ++j) {
-			        dague_data_t *t_ij = dA->data_of(dA, i, j);
-			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
-			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
-			        for (k = 0; k < Ktiling[j]; ++k) {
-				        memcpy(checkA+(ipos+(jpos+k)*M),
-				               ptr+k*ct_ij->mb,
-				               ct_ij->mb*sizeof(dague_complex64_t));
-			        }
-			        jpos += Ktiling[j];
-		        }
-		        ipos += Mtiling[i];
-	        }
-        }
-
-        {
-	        dague_ddesc_t*dB = (dague_ddesc_t*)&ddescB;
-	        int ipos = 0;
-	        for (i = 0; i < KT; ++i) {
-		        int jpos = 0;
-		        for (j = 0; j < NT; ++j) {
-			        dague_data_t *t_ij = dB->data_of(dB, i, j);
-			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
-			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
-			        for (k = 0; k < Ntiling[j]; ++k) {
-				        memcpy(checkB+(ipos+(jpos+k)*K),
-				               ptr+k*ct_ij->mb,
-				               ct_ij->mb*sizeof(dague_complex64_t));
-			        }
-			        jpos += Ntiling[j];
-		        }
-		        ipos += Ktiling[i];
-	        }
-        }
-
-        {
-	        dague_ddesc_t*dC = (dague_ddesc_t*)&ddescC;
-	        int ipos = 0;
-	        for (i = 0; i < MT; ++i) {
-		        int jpos = 0;
-		        for (j = 0; j < NT; ++j) {
-			        dague_data_t *t_ij = dC->data_of(dC, i, j);
-			        irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
-			        dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
-			        for (k = 0; k < Ntiling[j]; ++k) {
-				        memcpy(checkC+(ipos+(jpos+k)*M),
-				               ptr+k*ct_ij->mb,
-				               ct_ij->mb*sizeof(dague_complex64_t));
-			        }
-			        jpos += Ntiling[j];
-		        }
-		        ipos += Mtiling[i];
-	        }
-        }
-
-
-        fprintf(stdout, "Matrix A:\n");
-        for (i = 0; i < M; i++) {
-	        for (j = 0; j < K; ++j)
-		        fprintf(stdout, " %f", checkA[i+M*j]);
-	        fprintf(stdout, "\n");
-        }
-
-        fprintf(stdout, "Matrix B:\n");
-        for (i = 0; i < K; i++) {
-	        for (j = 0; j < N; ++j)
-		        fprintf(stdout, " %f", checkB[i+K*j]);
-	        fprintf(stdout, "\n");
-        }
-
-        fprintf(stdout, "Matrix C:\n");
-        for (i = 0; i < M; i++) {
-	        for (j = 0; j < N; ++j)
-		        fprintf(stdout, " %f", checkC[i+M*j]);
-	        fprintf(stdout, "\n");
-        }
-
-
-
-        /* dague_data_free(ddescA.mat); */
-        irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
-        /* dague_data_free(ddescB.mat); */
-        irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
-    }
-    else {
-#if 0
-        int Am, An, Bm, Bn;
-        PASTE_CODE_ALLOCATE_MATRIX(ddescC2, check,
-            irregular_tiled_matrix_desc, (&ddescC2, matrix_ComplexDouble, matrix_Tile,
-                                   nodes, rank, MB, NB, LDC, N, 0, 0,
-                                   M, N, SMB, SNB, P));
-
-        dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescC2, Cseed);
-
-#if defined(PRECISION_z) || defined(PRECISION_c)
-        for(tA=0; tA<3; tA++) {
-            for(tB=0; tB<3; tB++) {
-#else
-        for(tA=0; tA<2; tA++) {
-            for(tB=0; tB<2; tB++) {
+#if defined(DAGUE_DEBUG_NOISIER)
+    fprintf(stdout, "Matrix A:\n");
+    print_matrix_meta(&ddescA);
+    fprintf(stdout, "Matrix B:\n");
+    print_matrix_meta(&ddescB);
+    fprintf(stdout, "Matrix C:\n");
+    print_matrix_meta(&ddescC);
 #endif
-                if ( trans[tA] == PlasmaNoTrans ) {
-                    Am = M; An = K;
-                } else {
-                    Am = K; An = M;
-                }
-                if ( trans[tB] == PlasmaNoTrans ) {
-                    Bm = K; Bn = N;
-                } else {
-                    Bm = N; Bn = K;
-                }
-                PASTE_CODE_ALLOCATE_MATRIX(ddescA, 1,
-                    irregular_tiled_matrix_desc, (&ddescA, tile_coll_ComplexDouble, tile_coll_Tile,
-                                           nodes, rank, MB, NB, LDA, LDA, 0, 0,
-                                           Am, An, SMB, SNB, P));
-                PASTE_CODE_ALLOCATE_MATRIX(ddescB, 1,
-                    irregular_tiled_matrix_desc, (&ddescB, tile_coll_ComplexDouble, tile_coll_Tile,
-                                           nodes, rank, MB, NB, LDB, LDB, 0, 0,
-                                           Bm, Bn, SMB, SNB, P));
 
-                dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescA, Aseed);
-                dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescB, Bseed);
+    /* Create DAGuE */
+    dague_handle_t* DAGUE_zsumma = summa_zsumma_New(tA, tB, alpha,
+                                                    (irregular_tiled_matrix_desc_t*)&ddescA,
+                                                    (irregular_tiled_matrix_desc_t*)&ddescB,
+                                                    (irregular_tiled_matrix_desc_t*)&ddescC);
 
-                if ( rank == 0 ) {
-                    printf("***************************************************\n");
-                    printf(" ----- TESTING ZGEMM (%s, %s) -------- \n",
-                           transstr[tA], transstr[tB]);
-                }
+    dague_enqueue(dague, DAGUE_zsumma);
+    if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
-                /* matrix generation */
-                if(loud) printf("Generate matrices ... ");
-                dplasma_zlacpy( dague, PlasmaUpperLower,
-                                (irregular_tiled_matrix_desc_t *)&ddescC2, (irregular_tiled_matrix_desc_t *)&ddescC );
-                if(loud) printf("Done\n");
+    /* lets rock! */
+    SYNC_TIME_START();
+    TIME_START();
+    dague_context_wait(dague);
+    SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
+                           P, Q, NB, N,
+                           gflops=(flops/1e9)/sync_time_elapsed));
 
-                /* Create SUMMA DAGuE */
-                if(loud) printf("Compute ... ... ");
-                summa_zsumma(dague, trans[tA], trans[tB],
-                              (dague_complex64_t)alpha,
-                              (irregular_tiled_matrix_desc_t *)&ddescA,
-                              (irregular_tiled_matrix_desc_t *)&ddescB,
-                              (irregular_tiled_matrix_desc_t *)&ddescC);
-                if(loud) printf("Done\n");
+    summa_zsumma_Destruct( DAGUE_zsumma );
 
-                irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
-                irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
-
-                /* Check the solution */
-                info_solution = check_solution( dague, (rank == 0) ? loud : 0,
-                                                trans[tA], trans[tB],
-                                                alpha, Am, An, Aseed,
-                                                       Bm, Bn, Bseed,
-                                                M,  N,
-                                                &ddescC);
-                if ( rank == 0 ) {
-                    if (info_solution == 0) {
-                        printf(" ---- TESTING ZSUMMA (%s, %s) ...... PASSED !\n",
-                               transstr[tA], transstr[tB]);
-                    }
-                    else {
-                        printf(" ---- TESTING ZSUMMA (%s, %s) ... FAILED !\n",
-                               transstr[tA], transstr[tB]);
-                    }
-                    printf("***************************************************\n");
-                }
-            }
-        }
-#if defined(_UNUSED_)
-            }
-        }
+    if (check) {
+	    copy_tile_in_matrix((dague_ddesc_t*)&ddescA, checkA);
+	    copy_tile_in_matrix((dague_ddesc_t*)&ddescB, checkB);
+	    copy_tile_in_matrix((dague_ddesc_t*)&ddescC, checkC);
+#if defined(DAGUE_DEBUG_PARANOID)
+	    print_matrix_data(&ddescA, "A", checkA);
+	    print_matrix_data(&ddescB, "B", checkB);
+	    print_matrix_data(&ddescC, "C", checkC);
 #endif
-        irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescC2);
+	    /* big dgemm time */
+	    /* propagate transA, transB, column major */
+	    int tempmm = M;
+	    int tempnn = N;
+	    int tempkk = K;
+	    int lda = M;
+	    int ldb = K;
+	    int ldc = M;
+	    dague_complex64_t beta = (dague_complex64_t)-1.0;
+	    CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
+
+#if defined(DAGUE_DEBUG_PARANOID)
+	    fprintf(stdout, "D = A * B - C (D should be null)\n");
+	    print_matrix_data(&ddescC, "D", checkC);
 #endif
+
+	    free(checkA);
+	    free(checkB);
+	    free(checkC);
     }
 
+    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
+    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescC);
 
     cleanup_dague(dague, iparam);
