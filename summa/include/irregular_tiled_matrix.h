@@ -20,11 +20,6 @@ enum tile_coll_type {
     tile_coll_ComplexDouble = 5  /**< complex double */
 };
 
-enum tile_coll_storage {
-    tile_coll_Lapack        = 0, /**< LAPACK Layout or Column Major  */
-    tile_coll_Tile          = 1, /**< Tile Layout or Column-Column Rectangular Block (CCRB) */
-};
-
 /**
  * Put our own definition of Upper/Lower/General values mathing the
  * Cblas/Plasma/... ones to avoid teh dependency
@@ -72,50 +67,59 @@ static inline int dague_translate_irregular_tiled_matrix_type( enum tile_coll_ty
 #define SUMMABLKLDD( _desc_, _m_ ) ( (_desc_).mb )
 
 #define irregular_tiled_matrix_desc_type 0x10
-#define LET_THE_MAGIC_HAPPENS 0xCAFECAFE
+#define LET_THE_MAGIC_HAPPENS 1234567890
 
 
-typedef struct irregular_tile_data_s {
-	dague_data_t super;
+typedef struct irregular_tile_s {
+    int                rank;
+    int                vpid;
+} irregular_tile_t;
+
+typedef struct irregular_tile_data_copy_s {
+	dague_data_copy_t  super;
 #if defined(DAGUE_DEBUG)
-	uint64_t magic;     /**< constant to assert cast went as planned */
+	uint64_t           magic;          /**< constant to assert cast went as planned */
 #endif
-    int           rank;
-    int           vpid;
+    int                mb;             /**< number of rows in a tile */
+    int                nb;             /**< number of columns in a tile */
+} irregular_tile_data_copy_t;
 
-    int tileld;         /**< leading dimension of each tile (Should be a function depending on the row) */
-    int mb;             /**< number of rows in a tile */
-    int nb;             /**< number of columns in a tile */
-	void *data;         /**< pointer to the tile data */
-} irregular_tile_data_t;
+/* Declare this struct as a class */
+/* In .c inheritance will be declared */
+DAGUE_DECLSPEC OBJ_CLASS_DECLARATION(irregular_tile_data_copy_t);
 
 
 typedef struct irregular_tiled_matrix_desc_s {
-    dague_ddesc_t super;
-	grid_2Dcyclic_t grid;
-    irregular_tile_data_t**       data_map;   /**< map of the data */
-	unsigned int * itiling; /**< array of size lmt+1 giving the range of indices of tile t in [itiling(t);itiling(t+1)]*/
-	unsigned int * jtiling; /**< array of size lnt+1 giving the range of indices of tile t in [jtiling(t);jtiling(t+1)]*/
-    enum tile_coll_type     mtype;      /**< precision of the matrix */
-    enum tile_coll_storage  storage;    /**< storage of the matrix */
-    int dtype;          /**< Distribution type of descriptor */
-    int bsiz;           /**< size in elements including padding of a tile - derived parameter */
-    int lm;             /**< number of rows of the entire matrix */
-    int ln;             /**< number of columns of the entire matrix */
-    int lmt;            /**< number of tile rows of the entire matrix */
-    int lnt;            /**< number of tile columns of the entire matrix */
-    int llm;            /**< number of rows of the matrix stored localy - derived parameter */
-    int lln;            /**< number of columns of the matrix stored localy - derived parameter */
-    int i;              /**< row tile index to the beginning of the submatrix */
-    int j;              /**< column tile index to the beginning of the submatrix */
-    int m;              /**< number of rows of the submatrix - derived parameter */
-    int n;              /**< number of columns of the submatrix - derived parameter */
-    int mt;             /**< number of tile rows of the submatrix */
-    int nt;             /**< number of tile columns of the submatrix */
-    int nb_local_tiles; /**< number of tile handled locally */
+	dague_ddesc_t                super;          /**< inherited class */
+	grid_2Dcyclic_t              grid;           /**< processes grid */
+    irregular_tile_t            *data_map;       /**< map of the meta data of tiles */
+	dague_data_t               **local_data_map; /**< map of the local data */
+	unsigned int                *Mtiling;        /**< array of size lmt giving the tile size */
+	unsigned int                *Ntiling;        /**< array of size lnt giving the tile size */
+    enum tile_coll_type          mtype;          /**< precision of the matrix */
+    int                          dtype;          /**< Distribution type of descriptor */
+    int                          bsiz;           /**< size in elements incl padding of a tile - derived parameter */
+    int                          lm;             /**< number of rows of the entire matrix */
+    int                          ln;             /**< number of columns of the entire matrix */
+    int                          lmt;            /**< number of tile rows of the entire matrix */
+    int                          lnt;            /**< number of tile columns of the entire matrix */
+    int                          i;              /**< row tile index to the beginning of the submatrix */
+    int                          j;              /**< column tile index to the beginning of the submatrix */
+    int                          m;              /**< number of rows of the submatrix - derived parameter */
+    int                          n;              /**< number of columns of the submatrix - derived parameter */
+    int                          mt;             /**< number of tile rows of the submatrix */
+    int                          nt;             /**< number of tile columns of the submatrix */
+    int                          nb_local_tiles; /**< number of tile handled locally */
 } irregular_tiled_matrix_desc_t;
 
-DAGUE_DECLSPEC dague_data_t* irregular_tile_data_new(void);
+/* DAGUE_DECLSPEC dague_data_t* irregular_tile_data_new(void); */
+
+irregular_tile_data_copy_t* irregular_tile_data_copy_create( irregular_tile_data_copy_t **holder,
+                                                             dague_data_key_t key, int owner, int mb, int nb);
+
+dague_data_t* irregular_tile_data_create(dague_data_t **holder,
+                                         irregular_tiled_matrix_desc_t *desc,
+                                         dague_data_key_t key, void *ptr, int mb, int nb, size_t elem_size);
 
 int tile_is_local(int i, int j, grid_2Dcyclic_t* g);
 
@@ -128,7 +132,7 @@ void irregular_tiled_matrix_desc_init(
 	/* global number of tiles */
 	unsigned int lmt, unsigned int lnt,
 	/* tiling of the submatrix */
-	unsigned int*itiling, unsigned int* jtiling,
+	unsigned int*Mtiling, unsigned int* Ntiling,
 	/* first tile of the submatrix */
 	unsigned int i, unsigned int j,
 	/* number of tiles of the submatrix */
@@ -147,20 +151,6 @@ void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc);
 
 int summa_aux_getSUMMALookahead( irregular_tiled_matrix_desc_t *ddesc );
 
-#  if 0
-/* Alternative */
-void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
-		       enum tile_coll_type mtype,
-		       unsigned int nodes, unsigned int myrank,
-		       unsigned int lm, unsigned int ln,
-		       unsigned int lmt, unsigned int lnt,
-		       unsigned int i, unsigned int j,
-		       int local_tiles);
-
-/* when inserting the local_tiles-th element of the matrix, this call becomes a collective operation with information sharing to discover the tiling after insertion of the whole matrix */
-void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, int i, int j, unsigned int mb, unsigned int nb, int vpid, int rank);
-
-#  endif
 
 END_C_DECLS
 
