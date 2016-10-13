@@ -5,10 +5,12 @@
  *
  * @precisions normal z -> s d c
  */
-#ifndef _SUMMA_Z_H_
-#define _SUMMA_Z_H_
+#ifndef _zsumma_h_has_been_included_
+#define _zsumma_h_has_been_included_
 
 #include "irregular_tiled_matrix.h"
+
+BEGIN_C_DECLS
 
 /* Level 3 Blas */
 int summa_zsumma( dague_context_t *dague,
@@ -38,4 +40,6 @@ void summa_zsumma_Destruct( dague_handle_t *o );
  */
 /* int check_zsumma(  dague_context_t *dague, int loud, PLASMA_enum uplo, irregular_tiled_matrix_desc_t *A, irregular_tiled_matrix_desc_t *b, irregular_tiled_matrix_desc_t *x ); */
 
-#endif /* _SUMMA_Z_H_ */
+END_C_DECLS
+
+#endif /* _zsumma_h_has_been_included_ */
