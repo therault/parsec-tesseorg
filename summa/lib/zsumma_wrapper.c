@@ -16,6 +16,54 @@
 #include "zsumma_TN.h"
 #include "zsumma_TT.h"
 
+typedef struct dague_function_vampire_s {
+    dague_function_t super;
+    dague_hook_t    *saved_prepare_input;
+    void *         (*resolve_future_function)(void*);
+} dague_function_vampire_t;
+
+static int future_input_for_read_task(dague_execution_unit_t * context, __dague_dsumma_NN_READ_A_task_t * this_task)
+{
+    const dague_dsumma_NN_handle_t *__dague_handle = (dague_dsumma_NN_handle_t *) this_task->dague_handle;
+    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
+    dague_data_copy_t *copy = NULL;
+    void *f = NULL, *tile = NULL;
+    const int m = this_task->locals.m.value;
+    const int k = this_task->locals.k.value;
+    /** Lookup the input data, and store them in the context if any */
+    assert(NULL == this_task->data.A.data_in);
+    copy = dague_data_get_copy(__dague_handle->dataA->data_of(__dague_handle->dataA, m, k), 0);
+    f = DAGUE_DATA_COPY_GET_PTR(copy);
+    tile = vf->resolve_future_function(f);
+    copy->device_private = tile;
+    vf->super.prepare_input = vf->saved_prepare_input;
+    return vf->super.prepare_input(context, (dague_execution_context_t *)this_task);
+}
+
+static void attach_futures_prepare_input(dague_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*))
+{
+    int fid;
+    dague_function_vampire_t *vf;
+    for(fid = 0; fid < handle->nb_functions; fid++) {
+        if( strcmp(handle->functions_array[fid]->name, task_name) == 0 ) {
+            break;
+        }
+    }
+    if( fid == handle->nb_functions ) {
+        fprintf(stderr, "%s:%d -- Internal Error: could not find a function with name '%s' in handle\n", __FILE__, __LINE__, task_name);
+        assert(0);
+        return;
+    }
+    assert(NULL != resolve_future_function);
+    vf = (dague_function_vampire_t*)malloc(sizeof(dague_function_vampire_t));
+    memcpy(&vf->super, handle->functions_array[fid], sizeof(dague_function_t));
+    asprintf((char **)&vf->super.name, "%s(vampirized)", handle->functions_array[fid]->name);
+    vf->saved_prepare_input = vf->super.prepare_input;
+    vf->resolve_future_function = resolve_future_function;
+    vf->super.prepare_input = (dague_hook_t*)future_input_for_read_task;
+    handle->functions_array[fid] = (dague_function_t*)vf;
+}
+
 /**
  *******************************************************************************
  *
@@ -134,7 +182,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         C->mt, C->nt,
         C->Mtiling, C->Ntiling,
         0, 0, /* Starting points (not important here) */
-        C->mt, C->nt, P);
+        C->mt, C->nt, P, 0);
 
     for (i = Cdist->grid.rrank*Cdist->grid.strows; i < C->mt; i+=Cdist->grid.rows*Cdist->grid.strows)
         for (k = 0; k < Cdist->grid.stcols; ++k)
@@ -191,6 +239,14 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
             arena = handle->arenas[DAGUE_zsumma_TT_DEFAULT_ARENA];
             zsumma_handle = (dague_handle_t*)handle;
         }
+    }
+
+
+    if( A->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zsumma_handle, "READ_A", A->future_resolve_fct);
+    }
+    if( B->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zsumma_handle, "READ_B", B->future_resolve_fct);
     }
 
     dplasma_add2arena_tile(arena,
