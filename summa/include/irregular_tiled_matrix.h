@@ -110,6 +110,7 @@ typedef struct irregular_tiled_matrix_desc_s {
     int                          mt;             /**< number of tile rows of the submatrix */
     int                          nt;             /**< number of tile columns of the submatrix */
     int                          nb_local_tiles; /**< number of tile handled locally */
+    void *(*future_resolve_fct)(void*);          /**< Function to use to resolve future if this is needed */
 } irregular_tiled_matrix_desc_t;
 
 /* DAGUE_DECLSPEC dague_data_t* irregular_tile_data_new(void); */
@@ -137,7 +138,8 @@ void irregular_tiled_matrix_desc_init(
 	unsigned int i, unsigned int j,
 	/* number of tiles of the submatrix */
 	unsigned int mt, unsigned int nt,
-	unsigned int P);
+	unsigned int P,
+        void *(*future_resolve_fct)(void*));
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */
