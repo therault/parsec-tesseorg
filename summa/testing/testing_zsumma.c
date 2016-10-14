@@ -265,17 +265,17 @@ int main(int argc, char ** argv)
     irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
                                      nodes, rank, M, K, MT, KT,
                                      Mtiling, Ktiling,
-                                     0, 0, MT, KT, P);
+                                     0, 0, MT, KT, P, NULL);
     irregular_tiled_matrix_desc_t ddescB;
     irregular_tiled_matrix_desc_init(&ddescB, tile_coll_ComplexDouble,
                                      nodes, rank, K, N, KT, NT,
                                      Ktiling, Ntiling,
-                                     0, 0, KT, NT, P);
+                                     0, 0, KT, NT, P, NULL);
     irregular_tiled_matrix_desc_t ddescC;
     irregular_tiled_matrix_desc_init(&ddescC, tile_coll_ComplexDouble,
                                      nodes, rank, M, N, MT, NT,
                                      Mtiling, Ntiling,
-                                     0, 0, MT, NT, P);
+                                     0, 0, MT, NT, P, NULL);
 
     free(Mtiling);
     free(Ntiling);

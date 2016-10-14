@@ -303,7 +303,8 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                                       unsigned int* Mtiling, unsigned int* Ntiling,
                                       unsigned int i, unsigned int j,
                                       unsigned int mt, unsigned int nt,
-                                      unsigned int P)
+                                      unsigned int P,
+                                      void *(*future_resolve_fct)(void*))
 {
 	unsigned int k;
 	dague_ddesc_t *d = (dague_ddesc_t*)ddesc;
@@ -362,6 +363,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	for (k = 0; k < nt; ++k) ddesc->ln += Ntiling[ddesc->j+k];
 
    	ddesc->nb_local_tiles = 0;
+        ddesc->future_resolve_fct = future_resolve_fct;
 }
 
 void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
