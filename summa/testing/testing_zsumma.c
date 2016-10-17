@@ -10,10 +10,7 @@
 #include "common.h"
 #include "irregular_tiled_matrix.h"
 #include "summa_z.h"
-
-#define FMULS_SUMMA(__m, __n, __k) ((double)(__m) * (double)(__n) * (double)(__k))
-#define FADDS_SUMMA(__m, __n, __k) ((double)(__m) * (double)(__n) * (double)(__k))
-#define FLOPS_ZSUMMA(__m, __n, __k) (6. * FMULS_SUMMA((__m), (__n), (__k)) + 2.0 * FADDS_SUMMA((__m), (__n), (__k)) )
+#include "flops.h"
 
 
 static int check_solution( dague_context_t *dague, int loud,
@@ -39,9 +36,9 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
 	if (M%MB != 0) T[MT-1] = M%MB;
 	/* good old regular tiling with smaller last tile */
 
-	unsigned int lower_bound = (MB*3)/5;
-	unsigned int upper_bound = (MB*8)/5;
-	for (p = 0; p < 5*MT; ++p) {
+	unsigned int lower_bound = MB/2;
+	unsigned int upper_bound = MB*2;
+	for (p = 0; p < MT*MT/2; ++p) {
 		int t1 = ran%MT;
 		ran = Rnd64_A * ran +Rnd64_C;
 		int t2 = t1;
@@ -69,6 +66,10 @@ static void* init_tile(int mb, int nb, unsigned long long int *seed)
 	    for (i = 0; i < mb; ++i) {
 		    array[i+j*mb] = ran%10;
             ran = Rnd64_A * ran + Rnd64_C;
+#if defined(PRECISION_z) || defined(PRECISION_c)
+            array[i+j*mb] += I*(ran%10);
+            ran = Rnd64_A * ran + Rnd64_C;
+#endif
         }
     *seed = ran;
     return array;
@@ -127,12 +128,28 @@ static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
 
 static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid, dague_complex64_t* checkA)
 {
+#if defined(PRECISION_z)
+#define FORMAT " %f+i%f%s"
+#elif defined(PRECISION_c)
+#define FORMAT " %lf+i%lf%s"
+#elif defined(PRECISION_d)
+#define FORMAT " %lf%s"
+#else
+#define FORMAT " %f%s"
+#endif
+
+#if defined(PRECISION_z) || defined(PRECISION_c)
+#define cmplx_print(z) creal(z), cimag(z)
+#else
+#define cmplx_print(z) (z)
+#endif
+
 	/* print the matrix in scilab-friendly-ready-to-c/c format */
 	int i, j;
 	fprintf(stdout, "Matrix_%s = [\n", Aid);
 	for (i = 0; i < A->m; i++)
 		for (j = 0; j < A->n; ++j)
-			fprintf(stdout, " %f%s", checkA[i+A->m*j],
+			fprintf(stdout, FORMAT, cmplx_print(checkA[i+A->m*j]),
 			        (j!=A->n-1)?",":(i!=A->m-1)?";\n":"];\n");
 }
 
@@ -222,7 +239,7 @@ int main(int argc, char ** argv)
     (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async;
     (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;
 
-    PASTE_CODE_FLOPS(FLOPS_ZSUMMA, ((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K));
+    double gflops = -1.0, flops = FLOPS_ZSUMMA((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K);
 
     LDA = max(LDA, max(M, K));
     LDB = max(LDB, max(K, N));
@@ -297,7 +314,8 @@ int main(int argc, char ** argv)
     print_matrix_meta(&ddescC);
 #endif
 
-    /* Create DAGuE */
+    /* Create DAGuE handle */
+    SYNC_TIME_START();
     dague_handle_t* DAGUE_zsumma = summa_zsumma_New(tA, tB, alpha,
                                                     (irregular_tiled_matrix_desc_t*)&ddescA,
                                                     (irregular_tiled_matrix_desc_t*)&ddescB,
