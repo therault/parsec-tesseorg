@@ -22,7 +22,7 @@ typedef struct dague_function_vampire_s {
     void *         (*resolve_future_function)(void*);
 } dague_function_vampire_t;
 
-static int future_input_for_read_task(dague_execution_unit_t * context, __dague_dsumma_NN_READ_A_task_t * this_task)
+static int future_input_for_read_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_A_task_t * this_task)
 {
     const dague_dsumma_NN_handle_t *__dague_handle = (dague_dsumma_NN_handle_t *) this_task->dague_handle;
     dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
