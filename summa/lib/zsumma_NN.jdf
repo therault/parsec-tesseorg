@@ -169,6 +169,19 @@ BODY [type=CUDA
     int ldbk = cB->mb;
     int ldcm = cC->mb;
 
+    /* fprintf(stdout, "CUDA: summa( %d, %d, %d )\n" */
+    /*         "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n", */
+    /*         m, n, k, */
+    /*         plasma_const( transA ), plasma_const( transB ), */
+    /*         tempmm, tempnn, tempkk, */
+    /*         lalpha, m, k, ldam, */
+    /*         k, n, ldbk, */
+    /*         lbeta, m, n, ldcm ); */
+
+    fprintf(stdout,
+            "CUDA: summa( %d, %d, %d ) > A(%d,%d) * B(%d,%d) C(%d,%d)\n",
+            m, n, k, cA->mb, cA->nb, cB->mb, cB->nb, cC->mb, cC->nb);
+
     cublasStatus_t status;
     cublasSetKernelStream( dague_body.stream );
     dague_body.dyld_fn( lapack_const(transA), lapack_const(transB),
