@@ -24,7 +24,7 @@ typedef struct dague_function_vampire_s {
 
 static int future_input_for_read_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_A_task_t * this_task)
 {
-    const dague_dsumma_NN_handle_t *__dague_handle = (dague_dsumma_NN_handle_t *) this_task->dague_handle;
+    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
     dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
     dague_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
@@ -67,7 +67,7 @@ static void attach_futures_prepare_input(dague_handle_t *handle, const char *tas
 /**
  *******************************************************************************
  *
- * @ingroup summa_dsumma
+ * @ingroup summa_zsumma
  *
  *  summa_zsumma_New - Generates the handle that performs one of the following
  *  matrix-matrix operations. WARNING: The computations are not done by this call.
