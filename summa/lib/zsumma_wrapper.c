@@ -22,9 +22,9 @@ typedef struct dague_function_vampire_s {
     void *         (*resolve_future_function)(void*);
 } dague_function_vampire_t;
 
-static int future_input_for_read_task(dague_execution_unit_t * context, __dague_dsumma_NN_READ_A_task_t * this_task)
+static int future_input_for_read_a_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_A_task_t * this_task)
 {
-    const dague_dsumma_NN_handle_t *__dague_handle = (dague_dsumma_NN_handle_t *) this_task->dague_handle;
+    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
     dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
     dague_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
@@ -36,8 +36,44 @@ static int future_input_for_read_task(dague_execution_unit_t * context, __dague_
     f = DAGUE_DATA_COPY_GET_PTR(copy);
     tile = vf->resolve_future_function(f);
     copy->device_private = tile;
-    vf->super.prepare_input = vf->saved_prepare_input;
-    return vf->super.prepare_input(context, (dague_execution_context_t *)this_task);
+    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
+}
+
+static int future_input_for_read_b_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_B_task_t * this_task)
+{
+    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
+    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
+    dague_data_copy_t *copy = NULL;
+    void *f = NULL, *tile = NULL;
+    const int k = this_task->locals.k.value;
+    const int n = this_task->locals.n.value;
+    /** Lookup the input data, and store them in the context if any */
+    assert(NULL == this_task->data.B.data_in);
+    copy = dague_data_get_copy(__dague_handle->dataB->data_of(__dague_handle->dataB, k, n), 0);
+    f = DAGUE_DATA_COPY_GET_PTR(copy);
+    tile = vf->resolve_future_function(f);
+    copy->device_private = tile;
+    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
+}
+
+static int future_input_for_summa_task(dague_execution_unit_t * context, __dague_zsumma_NN_SUMMA_task_t * this_task)
+{
+    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
+    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
+    dague_data_copy_t *copy = NULL;
+    void *f = NULL, *tile = NULL;
+    const int m = this_task->locals.m.value;
+    const int n = this_task->locals.n.value;
+    const int k = this_task->locals.k.value;
+    if(k == 0 ) {
+        /** Lookup the input data, and store them in the context if any */
+        assert(NULL == this_task->data.C.data_in);
+        copy = dague_data_get_copy(__dague_handle->dataC->data_of(__dague_handle->dataC, m, n), 0);
+        f = DAGUE_DATA_COPY_GET_PTR(copy);
+        tile = vf->resolve_future_function(f);
+        copy->device_private = tile;
+    }
+    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
 }
 
 static void attach_futures_prepare_input(dague_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*))
@@ -60,14 +96,20 @@ static void attach_futures_prepare_input(dague_handle_t *handle, const char *tas
     asprintf((char **)&vf->super.name, "%s(vampirized)", handle->functions_array[fid]->name);
     vf->saved_prepare_input = vf->super.prepare_input;
     vf->resolve_future_function = resolve_future_function;
-    vf->super.prepare_input = (dague_hook_t*)future_input_for_read_task;
+    if( strcmp(task_name, "READ_A") == 0 )
+        vf->super.prepare_input = (dague_hook_t*)future_input_for_read_a_task;
+    else if( strcmp(task_name, "READ_B") == 0 )
+        vf->super.prepare_input = (dague_hook_t*)future_input_for_read_b_task;
+    else if( strcmp(task_name, "SUMMA") == 0 )
+        vf->super.prepare_input = (dague_hook_t*)future_input_for_summa_task;
+    else assert(0);
     handle->functions_array[fid] = (dague_function_t*)vf;
 }
 
 /**
  *******************************************************************************
  *
- * @ingroup summa_dsumma
+ * @ingroup summa_zsumma
  *
  *  summa_zsumma_New - Generates the handle that performs one of the following
  *  matrix-matrix operations. WARNING: The computations are not done by this call.
@@ -247,6 +289,9 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     }
     if( B->future_resolve_fct != NULL ) {
         attach_futures_prepare_input(zsumma_handle, "READ_B", B->future_resolve_fct);
+    }
+    if( C->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zsumma_handle, "SUMMA", C->future_resolve_fct);
     }
 
     dplasma_add2arena_tile(arena,
