@@ -1683,6 +1683,7 @@ parsec_gpu_kernel_pop( gpu_device_t            *gpu_device,
         for( i = 0; i < 1; i++ ) {
             gpu_copy = this_task->data[i].data_out;
             original = gpu_copy->original;
+
             status = cudaMemcpyAsync( original->device_copies[0]->device_private,
                                       gpu_copy->device_private,
                                       original->nb_elts,

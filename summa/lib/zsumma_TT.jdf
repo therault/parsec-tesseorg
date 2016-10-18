@@ -157,15 +157,28 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)gA;
-    irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)gB;
-    irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)gC;
-    int tempmm = cC->mb;
-    int tempnn = cC->nb;
-    int tempkk = cA->mb;
-    int ldam = cA->nb;
-    int ldbn = cB->nb;
-    int ldcm = cC->mb;
+    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)gA; */
+    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)gB; */
+    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)gC; */
+    /* int tempmm = cC->mb; */
+    /* int tempnn = cC->nb; */
+    /* int tempkk = cA->mb; */
+    /* int ldam = cA->nb; */
+    /* int ldbn = cB->nb; */
+    /* int ldcm = cC->mb; */
+
+    int cAmb = descA.Mtiling[m];
+    int cAnb = descA.Ntiling[k];
+    int cBnb = descB.Ntiling[n];
+    int cCmb = cAmb;
+    int cCnb = cBnb;
+
+    int tempmm = cCmb;
+    int tempnn = cCnb;
+    int tempkk = cAmb;
+    int ldam = cAnb;
+    int ldbn = cBnb;
+    int ldcm = cCmb;
 
     cublasStatus_t status;
     cublasSetKernelStream( dague_body.stream );
