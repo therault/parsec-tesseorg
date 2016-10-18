@@ -4521,7 +4521,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
     coutput("#if defined(DAGUE_DEBUG_NOISIER)\n"
             "  {\n"
             "    char tmp[MAX_TASK_STRLEN];\n"
-            "    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream, \"GPU[%%1d]:\\tEnqueue on device %%s priority %%d\\n\", gpu_device->cuda_index, \n"
+            "    DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream, \"GPU[%%1d]:\\tEnqueue on device %%s priority %%d\", gpu_device->cuda_index, \n"
             "           dague_snprintf_execution_context(tmp, MAX_TASK_STRLEN, (dague_execution_context_t *)this_task),\n"
             "           this_task->priority );\n"
             "  }\n"

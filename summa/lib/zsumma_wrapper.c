@@ -207,16 +207,6 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
      * Create the task distribution */
     Cdist = (irregular_tiled_matrix_desc_t*)malloc(sizeof(irregular_tiled_matrix_desc_t));
 
-    unsigned int max_tile_size = 0, max_tile_mb = 0;
-    for (i = 0; i < C->lmt; ++i) {
-	    if (C->Ntiling[i] > max_tile_mb)
-		    max_tile_mb = C->Ntiling[i];
-	    for (j = 0; j < C->lnt; ++j)
-		    if (C->Mtiling[i]*C->Ntiling[j] > max_tile_size)
-			    /* Worst case scenario */
-			    max_tile_size = C->Mtiling[i]*C->Ntiling[j];
-    }
-
     irregular_tiled_matrix_desc_init(
         Cdist, tile_coll_RealDouble,
         C->super.nodes, C->super.myrank,
@@ -294,11 +284,14 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         attach_futures_prepare_input(zsumma_handle, "SUMMA", C->future_resolve_fct);
     }
 
+    unsigned int max_tile = summa_imax(A->max_tile, summa_imax(B->max_tile, C->max_tile));
+    unsigned int max_mb = summa_imax(A->max_mb, summa_imax(B->max_mb, C->max_mb));
+
     dplasma_add2arena_tile(arena,
                            /* FIXME: The size has to be optimized, the worst case will do for now */
-                           max_tile_size*sizeof(dague_complex64_t),
+                           max_tile*sizeof(dague_complex64_t),
                            DAGUE_ARENA_ALIGNMENT_SSE,
-                           dague_datatype_double_complex_t, max_tile_mb);
+                           dague_datatype_double_complex_t, max_mb);
 
     return zsumma_handle;
 }

@@ -265,7 +265,7 @@ void* cuda_solve_handle_dependencies(gpu_device_t* gpu_device,
     /* Couldn't load from named dynamic libs, try linked/static */
     if(NULL == fn) {
         dague_output_verbose(10, dague_cuda_output_stream,
-                             "No dynamic function %s found, trying from compile time linked in\n",
+                             "No dynamic function %s found, trying from compile time linked in",
                              function_name);
         dlh = dlopen(NULL, RTLD_NOW | RTLD_NODELETE);
         if(NULL != dlh) {
@@ -1030,7 +1030,7 @@ dague_gpu_data_stage_in( gpu_device_t* gpu_device,
                 gpu_elem->data_transfer_status == DATA_STATUS_UNDER_TRANSFER);
 
         DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
-                            "GPU[%d]:\t\tNO Move H2D for data %x of %d bytes\n",
+                            "GPU[%d]:\t\tNO Move H2D for data %x of %d bytes",
                             gpu_device->cuda_index, original->key, original->nb_elts);
     }
     /* TODO: data keeps the same coherence flags as before */
@@ -1663,6 +1663,7 @@ dague_gpu_kernel_pop( gpu_device_t            *gpu_device,
         for( i = 0; i < 1; i++ ) {
             gpu_copy = this_task->data[i].data_out;
             original = gpu_copy->original;
+
             status = cudaMemcpyAsync( original->device_copies[0]->device_private,
                                       gpu_copy->device_private,
                                       original->nb_elts,
@@ -1722,7 +1723,7 @@ dague_gpu_kernel_pop( gpu_device_t            *gpu_device,
                 /* TODO: make sure no readers are working on the CPU version */
                 original = gpu_copy->original;
                 DAGUE_DEBUG_VERBOSE(10, dague_cuda_output_stream,
-                                    "GPU[%d]:\tMove D2H data <%s:%x> D:%p -> H:%p requested\n",
+                                    "GPU[%d]:\tMove D2H data <%s:%x> D:%p -> H:%p requested",
                                     gpu_device->cuda_index, flow->name, original->key,
                                     (void*)gpu_copy->device_private, original->device_copies[0]->device_private);
                 DAGUE_TASK_PROF_TRACE_IF(gpu_stream->prof_event_track_enable,
@@ -1826,7 +1827,7 @@ dague_gpu_kernel_epilog( gpu_device_t        *gpu_device,
         if( gpu_task->pushout[i] ) {
             dague_ulist_fifo_push(&gpu_device->gpu_mem_lru, (dague_list_item_t*)gpu_copy);
             DAGUE_DEBUG_VERBOSE(20, dague_cuda_output_stream,
-                                "CUDA copy %p [ref_count %d] moved to the read LRU in %s\n",
+                                "CUDA copy %p [ref_count %d] moved to the read LRU in %s",
                                 gpu_copy, gpu_copy->super.super.obj_reference_count, __func__);
         } else {
             dague_ulist_fifo_push(&gpu_device->gpu_mem_owned_lru, (dague_list_item_t*)gpu_copy);
