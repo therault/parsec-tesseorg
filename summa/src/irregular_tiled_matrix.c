@@ -363,7 +363,19 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	for (k = 0; k < nt; ++k) ddesc->ln += Ntiling[ddesc->j+k];
 
    	ddesc->nb_local_tiles = 0;
-        ddesc->future_resolve_fct = future_resolve_fct;
+	ddesc->max_mb = 0;
+	ddesc->max_tile = 0;
+
+    for (i = 0; i < lmt; ++i) {
+	    if (Ntiling[i] > ddesc->max_mb)
+		    ddesc->max_mb = Ntiling[i];
+	    for (j = 0; j < lnt; ++j)
+		    if (Mtiling[i]*Ntiling[j] > ddesc->max_tile)
+			    /* Worst case scenario */
+			    ddesc->max_tile = Mtiling[i]*Ntiling[j];
+    }
+
+    ddesc->future_resolve_fct = future_resolve_fct;
 }
 
 void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
@@ -397,7 +409,7 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 	if (NULL != actual_data) {
 		irregular_tile_data_create(
 			ddesc->local_data_map+idx, ddesc, idx, actual_data,
-			mb, nb, dague_datadist_getsizeoftype(ddesc->mtype));
+			mb, nb, dague_irregular_tiled_matrix_getsizeoftype(ddesc->mtype));
 
 		ddesc->nb_local_tiles++;
 	}
