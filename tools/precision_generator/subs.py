@@ -70,6 +70,7 @@ subs = {
     ('#undef DOUBLE',       '#undef SINGLE',       '#undef DOUBLE',       '#undef SINGLE'       ),
     ('float',               'double',              'parsec_complex32_t',   'parsec_complex64_t'   ),
     ('matrix_RealFloat',    'matrix_RealDouble',   'matrix_ComplexFloat', 'matrix_ComplexDouble'),
+      ('tile_coll_RealFloat',    'tile_coll_RealDouble',   'tile_coll_ComplexFloat', 'tile_coll_ComplexDouble'),
     ('float_t'  ,           'double_t',            'complex_t',           'double_complex_t'    ),
     ('float',               'double',              'float',               'double'              ),
     ('matrix_RealFloat',    'matrix_RealDouble',   'matrix_RealFloat',    'matrix_RealDouble'   ),

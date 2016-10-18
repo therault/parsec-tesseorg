@@ -30,7 +30,7 @@ enum tile_coll_uplo {
     tile_coll_UpperLower = 123
 };
 
-static inline int dague_irreguler_tiled_matrix_getsizeoftype(enum tile_coll_type type)
+static inline int dague_irregular_tiled_matrix_getsizeoftype(enum tile_coll_type type)
 {
     switch( type ) {
     case tile_coll_Byte          : return sizeof(char);
@@ -110,7 +110,9 @@ typedef struct irregular_tiled_matrix_desc_s {
     int                          mt;             /**< number of tile rows of the submatrix */
     int                          nt;             /**< number of tile columns of the submatrix */
     int                          nb_local_tiles; /**< number of tile handled locally */
-    void *(*future_resolve_fct)(void*);          /**< Function to use to resolve future if this is needed */
+	unsigned int                 max_mb;         /**< maximum value of mb */
+	unsigned int                 max_tile;       /**< size of the biggest tile */
+	void *(*future_resolve_fct)(void*);          /**< Function to use to resolve future if this is needed */
 } irregular_tiled_matrix_desc_t;
 
 /* DAGUE_DECLSPEC dague_data_t* irregular_tile_data_new(void); */

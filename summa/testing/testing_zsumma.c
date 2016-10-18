@@ -13,14 +13,6 @@
 #include "flops.h"
 
 
-static int check_solution( dague_context_t *dague, int loud,
-                           PLASMA_enum transA, PLASMA_enum transB,
-                           dague_complex64_t alpha, int Am, int An, int Aseed,
-                           int Bm, int Bn, int Bseed,
-                           int M,  int N,
-                           irregular_tiled_matrix_desc_t *ddescCfinal );
-
-
 //static unsigned long long int Rnd64seed = 100;
 #define Rnd64_A 6364136223846793005ULL
 #define Rnd64_C 1ULL
@@ -370,103 +362,5 @@ int main(int argc, char ** argv)
 
     cleanup_dague(dague, iparam);
 
-    return info_solution;
-}
-
-/**********************************
- * static functions
- **********************************/
-
-/*------------------------------------------------------------------------
- *  Check the accuracy of the solution
- */
-static int check_solution( dague_context_t *dague, int loud,
-                           PLASMA_enum transA, PLASMA_enum transB,
-                           dague_complex64_t alpha, int Am, int An, int Aseed,
-                           int Bm, int Bn, int Bseed,
-                           int M,  int N,
-                           irregular_tiled_matrix_desc_t *ddescCfinal )
-{
-    int info_solution = 1;
-    (void)dague; (void)loud; (void)transA; (void)transB;
-    (void)alpha; (void)Am; (void)An; (void)Aseed; (void)Bm;
-    (void)Bn; (void)Bseed; (void)M; (void)N; (void)ddescCfinal;
-
-#if 0
-    double Anorm, Bnorm, Cinitnorm, Cdplasmanorm, Clapacknorm, Rnorm;
-    double eps, result;
-    int K  = ( transA == PlasmaNoTrans ) ? An : Am ;
-    int MB = ddescCfinal->super.mb;
-    int NB = ddescCfinal->super.nb;
-    int LDA = Am;
-    int LDB = Bm;
-    int LDC = M;
-    int rank  = ddescCfinal->super.myrank;
-
-    eps = LAPACKE_dlamch_work('e');
-
-    PASTE_CODE_ALLOCATE_MATRIX(ddescA, 1,
-        irregular_tiled_matrix_desc, (&ddescA, matrix_ComplexDouble, matrix_Lapack,
-                               1, rank, MB, NB, LDA, An, 0, 0,
-                               Am, An, 1, 1, 1));
-    PASTE_CODE_ALLOCATE_MATRIX(ddescB, 1,
-        irregular_tiled_matrix_desc, (&ddescB, matrix_ComplexDouble, matrix_Lapack,
-                               1, rank, MB, NB, LDB, Bn, 0, 0,
-                               Bm, Bn, 1, 1, 1));
-    PASTE_CODE_ALLOCATE_MATRIX(ddescC, 1,
-        irregular_tiled_matrix_desc, (&ddescC, matrix_ComplexDouble, matrix_Lapack,
-                               1, rank, MB, NB, LDC, N, 0, 0,
-                               M, N, 1, 1, 1));
-
-    dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescA, Aseed );
-    dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescB, Bseed );
-    dplasma_zplrnt( dague, 0, (irregular_tiled_matrix_desc_t *)&ddescC, Cseed );
-
-    Anorm        = dplasma_zlange( dague, PlasmaInfNorm, (irregular_tiled_matrix_desc_t*)&ddescA );
-    Bnorm        = dplasma_zlange( dague, PlasmaInfNorm, (irregular_tiled_matrix_desc_t*)&ddescB );
-    Cinitnorm    = dplasma_zlange( dague, PlasmaInfNorm, (irregular_tiled_matrix_desc_t*)&ddescC );
-    Cdplasmanorm = dplasma_zlange( dague, PlasmaInfNorm, (irregular_tiled_matrix_desc_t*)ddescCfinal );
-
-    if ( rank == 0 ) {
-        cblas_zgemm(CblasColMajor,
-                    (CBLAS_TRANSPOSE)transA, (CBLAS_TRANSPOSE)transB,
-                    M, N, K,
-                    CBLAS_SADDR(alpha), ddescA.mat, LDA,
-                                        ddescB.mat, LDB,
-                    CBLAS_SADDR(beta),  ddescC.mat, LDC );
-    }
-
-    Clapacknorm = dplasma_zlange( dague, PlasmaInfNorm, (irregular_tiled_matrix_desc_t*)&ddescC );
-
-    dplasma_zgeadd( dague, PlasmaNoTrans, -1.0, (irregular_tiled_matrix_desc_t*)ddescCfinal,
-                                           1.0, (irregular_tiled_matrix_desc_t*)&ddescC );
-
-    Rnorm = dplasma_zlange( dague, PlasmaMaxNorm, (irregular_tiled_matrix_desc_t*)&ddescC);
-
-    if ( rank == 0 ) {
-        if ( loud > 2 ) {
-            printf("  ||A||_inf = %e, ||B||_inf = %e, ||C||_inf = %e\n"
-                   "  ||lapack(a*A*B+b*C)||_inf = %e, ||dplasma(a*A*B+b*C)||_inf = %e, ||R||_m = %e\n",
-                   Anorm, Bnorm, Cinitnorm, Clapacknorm, Cdplasmanorm, Rnorm);
-        }
-
-        result = Rnorm / ((Anorm + Bnorm + Cinitnorm) * max(M,N) * eps);
-        if (  isinf(Clapacknorm) || isinf(Cdplasmanorm) ||
-              isnan(result) || isinf(result) || (result > 10.0) ) {
-            info_solution = 1;
-        }
-        else {
-            info_solution = 0;
-        }
-    }
-
-#if defined(DAGUE_HAVE_MPI)
-    MPI_Bcast(&info_solution, 1, MPI_INT, 0, MPI_COMM_WORLD);
-#endif
-
-    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
-    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
-    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescC);
-#endif
     return info_solution;
 }
