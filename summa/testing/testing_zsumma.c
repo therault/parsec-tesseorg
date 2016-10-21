@@ -118,6 +118,7 @@ static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
 	}
 }
 
+#if defined(DAGUE_DEBUG_PARANOID)
 static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid, dague_complex64_t* checkA)
 {
 #if defined(PRECISION_z)
@@ -144,8 +145,10 @@ static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid,
 			fprintf(stdout, FORMAT, cmplx_print(checkA[i+A->m*j]),
 			        (j!=A->n-1)?",":(i!=A->m-1)?";\n":"];\n");
 }
+#endif
 
 /* prints meta deta of the matrix */
+#if defined(DAGUE_DEBUG_NOISIER)
 static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 {
     fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
@@ -162,16 +165,12 @@ static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
     fprintf(stdout, "  i=%d, j=%d, nb_local_tiles=%d\n", A->i, A->j, A->nb_local_tiles);
     fprintf(stdout, "  lm=%d, ln=%d, lmt=%d, lnt=%d\n", A->lm, A->ln, A->lmt, A->lnt);
 }
-
-
-
-
+#endif
 
 
 
 int main(int argc, char ** argv)
 {
-	int i;
 	dague_context_t* dague;
     int iparam[IPARAM_SIZEOF];
     int info_solution = 0;
@@ -248,6 +247,7 @@ int main(int argc, char ** argv)
     init_tiling(Ktiling, &Tseed, KT, KB, K);
 
 #if defined(DAGUE_DEBUG_NOISIER)
+	int i;
     fprintf(stdout, "(MT = %d, mean(MB) = %d) x (KT = %d, mean(KB) = %d) x (NT = %d, mean(NB) = %d)\n",
             MT, MB, KT, KB, NT, NB);
     fprintf(stdout, "M tiling:");
@@ -291,11 +291,11 @@ int main(int argc, char ** argv)
     free(Ktiling);
 
     /* matrix generation */
-    if(1 || loud > 2) printf("+++ Generate matrices ... ");
+    if(loud > 2) printf("+++ Generate matrices ... ");
     init_random_matrix(&ddescA, Aseed);
     init_random_matrix(&ddescB, Bseed);
     init_empty_matrix(&ddescC);
-    if(1 || loud > 2) printf("Done\n");
+    if(loud > 2) printf("Done\n");
 
 #if defined(DAGUE_DEBUG_NOISIER)
     fprintf(stdout, "Matrix A:\n");

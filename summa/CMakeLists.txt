@@ -57,11 +57,10 @@ set(SUMMA_JDF
   lib/zsumma_NN.jdf
   lib/zsumma_NT.jdf
   )
-message("--- ${SUMMA_JDF} ---")
+
 set(SUMMA_WRAPPER_SRC
   lib/zsumma_wrapper.c
   )
-message("--- ${SUMMA_WRAPPER_SRC} ---")
 
 precisions_rules_py(generated_jdf
   "${SUMMA_JDF}"
