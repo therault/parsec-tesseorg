@@ -166,6 +166,25 @@ static int parsec_parse_binding_parameter(const char* option, parsec_context_t* 
                                          __parsec_temporary_thread_initialization_t* startup);
 static int parsec_parse_comm_binding_parameter(const char* option, parsec_context_t* context);
 
+#if defined(DEBUGGER_THREAD)
+int __debugger_thread_lock = 0;
+
+static void* __debugger_thread(void* args)
+{
+    (void)args;
+    int pid = getpid();
+    char hostname[256], gdbfile_path[256], screencmd[256];
+    gethostname(hostname, sizeof(hostname));
+    /* printf("PID %d on %s ready for attach\n", pid, hostname); */
+    sprintf( gdbfile_path, "/home/dgenet/gdbfile" );
+    sleep(1);
+    sprintf( screencmd, "ssh dancer screen -d -m -S tesse -X screen -t %s ssh -X -t %s gdb --pid=%d -x %s", hostname, hostname, pid, gdbfile_path );
+    printf( "%s\n", screencmd );
+    system(screencmd);
+    return NULL;
+}
+#endif
+
 static void* __parsec_thread_init( __parsec_temporary_thread_initialization_t* startup )
 {
     parsec_execution_unit_t* eu;
@@ -752,6 +771,20 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
         }
     }
     free(startup);
+
+#if defined(DEBUGGER_THREAD)
+    {
+	    __debugger_thread_lock = 0;
+	    int ret;
+        pthread_t tt;
+        pthread_create(&tt, NULL, __debugger_thread, NULL);
+        fflush(stdout);
+        while (0 == __debugger_thread_lock)
+            sleep(5);
+        sleep(1);
+        fprintf(stdout, " >> Released by gdb!\n");
+    }
+#endif
 
     /* Play with the thread placement */
     if( NULL != comm_binding_parameter )
