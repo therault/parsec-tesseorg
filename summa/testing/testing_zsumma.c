@@ -21,13 +21,15 @@
 
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M)
 {
-	int t, p;
+	int t;
 	unsigned long long int ran = *seed;
 
 	for (t = 0; t < MT; ++t) T[t] = MB;
 	if (M%MB != 0) T[MT-1] = M%MB;
 	/* good old regular tiling with smaller last tile */
 
+#if defined(SUMMA_RANDOM_TILING)
+	int p;
 	unsigned int lower_bound = MB/2;
 	unsigned int upper_bound = MB*2;
 	for (p = 0; p < MT*MT/2; ++p) {
@@ -46,6 +48,7 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
 		}
 	}
     *seed = ran;
+#endif
 }
 
 static void* init_tile(int mb, int nb, unsigned long long int *seed)

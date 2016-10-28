@@ -6,6 +6,11 @@ if(NOT BUILD_SUMMA)
   return()
 endif(NOT BUILD_SUMMA)
 
+option(SUMMA_WITH_RANDOM_TILING "testing_zsumma will generate random tile size." ON)
+if(SUMMA_WITH_RANDOM_TILING)
+  add_definitions(-DSUMMA_WITH_RANDOM_TILING)
+endif()
+
 LIST(APPEND CMAKE_MODULE_PATH "${DAGUE_SOURCE_DIR}/dplasma/cmake_modules/")
  find_package(COREBLAS REQUIRED)
 if(NOT COREBLAS_FOUND)
