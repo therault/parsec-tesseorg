@@ -14,10 +14,11 @@
 
 
 //static unsigned long long int Rnd64seed = 100;
-#define Rnd64_A 6364136223846793005ULL
-#define Rnd64_C 1ULL
+#define Rnd64_A  6364136223846793005ULL
+#define Rnd64_C  1ULL
 #define RndF_Mul 5.4210108624275222e-20f
 #define RndD_Mul 5.4210108624275222e-20
+#define EPSILON  0.000001L
 
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M)
 {
@@ -170,6 +171,54 @@ static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 }
 #endif
 
+static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, dague_complex64_t alpha,
+                           irregular_tiled_matrix_desc_t *ddescB, int tB,
+                           irregular_tiled_matrix_desc_t *ddescC,
+                           int M, int N, int K)
+{
+	int tempmm = M, tempnn = N, tempkk = K;
+	int lda = M, ldb = K, ldc = M;
+	int i, b = 1;
+	dague_complex64_t *checkA, *checkB, *checkC;
+	dague_complex64_t beta = (dague_complex64_t)-1.0;
+
+	checkA = (dague_complex64_t*)calloc(M*K,sizeof(dague_complex64_t));
+	checkB = (dague_complex64_t*)calloc(K*N,sizeof(dague_complex64_t));
+	checkC = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+
+	fprintf(stdout, "+++ Checking solution .");
+	copy_tile_in_matrix((dague_ddesc_t*)ddescA, checkA);
+	copy_tile_in_matrix((dague_ddesc_t*)ddescB, checkB);
+	copy_tile_in_matrix((dague_ddesc_t*)ddescC, checkC);
+	fprintf(stdout, ".");
+#if defined(DAGUE_DEBUG_PARANOID)
+	print_matrix_data(ddescA, "A", checkA);
+	print_matrix_data(ddescB, "B", checkB);
+	print_matrix_data(ddescC, "C", checkC);
+#endif
+
+	CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
+	fprintf(stdout, ".");
+
+#if defined(DAGUE_DEBUG_PARANOID)
+	fprintf(stdout, "D = A * B - C (D should be null)\n");
+	print_matrix_data(ddescC, "D", checkC);
+#endif
+
+	for (i = 0; i < M*N; ++i)
+		if (cabs(checkC[i]) > EPSILON) {
+			b = 0;
+			break;
+		}
+
+	if (!b) fprintf(stdout, " test FAILED: C is not null enough!\n");
+	else    fprintf(stdout, " test SUCCEED: C is null!\n");
+
+	free(checkA);
+	free(checkB);
+	free(checkC);
+}
+
 
 
 int main(int argc, char ** argv)
@@ -264,14 +313,6 @@ int main(int argc, char ** argv)
     fprintf(stdout, "\n");
 #endif
 
-    dague_complex64_t *checkA, *checkB, *checkC;
-    if (check) {
-	    checkA      = (dague_complex64_t*)calloc(M*K,sizeof(dague_complex64_t));
-	    checkB      = (dague_complex64_t*)calloc(K*N,sizeof(dague_complex64_t));
-	    checkC      = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
-    }
-
-
     /* initializing matrix structure */
     irregular_tiled_matrix_desc_t ddescA;
     irregular_tiled_matrix_desc_init(&ddescA, tile_coll_ComplexDouble,
@@ -329,35 +370,8 @@ int main(int argc, char ** argv)
 
     summa_zsumma_Destruct( DAGUE_zsumma );
 
-    if (check) {
-	    copy_tile_in_matrix((dague_ddesc_t*)&ddescA, checkA);
-	    copy_tile_in_matrix((dague_ddesc_t*)&ddescB, checkB);
-	    copy_tile_in_matrix((dague_ddesc_t*)&ddescC, checkC);
-#if defined(DAGUE_DEBUG_PARANOID)
-	    print_matrix_data(&ddescA, "A", checkA);
-	    print_matrix_data(&ddescB, "B", checkB);
-	    print_matrix_data(&ddescC, "C", checkC);
-#endif
-	    /* big dgemm time */
-	    /* propagate transA, transB, column major */
-	    int tempmm = M;
-	    int tempnn = N;
-	    int tempkk = K;
-	    int lda = M;
-	    int ldb = K;
-	    int ldc = M;
-	    dague_complex64_t beta = (dague_complex64_t)-1.0;
-	    CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
-
-#if defined(DAGUE_DEBUG_PARANOID)
-	    fprintf(stdout, "D = A * B - C (D should be null)\n");
-	    print_matrix_data(&ddescC, "D", checkC);
-#endif
-
-	    free(checkA);
-	    free(checkB);
-	    free(checkC);
-    }
+    if (check)
+	    check_solution(&ddescA, tA, alpha, &ddescB, tB, &ddescC, M, N, K);
 
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
