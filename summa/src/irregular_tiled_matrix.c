@@ -264,14 +264,16 @@ static uint32_t irregular_tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 #if defined(DAGUE_PROF_TRACE)
 static int irregular_tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key_t key, char * buffer, uint32_t buffer_size)
 {
-	(void)key;
-	(void)buffer;
-	(void)buffer_size;
-
+	unsigned int m, n;
+	int res;
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 
-	(void)desc;
-
+	m = key % desc->lnt;
+	n = key / desc->lnt;
+	res = snprintf(buffer, buffer_size, "(%u, %u)", m, n);
+	if (res < 0)
+		dague_warning("Wrong key_to_string for tile (%u, %u) key: %u", m, n, key);
+	return res;
 }
 #endif
 
@@ -326,7 +328,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	d->data_key    = irregular_tiled_matrix_data_key;
 
 #if defined(DAGUE_PROF_TRACE)
-	d->key_to_string = tiled_matrix_key_to_string;
+	d->key_to_string = irregular_tiled_matrix_key_to_string;
 #endif
 
     grid_2Dcyclic_init(&ddesc->grid, myrank, P, Q, 1, 1);
