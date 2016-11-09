@@ -28,17 +28,35 @@ elif [ "x$USER" = "xrhoque" ]; then
 
 elif [ "x$USER" = "xdgenet" ]; then
     HWLOC_DIR="/opt/hwloc/current"
-    if [ "x$1" = "xICC" ]; then
-        CC=icc
-        CXX=icpc
-        FC=ifort
-        PLASMA_DIR="/opt/plasma-intel"
-    else
-        CC="/opt/gcc/5.3.0/bin/gcc"
-        CXX="/opt/gcc/5.3.0/bin/c++"
-        FC="/opt/gcc/5.3.0/bin/gfortran"
-        PLASMA_DIR="/opt/plasma-gcc"
-    fi
+    CC="/opt/gcc/5.3.0/bin/gcc"
+    CXX="/opt/gcc/5.3.0/bin/c++"
+    FC="/opt/gcc/5.3.0/bin/gfortran"
+    PLASMA_DIR="/opt/plasma-gcc"
+
+    while [ $# -ge 1 ]; do
+        if [ "x$1" = "xICC" ]; then
+            CC=icc
+            CXX=icpc
+            FC=ifort
+            PLASMA_DIR="/opt/plasma-intel"
+        elif [ "x$1" = "xSCOREP" ]; then
+            TOOL_SUBDIR="toto"
+            OLDDIR=`pwd`
+            echo "+++ old working dir: $OLDDIR"
+            . $(dirname $0)/build_daguepp
+            cd $OLDDIR
+            echo `pwd`
+            CC=scorep-gcc
+            CXX=scorep-g++
+            FC=scorep-gfortran
+            USER_OPTIONS+=" -DWITH_SCOREP_PROFILING=TRUE"
+            USER_OPTIONS+=" -DIMPORT_EXECUTABLES=$TOOL_SUBDIR/ImportExecutables.cmake"
+        else
+            USER_OPTIONS+=" -D$1"
+        fi
+        shift
+    done
+    USER_OPTIONS+=" -DBUILD_SUMMA=ON"
 
 elif [ "x$USER" = "xYOURSELF" ]; then
     PLASMA_DIR="SOMEWHERE"
