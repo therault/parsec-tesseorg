@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 2.8)
 
 
-option(BUILD_SUMMA  "Build the summa library"  ON)
+option(BUILD_SUMMA  "Build the summa library"  OFF)
 if(NOT BUILD_SUMMA)
   return()
 endif(NOT BUILD_SUMMA)

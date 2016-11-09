@@ -23,7 +23,7 @@
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M)
 {
 	int t;
-	unsigned long long int ran = *seed;
+	(void)seed;
 
 	for (t = 0; t < MT; ++t) T[t] = MB;
 	if (M%MB != 0) T[MT-1] = M%MB;
@@ -33,6 +33,8 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
 	int p;
 	unsigned int lower_bound = MB/2;
 	unsigned int upper_bound = MB*2;
+	unsigned long long int ran = *seed;
+
 	for (p = 0; p < MT*MT/2; ++p) {
 		int t1 = ran%MT;
 		ran = Rnd64_A * ran +Rnd64_C;
