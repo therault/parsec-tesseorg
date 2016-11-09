@@ -657,9 +657,10 @@ mark_as_advanced(PARSEC_C_INCLUDES)
 #
 set(parsec_ptgpp_EXE "NOT-DEFINED")
 add_subdirectory(tools)
-IF(CMAKE_CROSSCOMPILING)
+
+IF(CMAKE_CROSSCOMPILING OR WITH_SCOREP_PROFILING)
   SET(IMPORT_EXECUTABLES "IMPORTFILE-NOTFOUND" CACHE FILEPATH "Point it to the export file from a native build")
-  MESSAGE(STATUS "Prepare cross-compiling using ${IMPORT_EXECUTABLES}")
+  MESSAGE(STATUS "Preparing compiling with Score-P using ${IMPORT_EXECUTABLES}")
   INCLUDE(${IMPORT_EXECUTABLES})
   SET(parsec_ptgpp_EXE native-parsec_ptgpp)
 ELSE(CMAKE_CROSSCOMPILING)
