@@ -16,51 +16,51 @@
 #include "zsumma_TN.h"
 #include "zsumma_TT.h"
 
-typedef struct dague_function_vampire_s {
-    dague_function_t super;
-    dague_hook_t    *saved_prepare_input;
+typedef struct parsec_function_vampire_s {
+    parsec_function_t super;
+    parsec_hook_t    *saved_prepare_input;
     void *         (*resolve_future_function)(void*);
-} dague_function_vampire_t;
+} parsec_function_vampire_t;
 
-static int future_input_for_read_a_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_A_task_t * this_task)
+static int future_input_for_read_a_task(parsec_execution_unit_t * context, __parsec_zsumma_NN_READ_A_task_t * this_task)
 {
-    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
-    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
-    dague_data_copy_t *copy = NULL;
+    const parsec_zsumma_NN_handle_t *__parsec_handle = (parsec_zsumma_NN_handle_t *) this_task->parsec_handle;
+    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->function;
+    parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
     const int k = this_task->locals.k.value;
     /** Lookup the input data, and store them in the context if any */
     assert(NULL == this_task->data.A.data_in);
-    copy = dague_data_get_copy(__dague_handle->dataA->data_of(__dague_handle->dataA, m, k), 0);
-    f = DAGUE_DATA_COPY_GET_PTR(copy);
+    copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descA)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descA), m, k), 0);
+    f = PARSEC_DATA_COPY_GET_PTR(copy);
     tile = vf->resolve_future_function(f);
     copy->device_private = tile;
-    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
+    return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
 }
 
-static int future_input_for_read_b_task(dague_execution_unit_t * context, __dague_zsumma_NN_READ_B_task_t * this_task)
+static int future_input_for_read_b_task(parsec_execution_unit_t * context, __parsec_zsumma_NN_READ_B_task_t * this_task)
 {
-    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
-    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
-    dague_data_copy_t *copy = NULL;
+    const parsec_zsumma_NN_handle_t *__parsec_handle = (parsec_zsumma_NN_handle_t *) this_task->parsec_handle;
+    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->function;
+    parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int k = this_task->locals.k.value;
     const int n = this_task->locals.n.value;
     /** Lookup the input data, and store them in the context if any */
     assert(NULL == this_task->data.B.data_in);
-    copy = dague_data_get_copy(__dague_handle->dataB->data_of(__dague_handle->dataB, k, n), 0);
-    f = DAGUE_DATA_COPY_GET_PTR(copy);
+    copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descB)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descB), k, n), 0);
+    f = PARSEC_DATA_COPY_GET_PTR(copy);
     tile = vf->resolve_future_function(f);
     copy->device_private = tile;
-    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
+    return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
 }
 
-static int future_input_for_summa_task(dague_execution_unit_t * context, __dague_zsumma_NN_SUMMA_task_t * this_task)
+static int future_input_for_summa_task(parsec_execution_unit_t * context, __parsec_zsumma_NN_SUMMA_task_t * this_task)
 {
-    const dague_zsumma_NN_handle_t *__dague_handle = (dague_zsumma_NN_handle_t *) this_task->dague_handle;
-    dague_function_vampire_t *vf = (dague_function_vampire_t*)this_task->function;
-    dague_data_copy_t *copy = NULL;
+    const parsec_zsumma_NN_handle_t *__parsec_handle = (parsec_zsumma_NN_handle_t *) this_task->parsec_handle;
+    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->function;
+    parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
     const int n = this_task->locals.n.value;
@@ -68,18 +68,18 @@ static int future_input_for_summa_task(dague_execution_unit_t * context, __dague
     if(k == 0 ) {
         /** Lookup the input data, and store them in the context if any */
         assert(NULL == this_task->data.C.data_in);
-        copy = dague_data_get_copy(__dague_handle->dataC->data_of(__dague_handle->dataC, m, n), 0);
-        f = DAGUE_DATA_COPY_GET_PTR(copy);
+        copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descC)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descC), m, n), 0);
+        f = PARSEC_DATA_COPY_GET_PTR(copy);
         tile = vf->resolve_future_function(f);
         copy->device_private = tile;
     }
-    return vf->saved_prepare_input(context, (dague_execution_context_t *)this_task);
+    return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
 }
 
-static void attach_futures_prepare_input(dague_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*))
+static void attach_futures_prepare_input(parsec_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*))
 {
     int fid;
-    dague_function_vampire_t *vf;
+    parsec_function_vampire_t *vf;
     for(fid = 0; fid < handle->nb_functions; fid++) {
         if( strcmp(handle->functions_array[fid]->name, task_name) == 0 ) {
             break;
@@ -91,19 +91,19 @@ static void attach_futures_prepare_input(dague_handle_t *handle, const char *tas
         return;
     }
     assert(NULL != resolve_future_function);
-    vf = (dague_function_vampire_t*)malloc(sizeof(dague_function_vampire_t));
-    memcpy(&vf->super, handle->functions_array[fid], sizeof(dague_function_t));
+    vf = (parsec_function_vampire_t*)malloc(sizeof(parsec_function_vampire_t));
+    memcpy(&vf->super, handle->functions_array[fid], sizeof(parsec_function_t));
     asprintf((char **)&vf->super.name, "%s(vampirized)", handle->functions_array[fid]->name);
     vf->saved_prepare_input = vf->super.prepare_input;
     vf->resolve_future_function = resolve_future_function;
     if( strcmp(task_name, "READ_A") == 0 )
-        vf->super.prepare_input = (dague_hook_t*)future_input_for_read_a_task;
+        vf->super.prepare_input = (parsec_hook_t*)future_input_for_read_a_task;
     else if( strcmp(task_name, "READ_B") == 0 )
-        vf->super.prepare_input = (dague_hook_t*)future_input_for_read_b_task;
+        vf->super.prepare_input = (parsec_hook_t*)future_input_for_read_b_task;
     else if( strcmp(task_name, "SUMMA") == 0 )
-        vf->super.prepare_input = (dague_hook_t*)future_input_for_summa_task;
+        vf->super.prepare_input = (parsec_hook_t*)future_input_for_summa_task;
     else assert(0);
-    handle->functions_array[fid] = (dague_function_t*)vf;
+    handle->functions_array[fid] = (parsec_function_t*)vf;
 }
 
 /**
@@ -156,8 +156,8 @@ static void attach_futures_prepare_input(dague_handle_t *handle, const char *tas
  *
  * @return
  *          \retval NULL if incorrect parameters are given.
- *          \retval The dague handle describing the operation that can be
- *          enqueued in the runtime with dague_enqueue(). It, then, needs to be
+ *          \retval The parsec handle describing the operation that can be
+ *          enqueued in the runtime with parsec_enqueue(). It, then, needs to be
  *          destroy with summa_zsumma_Destruct();
  *
  *******************************************************************************
@@ -169,15 +169,15 @@ static void attach_futures_prepare_input(dague_handle_t *handle, const char *tas
  * @sa summa_ssumma_New
  *
  ******************************************************************************/
-dague_handle_t*
+parsec_handle_t*
 summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
-                 dague_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
+                 parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
                  const irregular_tiled_matrix_desc_t* B,
                  irregular_tiled_matrix_desc_t* C)
 {
     irregular_tiled_matrix_desc_t *Cdist;
-    dague_handle_t* zsumma_handle;
-    dague_arena_t* arena;
+    parsec_handle_t* zsumma_handle;
+    parsec_arena_t* arena;
     int P, Q, m, n;
     int i, j, k, l;
 
@@ -220,7 +220,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         for (k = 0; k < Cdist->grid.stcols; ++k)
             for (j = Cdist->grid.crank*Cdist->grid.stcols; j < C->nt; j+=Cdist->grid.cols*Cdist->grid.stcols)
                 for (l = 0; l < Cdist->grid.stcols; ++l) {
-	                irregular_tiled_matrix_desc_set_data(Cdist, NULL, i+k, j+l, C->Mtiling[i+k], C->Ntiling[j+l], 0, ((dague_ddesc_t*)C)->rank_of((dague_ddesc_t*)C, i+k, j+l));
+	                irregular_tiled_matrix_desc_set_data(Cdist, NULL, i+k, j+l, C->Mtiling[i+k], C->Ntiling[j+l], 0, ((parsec_ddesc_t*)C)->rank_of((parsec_ddesc_t*)C, i+k, j+l));
                 }
 
     Cdist->super.data_of = NULL;
@@ -228,48 +228,48 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
 
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
-            dague_zsumma_NN_handle_t* handle;
-            handle = dague_zsumma_NN_new(transA, transB, alpha,
-                                         (dague_ddesc_t*)A,
-                                         (dague_ddesc_t*)B,
-                                         (dague_ddesc_t*)C,
-                                         (dague_ddesc_t*)Cdist,
-                                         0);
-            arena = handle->arenas[DAGUE_zsumma_NN_DEFAULT_ARENA];
-            zsumma_handle = (dague_handle_t*)handle;
+            parsec_zsumma_NN_handle_t* handle;
+            handle = parsec_zsumma_NN_new(transA, transB, alpha,
+                                          (const irregular_tiled_matrix_desc_t *)A,
+                                          (const irregular_tiled_matrix_desc_t *)B,
+                                          (irregular_tiled_matrix_desc_t *)C,
+                                          (parsec_ddesc_t*)Cdist,
+                                          0);
+            arena = handle->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
+            zsumma_handle = (parsec_handle_t*)handle;
         } else {
-            dague_zsumma_NT_handle_t* handle;
-            handle = dague_zsumma_NT_new(transA, transB, alpha,
-                                         (dague_ddesc_t*)A,
-                                         (dague_ddesc_t*)B,
-                                         (dague_ddesc_t*)C,
-                                         (dague_ddesc_t*)Cdist,
-                                         0);
-            arena = handle->arenas[DAGUE_zsumma_NT_DEFAULT_ARENA];
-            zsumma_handle = (dague_handle_t*)handle;
+            parsec_zsumma_NT_handle_t* handle;
+            handle = parsec_zsumma_NT_new(transA, transB, alpha,
+                                          (const irregular_tiled_matrix_desc_t *)A,
+                                          (const irregular_tiled_matrix_desc_t *)B,
+                                          (irregular_tiled_matrix_desc_t *)C,
+                                          (parsec_ddesc_t*)Cdist,
+                                          0);
+            arena = handle->arenas[PARSEC_zsumma_NT_DEFAULT_ARENA];
+            zsumma_handle = (parsec_handle_t*)handle;
         }
     } else {
         if( PlasmaNoTrans == transB ) {
-            dague_zsumma_TN_handle_t* handle;
-            handle = dague_zsumma_TN_new(transA, transB, alpha,
-                                         (dague_ddesc_t*)A,
-                                         (dague_ddesc_t*)B,
-                                         (dague_ddesc_t*)C,
-                                         (dague_ddesc_t*)Cdist,
-                                         0);
-            arena = handle->arenas[DAGUE_zsumma_TN_DEFAULT_ARENA];
-            zsumma_handle = (dague_handle_t*)handle;
+            parsec_zsumma_TN_handle_t* handle;
+            handle = parsec_zsumma_TN_new(transA, transB, alpha,
+                                          (const irregular_tiled_matrix_desc_t *)A,
+                                          (const irregular_tiled_matrix_desc_t *)B,
+                                          (irregular_tiled_matrix_desc_t *)C,
+                                          (parsec_ddesc_t*)Cdist,
+                                          0);
+            arena = handle->arenas[PARSEC_zsumma_TN_DEFAULT_ARENA];
+            zsumma_handle = (parsec_handle_t*)handle;
         }
         else {
-            dague_zsumma_TT_handle_t* handle;
-            handle = dague_zsumma_TT_new(transA, transB, alpha,
-                                         (dague_ddesc_t*)A,
-                                         (dague_ddesc_t*)B,
-                                         (dague_ddesc_t*)C,
-                                         (dague_ddesc_t*)Cdist,
-                                         0);
-            arena = handle->arenas[DAGUE_zsumma_TT_DEFAULT_ARENA];
-            zsumma_handle = (dague_handle_t*)handle;
+            parsec_zsumma_TT_handle_t* handle;
+            handle = parsec_zsumma_TT_new(transA, transB, alpha,
+                                          (const irregular_tiled_matrix_desc_t *)A,
+                                          (const irregular_tiled_matrix_desc_t *)B,
+                                          (irregular_tiled_matrix_desc_t *)C,
+                                          (parsec_ddesc_t*)Cdist,
+                                          0);
+            arena = handle->arenas[PARSEC_zsumma_TT_DEFAULT_ARENA];
+            zsumma_handle = (parsec_handle_t*)handle;
         }
     }
 
@@ -289,9 +289,9 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
 
     dplasma_add2arena_tile(arena,
                            /* FIXME: The size has to be optimized, the worst case will do for now */
-                           max_tile*sizeof(dague_complex64_t),
-                           DAGUE_ARENA_ALIGNMENT_SSE,
-                           dague_datatype_double_complex_t, max_mb);
+                           max_tile*sizeof(parsec_complex64_t),
+                           PARSEC_ARENA_ALIGNMENT_SSE,
+                           parsec_datatype_double_complex_t, max_mb);
 
     return zsumma_handle;
 }
@@ -317,14 +317,14 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
  *
  ******************************************************************************/
 void
-summa_zsumma_Destruct( dague_handle_t *handle )
+summa_zsumma_Destruct( parsec_handle_t *handle )
 {
-    dague_zsumma_NN_handle_t *zsumma_handle = (dague_zsumma_NN_handle_t *)handle;
-    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)(zsumma_handle->Cdist) );
-    free( zsumma_handle->Cdist );
+    parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
+    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+    free( zsumma_handle->_g_Cdist );
 
-    dague_matrix_del2arena( ((dague_zsumma_NN_handle_t *)handle)->arenas[DAGUE_zsumma_NN_DEFAULT_ARENA] );
-    dague_handle_free(handle);
+    parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+    parsec_handle_free(handle);
 }
 
 /**
@@ -345,8 +345,8 @@ summa_zsumma_Destruct( dague_handle_t *handle )
  *
  *******************************************************************************
  *
- * @param[in,out] dague
- *          The dague context of the application that will run the operation.
+ * @param[in,out] parsec
+ *          The parsec context of the application that will run the operation.
  *
  * @param[in] transA
  *          Specifies whether the matrix A is transposed, not transposed or conjugate transposed:
@@ -391,13 +391,13 @@ summa_zsumma_Destruct( dague_handle_t *handle )
  *
  ******************************************************************************/
 int
-summa_zsumma( dague_context_t *dague,
+summa_zsumma( parsec_context_t *parsec,
              PLASMA_enum transA, PLASMA_enum transB,
-             dague_complex64_t alpha, const irregular_tiled_matrix_desc_t *A,
+             parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t *A,
              const irregular_tiled_matrix_desc_t *B,
              irregular_tiled_matrix_desc_t *C)
 {
-    dague_handle_t *dague_zsumma = NULL;
+    parsec_handle_t *parsec_zsumma = NULL;
     int M, N, K;
     int Am, An, Ai, Aj, Amt, Ant;
     int Bm, Bn, Bi, Bj, Bmt, Bnt;
@@ -511,15 +511,15 @@ summa_zsumma( dague_context_t *dague,
     if (M == 0 || N == 0 || ((alpha == (PLASMA_Complex64_t)0.0 || K == 0)))
         return 0;
 
-    dague_zsumma = summa_zsumma_New(transA, transB,
+    parsec_zsumma = summa_zsumma_New(transA, transB,
                                     alpha, A,
                                     B,
                                     C);
 
-    if ( dague_zsumma != NULL ) {
-        dague_enqueue( dague, (dague_handle_t*)dague_zsumma);
-        dplasma_progress(dague);
-        summa_zsumma_Destruct( dague_zsumma );
+    if ( parsec_zsumma != NULL ) {
+        parsec_enqueue( parsec, (parsec_handle_t*)parsec_zsumma);
+        dplasma_progress(parsec);
+        summa_zsumma_Destruct( parsec_zsumma );
         return 0;
     }
     else {

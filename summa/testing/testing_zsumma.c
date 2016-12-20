@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2011 The University of Tennessee and The University
+ * Copyright (c) 2009-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  *
@@ -58,7 +58,7 @@ static void* init_tile(int mb, int nb, unsigned long long int *seed)
 {
     unsigned long long int ran = *seed;
     int i, j;
-    dague_complex64_t *array = (dague_complex64_t*)malloc(sizeof(dague_complex64_t)*mb*nb);
+    parsec_complex64_t *array = (parsec_complex64_t*)malloc(sizeof(parsec_complex64_t)*mb*nb);
 
     for (j = 0; j < nb; ++j)
 	    for (i = 0; i < mb; ++i) {
@@ -94,12 +94,12 @@ static void init_empty_matrix(irregular_tiled_matrix_desc_t* M)
         for (k = 0; k < M->grid.stcols; ++k)
             for (j = M->grid.crank*M->grid.stcols; j < M->nt; j+=M->grid.cols*M->grid.stcols)
                 for (l = 0; l < M->grid.stcols; ++l) {
-                    void *ptr = calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(dague_complex64_t));
+                    void *ptr = calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(parsec_complex64_t));
                     irregular_tiled_matrix_desc_set_data(M, ptr, i+k, j+l, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
                 }
 }
 
-static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
+static void copy_tile_in_matrix(parsec_ddesc_t* M, parsec_complex64_t *check)
 {
 	irregular_tiled_matrix_desc_t *descM = (irregular_tiled_matrix_desc_t*)M;
 	int i, j, k, ipos, jpos;
@@ -107,14 +107,14 @@ static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
 	for (i = 0; i < descM->mt; ++i) {
 		jpos = 0;
 		for (j = 0; j < descM->nt; ++j) {
-			dague_data_t *t_ij = M->data_of(M, i, j);
+			parsec_data_t *t_ij = M->data_of(M, i, j);
 			irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
-			dague_complex64_t *ptr = ((dague_data_copy_t*)ct_ij)->device_private;
+			parsec_complex64_t *ptr = ((parsec_data_copy_t*)ct_ij)->device_private;
 			for (k = 0; k < ct_ij->nb; ++k) {
 				/* copy each column of tile ij at the right position in M */
 				memcpy(check+(ipos+(jpos+k)*descM->lm),
 				       ptr+k*ct_ij->mb,
-				       ct_ij->mb*sizeof(dague_complex64_t));
+				       ct_ij->mb*sizeof(parsec_complex64_t));
 			}
 			/* move the column cursor to the next tile */
 			jpos += descM->Ntiling[j];
@@ -124,8 +124,8 @@ static void copy_tile_in_matrix(dague_ddesc_t* M, dague_complex64_t *check)
 	}
 }
 
-#if defined(DAGUE_DEBUG_PARANOID)
-static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid, dague_complex64_t* checkA)
+#if defined(PARSEC_DEBUG_PARANOID)
+static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid, parsec_complex64_t* checkA)
 {
 #if defined(PRECISION_z)
 #define FORMAT " %f+i%f%s"
@@ -154,7 +154,7 @@ static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid,
 #endif
 
 /* prints meta deta of the matrix */
-#if defined(DAGUE_DEBUG_NOISIER)
+#if defined(PARSEC_DEBUG_NOISIER)
 static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 {
     fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
@@ -173,7 +173,7 @@ static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 }
 #endif
 
-static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, dague_complex64_t alpha,
+static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, parsec_complex64_t alpha,
                            irregular_tiled_matrix_desc_t *ddescB, int tB,
                            irregular_tiled_matrix_desc_t *ddescC,
                            int M, int N, int K)
@@ -181,19 +181,19 @@ static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, dague_
 	int tempmm = M, tempnn = N, tempkk = K;
 	int lda = M, ldb = K, ldc = M;
 	int i, b = 1;
-	dague_complex64_t *checkA, *checkB, *checkC;
-	dague_complex64_t beta = (dague_complex64_t)-1.0;
+	parsec_complex64_t *checkA, *checkB, *checkC;
+	parsec_complex64_t beta = (parsec_complex64_t)-1.0;
 
-	checkA = (dague_complex64_t*)calloc(M*K,sizeof(dague_complex64_t));
-	checkB = (dague_complex64_t*)calloc(K*N,sizeof(dague_complex64_t));
-	checkC = (dague_complex64_t*)calloc(M*N,sizeof(dague_complex64_t));
+	checkA = (parsec_complex64_t*)calloc(M*K,sizeof(parsec_complex64_t));
+	checkB = (parsec_complex64_t*)calloc(K*N,sizeof(parsec_complex64_t));
+	checkC = (parsec_complex64_t*)calloc(M*N,sizeof(parsec_complex64_t));
 
 	fprintf(stdout, "+++ Checking solution .");
-	copy_tile_in_matrix((dague_ddesc_t*)ddescA, checkA);
-	copy_tile_in_matrix((dague_ddesc_t*)ddescB, checkB);
-	copy_tile_in_matrix((dague_ddesc_t*)ddescC, checkC);
+	copy_tile_in_matrix((parsec_ddesc_t*)ddescA, checkA);
+	copy_tile_in_matrix((parsec_ddesc_t*)ddescB, checkB);
+	copy_tile_in_matrix((parsec_ddesc_t*)ddescC, checkC);
 	fprintf(stdout, ".");
-#if defined(DAGUE_DEBUG_PARANOID)
+#if defined(PARSEC_DEBUG_PARANOID)
 	print_matrix_data(ddescA, "A", checkA);
 	print_matrix_data(ddescB, "B", checkB);
 	print_matrix_data(ddescC, "C", checkC);
@@ -202,7 +202,7 @@ static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, dague_
 	CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
 	fprintf(stdout, ".");
 
-#if defined(DAGUE_DEBUG_PARANOID)
+#if defined(PARSEC_DEBUG_PARANOID)
 	fprintf(stdout, "D = A * B - C (D should be null)\n");
 	print_matrix_data(ddescC, "D", checkC);
 #endif
@@ -225,7 +225,7 @@ static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, dague_
 
 int main(int argc, char ** argv)
 {
-	dague_context_t* dague;
+	parsec_context_t* parsec;
     int iparam[IPARAM_SIZEOF];
     int info_solution = 0;
     unsigned long long int Aseed = 3872;
@@ -233,7 +233,7 @@ int main(int argc, char ** argv)
     unsigned long long int Tseed = 4242;
     int tA = PlasmaNoTrans;
     int tB = PlasmaNoTrans;
-    dague_complex64_t alpha = 1.;
+    parsec_complex64_t alpha = 1.;
 
 #if defined(PRECISION_z) || defined(PRECISION_c)
     alpha -= I * 0.32;
@@ -242,11 +242,11 @@ int main(int argc, char ** argv)
     /* Set defaults for non argv iparams */
     iparam_default_gemm(iparam);
     iparam_default_ibnbmb(iparam, 0, 200, 200);
-#if defined(DAGUE_HAVE_CUDA) && 1
+#if defined(PARSEC_HAVE_CUDA) && 1
     iparam[IPARAM_NGPUS] = 0;
 #endif
-    /* Initialize DAGuE */
-    dague = setup_dague(argc, argv, iparam);
+    /* Initialize Parsec */
+    parsec = setup_parsec(argc, argv, iparam);
 
     int rank  = iparam[IPARAM_RANK];
     int nodes = iparam[IPARAM_NNODES];
@@ -300,7 +300,7 @@ int main(int argc, char ** argv)
     init_tiling(Ntiling, &Tseed, NT, NB, N);
     init_tiling(Ktiling, &Tseed, KT, KB, K);
 
-#if defined(DAGUE_DEBUG_NOISIER)
+#if defined(PARSEC_DEBUG_NOISIER)
 	int i;
     fprintf(stdout, "(MT = %d, mean(MB) = %d) x (KT = %d, mean(KB) = %d) x (NT = %d, mean(NB) = %d)\n",
             MT, MB, KT, KB, NT, NB);
@@ -343,7 +343,7 @@ int main(int argc, char ** argv)
     init_empty_matrix(&ddescC);
     if(loud > 2) printf("Done\n");
 
-#if defined(DAGUE_DEBUG_NOISIER)
+#if defined(PARSEC_DEBUG_NOISIER)
     fprintf(stdout, "Matrix A:\n");
     print_matrix_meta(&ddescA);
     fprintf(stdout, "Matrix B:\n");
@@ -352,25 +352,25 @@ int main(int argc, char ** argv)
     print_matrix_meta(&ddescC);
 #endif
 
-    /* Create DAGuE handle */
+    /* Create Parsec handle */
     SYNC_TIME_START();
-    dague_handle_t* DAGUE_zsumma = summa_zsumma_New(tA, tB, alpha,
+    parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
                                                     (irregular_tiled_matrix_desc_t*)&ddescA,
                                                     (irregular_tiled_matrix_desc_t*)&ddescB,
                                                     (irregular_tiled_matrix_desc_t*)&ddescC);
 
-    dague_enqueue(dague, DAGUE_zsumma);
+    parsec_enqueue(parsec, PARSEC_zsumma);
     if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
     /* lets rock! */
     SYNC_TIME_START();
     TIME_START();
-    dague_context_wait(dague);
+    parsec_context_wait(parsec);
     SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
                            P, Q, NB, N,
                            gflops=(flops/1e9)/sync_time_elapsed));
 
-    summa_zsumma_Destruct( DAGUE_zsumma );
+    summa_zsumma_Destruct( PARSEC_zsumma );
 
     if (check)
 	    check_solution(&ddescA, tA, alpha, &ddescB, tB, &ddescC, M, N, K);
@@ -379,7 +379,7 @@ int main(int argc, char ** argv)
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescC);
 
-    cleanup_dague(dague, iparam);
+    cleanup_parsec(parsec, iparam);
 
     return info_solution;
 }
