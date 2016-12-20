@@ -126,9 +126,9 @@ option(PARSEC_DEBUG_HISTORY
   "Keep a summarized history of critical events in memory that can be dumped in gdb when deadlock occur." OFF)
 option(PARSEC_CALL_TRACE
   "Enable the output of the kernels call trace during execution" OFF)
-option(DAGUE_WITH_DEBUGGER_THREAD
+option(PARSEC_WITH_DEBUGGER_THREAD
   "Activate the debugger thread. Can attached itself in gdb in a screen tab." OFF)
-if (DAGUE_WITH_DEBUGGER_THREAD)
+if (PARSEC_WITH_DEBUGGER_THREAD)
   add_definitions(-DDEBUGGER_THREAD)
 endif()
 
