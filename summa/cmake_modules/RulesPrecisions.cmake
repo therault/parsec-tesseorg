@@ -1,10 +1,10 @@
 #
-# DAGuE Internal: generation of various floating point precision files from a template.
+# PaRSEC Internal: generation of various floating point precision files from a template.
 #
 
-set(GENDEPENDENCIES  ${DAGUE_SOURCE_DIR}/tools/precision_generator/genDependencies.py)
-set(PRECISIONPP      ${DAGUE_SOURCE_DIR}/tools/precision_generator/codegen.py)
-set(PRECISIONPP_subs ${DAGUE_SOURCE_DIR}/tools/precision_generator/subs.py)
+set(GENDEPENDENCIES  ${PARSEC_SOURCE_DIR}/tools/precision_generator/genDependencies.py)
+set(PRECISIONPP      ${PARSEC_SOURCE_DIR}/tools/precision_generator/codegen.py)
+set(PRECISIONPP_subs ${PARSEC_SOURCE_DIR}/tools/precision_generator/subs.py)
 
 include(ParseArguments)
 FIND_PACKAGE(PythonInterp REQUIRED)
@@ -74,9 +74,9 @@ message("${gencmd} >>> ${dependencies_list}")
 
       # Force the copy of the original files in the binary_dir
       # for VPATH compilation
-      if( NOT DAGUE_COMPILE_INPLACE )
+      if( NOT PARSEC_COMPILE_INPLACE )
         set(generate_out 1)
-      else( NOT DAGUE_COMPILE_INPLACE )
+      else( NOT PARSEC_COMPILE_INPLACE )
         string(COMPARE NOTEQUAL "${_dependency_OUTPUT}" "${_dependency_INPUT}" generate_out )
       endif()
 

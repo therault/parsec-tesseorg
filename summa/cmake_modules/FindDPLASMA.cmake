@@ -1,18 +1,18 @@
 
-# - Find DAGUE library
-# This module finds an installed  library that implements the DAGUE
+# - Find PARSEC library
+# This module finds an installed  library that implements PaRSEC
 # The list of libraries searched for is taken
 # from the autoconf macro file, acx_blas.m4 (distributed at
 # http://ac-archive.sourceforge.net/ac-archive/acx_blas.html).
 #
 # This module is controled by the following variables:
-#  DPLASMA_DIR - path to look for DAGuE
-#  DPLASMA_PKG_DIR - path to look for the dague.pc pkgconfig file
+#  DPLASMA_DIR - path to look for PaRSEC
+#  DPLASMA_PKG_DIR - path to look for the parsec.pc pkgconfig file
 #  DPLASMA_FOUND - set to true if a library implementing the PLASMA interface
 #    is found
 #  DPLASMA_INCLUDE_DIRS - include directories
 #  DPLASMA_LIBRARIES - uncached list of libraries (using full path name) to
-#    link against to use DAGuE
+#    link against to use PaRSEC
 #  DPLASMA_STATIC  if set on this determines what kind of linkage we do (static)
 #  DPLASMA_VENDOR  if set checks only the specified vendor, if not set checks
 #     all the possibilities

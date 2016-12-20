@@ -11,7 +11,7 @@ if(SUMMA_WITH_RANDOM_TILING)
   add_definitions(-DSUMMA_WITH_RANDOM_TILING)
 endif()
 
-LIST(APPEND CMAKE_MODULE_PATH "${DAGUE_SOURCE_DIR}/dplasma/cmake_modules/")
+LIST(APPEND CMAKE_MODULE_PATH "${PARSEC_SOURCE_DIR}/dplasma/cmake_modules/")
  find_package(COREBLAS REQUIRED)
 if(NOT COREBLAS_FOUND)
   return()
@@ -23,21 +23,21 @@ LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testing/")
 set(DPLASMA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../dplasma)
 set(DPLASMA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/../dplasma)
 
-set(DAGUE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(DAGUE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/..)
+set(PARSEC_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(PARSEC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 include_directories( ${CMAKE_CURRENT_BINARY_DIR}/include )
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/lib )
 include_directories( ${DPLASMA_BINARY_DIR}/include )
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
-include_directories( ${DAGUE_SOURCE_DIR}/data_dist/matrix )
+include_directories( ${PARSEC_SOURCE_DIR}/data_dist/matrix )
 include_directories( ${COREBLAS_INCLUDE_DIRS} )
 
 option(SUMMA_WITH_RECURSIVE
   "Enable recursive kernels to be called when available" OFF)
 if(DPLASMA_WITH_RECURSIVE)
   # TODO: This will need to be added to the futur dplasma_config.h.in
-  add_definitions(-DDAGUE_HAVE_RECURSIVE)
+  add_definitions(-DPARSEC_HAVE_RECURSIVE)
 endif()
 
 

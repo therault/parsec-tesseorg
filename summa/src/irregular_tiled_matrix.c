@@ -5,78 +5,78 @@
  *                         reserved.
  */
 
-#include "dague_config.h"
-#include "dague/devices/device.h"
-#include "dague/dague_internal.h"
-#include "dague/debug.h"
+#include "parsec_config.h"
+#include "parsec/devices/device.h"
+#include "parsec/parsec_internal.h"
+#include "parsec/debug.h"
 #include "irregular_tiled_matrix.h"
-#include "dague/vpmap.h"
-#include "dague.h"
-#include "dague/data.h"
+#include "parsec/vpmap.h"
+#include "parsec.h"
+#include "parsec/data.h"
 #include "dplasma.h"
 
 #include <math.h>
 
-#ifdef DAGUE_HAVE_MPI
+#ifdef PARSEC_HAVE_MPI
 #include <mpi.h>
-#endif /* DAGUE_HAVE_MPI */
+#endif /* PARSEC_HAVE_MPI */
 
 
-static uint32_t      irregular_tiled_matrix_rank_of(      dague_ddesc_t* ddesc, ...);
-static uint32_t      irregular_tiled_matrix_rank_of_key(  dague_ddesc_t* ddesc, dague_data_key_t key);
+static uint32_t      irregular_tiled_matrix_rank_of(      parsec_ddesc_t* ddesc, ...);
+static uint32_t      irregular_tiled_matrix_rank_of_key(  parsec_ddesc_t* ddesc, parsec_data_key_t key);
 
-static int32_t       irregular_tiled_matrix_vpid_of(      dague_ddesc_t* ddesc, ...);
-static int32_t       irregular_tiled_matrix_vpid_of_key(  dague_ddesc_t* ddesc, dague_data_key_t key);
+static int32_t       irregular_tiled_matrix_vpid_of(      parsec_ddesc_t* ddesc, ...);
+static int32_t       irregular_tiled_matrix_vpid_of_key(  parsec_ddesc_t* ddesc, parsec_data_key_t key);
 
-static dague_data_t* irregular_tiled_matrix_data_of(      dague_ddesc_t* ddesc, ...);
-static dague_data_t* irregular_tiled_matrix_data_of_key(  dague_ddesc_t* ddesc, dague_data_key_t key);
-static dague_data_t* irregular_tiled_matrix_C_data_of(    dague_ddesc_t* ddesc, ...);
-static dague_data_t* irregular_tiled_matrix_C_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key);
+static parsec_data_t* irregular_tiled_matrix_data_of(      parsec_ddesc_t* ddesc, ...);
+static parsec_data_t* irregular_tiled_matrix_data_of_key(  parsec_ddesc_t* ddesc, parsec_data_key_t key);
+static parsec_data_t* irregular_tiled_matrix_C_data_of(    parsec_ddesc_t* ddesc, ...);
+static parsec_data_t* irregular_tiled_matrix_C_data_of_key(parsec_ddesc_t* ddesc, parsec_data_key_t key);
 
-static uint32_t      irregular_tiled_matrix_data_key(     dague_ddesc_t *ddesc, ...);
+static uint32_t      irregular_tiled_matrix_data_key(     parsec_ddesc_t *ddesc, ...);
 
 
 static void irregular_tile_data_copy_construct(irregular_tile_data_copy_t* t)
 {
-#if defined(DAGUE_DEBUG_PARANOID)
-#    if defined(DAGUE_DEBUG)
+#if defined(PARSEC_DEBUG_PARANOID)
+#    if defined(PARSEC_DEBUG)
 	t->magic = LET_THE_MAGIC_HAPPENS;
 #    endif
 	t->mb = -1;
 	t->nb = -1;
 #endif
-	DAGUE_DEBUG_VERBOSE(20, dague_debug_output, "Allocate irregular tile data copy %p", t);
+	PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Allocate irregular tile data copy %p", t);
 }
 
 static void irregular_tile_data_copy_destruct(irregular_tile_data_copy_t* tile)
 {
-	dague_data_copy_t *obj = (dague_data_copy_t*)tile;
-    DAGUE_DEBUG_VERBOSE(20, dague_debug_output, "Release irregular tile data copy %p", obj);
+	parsec_data_copy_t *obj = (parsec_data_copy_t*)tile;
+    PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Release irregular tile data copy %p", obj);
     /* nothing to erase in this type */
 }
 
-OBJ_CLASS_INSTANCE(irregular_tile_data_copy_t, dague_data_copy_t,
+OBJ_CLASS_INSTANCE(irregular_tile_data_copy_t, parsec_data_copy_t,
                    irregular_tile_data_copy_construct,
                    irregular_tile_data_copy_destruct);
 
 
-dague_data_t*
-irregular_tile_data_create( dague_data_t **holder,
+parsec_data_t*
+irregular_tile_data_create( parsec_data_t **holder,
                             irregular_tiled_matrix_desc_t *desc,
-                            dague_data_key_t key, void *ptr,
+                            parsec_data_key_t key, void *ptr,
                             int mb, int nb, size_t elem_size )
 {
-	dague_data_t *data = *holder;
+	parsec_data_t *data = *holder;
 
     if( NULL == data ) {
-	    data = OBJ_NEW(dague_data_t);
+	    data = OBJ_NEW(parsec_data_t);
         data->owner_device = 0;
         data->key = key;
-        data->ddesc = (dague_ddesc_t*)desc;
+        data->ddesc = (parsec_ddesc_t*)desc;
         data->nb_elts = mb*nb*elem_size;
 
-        dague_data_copy_t* data_copy = (dague_data_copy_t*)OBJ_NEW(irregular_tile_data_copy_t);
-        dague_data_copy_attach(data, data_copy, 0);
+        parsec_data_copy_t* data_copy = (parsec_data_copy_t*)OBJ_NEW(irregular_tile_data_copy_t);
+        parsec_data_copy_attach(data, data_copy, 0);
         data_copy->device_private = ptr;
 
         irregular_tile_data_copy_t *t = (irregular_tile_data_copy_t *)data_copy;
@@ -88,7 +88,7 @@ irregular_tile_data_create( dague_data_t **holder,
     else {
         /* Do we have a copy of this data */
         if( NULL == data->device_copies[0] ) {
-            dague_data_copy_t* data_copy = dague_data_copy_new(data, 0);
+            parsec_data_copy_t* data_copy = parsec_data_copy_new(data, 0);
             data_copy->device_private = ptr;
             irregular_tile_data_copy_t *t = (irregular_tile_data_copy_t *)data_copy;
             t->mb = mb;
@@ -112,7 +112,7 @@ static irregular_tile_t* get_tile(irregular_tiled_matrix_desc_t* desc, int i, in
 	return desc->data_map+pos;
 }
 
-static dague_data_t* get_data(irregular_tiled_matrix_desc_t* desc, int i, int j)
+static parsec_data_t* get_data(irregular_tiled_matrix_desc_t* desc, int i, int j)
 {
 	int pos;
 	i += desc->i;
@@ -123,7 +123,7 @@ static dague_data_t* get_data(irregular_tiled_matrix_desc_t* desc, int i, int j)
 	return desc->local_data_map[pos];
 }
 
-static uint32_t irregular_tiled_matrix_rank_of(dague_ddesc_t* d, ...)
+static uint32_t irregular_tiled_matrix_rank_of(parsec_ddesc_t* d, ...)
 {
 	int i, j;
 	va_list ap;
@@ -141,7 +141,7 @@ static uint32_t irregular_tiled_matrix_rank_of(dague_ddesc_t* d, ...)
 	return t->rank;
 }
 
-static int32_t irregular_tiled_matrix_vpid_of(dague_ddesc_t* d, ...)
+static int32_t irregular_tiled_matrix_vpid_of(parsec_ddesc_t* d, ...)
 {
 	int i, j;
 	va_list ap;
@@ -159,7 +159,7 @@ static int32_t irregular_tiled_matrix_vpid_of(dague_ddesc_t* d, ...)
 	return t->vpid;
 }
 
-static dague_data_t* irregular_tiled_matrix_data_of(dague_ddesc_t* d, ...)
+static parsec_data_t* irregular_tiled_matrix_data_of(parsec_ddesc_t* d, ...)
 {
 	int i, j;
 	va_list ap;
@@ -171,7 +171,7 @@ static dague_data_t* irregular_tiled_matrix_data_of(dague_ddesc_t* d, ...)
 	j = va_arg(ap, int);
 	va_end(ap);
 
-	dague_data_t* t = get_data(desc, i, j);
+	parsec_data_t* t = get_data(desc, i, j);
 
 #if defined(DISTRIBUTED)
 	assert(d->myrank == irregular_tiled_matrix_rank_of(d, i, j));
@@ -183,7 +183,7 @@ static dague_data_t* irregular_tiled_matrix_data_of(dague_ddesc_t* d, ...)
 	return t;
 }
 
-static dague_data_t* irregular_tiled_matrix_C_data_of(dague_ddesc_t* d, ...)
+static parsec_data_t* irregular_tiled_matrix_C_data_of(parsec_ddesc_t* d, ...)
 {
 	int i, j;
 	va_list ap;
@@ -195,7 +195,7 @@ static dague_data_t* irregular_tiled_matrix_C_data_of(dague_ddesc_t* d, ...)
 	j = va_arg(ap, int);
 	va_end(ap);
 
-	dague_data_t* t = get_data(desc, i, j);
+	parsec_data_t* t = get_data(desc, i, j);
 
 #if defined(DISTRIBUTED)
 	assert(d->myrank == irregular_tiled_matrix_rank_of(d, i, j));
@@ -206,35 +206,35 @@ static dague_data_t* irregular_tiled_matrix_C_data_of(dague_ddesc_t* d, ...)
 }
 
 
-static void irregular_tiled_matrix_key_to_coords(dague_ddesc_t* d, dague_data_key_t key, int *i, int *j)
+static void irregular_tiled_matrix_key_to_coords(parsec_ddesc_t* d, parsec_data_key_t key, int *i, int *j)
 {
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 	*i = key / desc->lnt;
 	*j = key % desc->lnt;
 }
 
-static uint32_t irregular_tiled_matrix_rank_of_key(dague_ddesc_t* ddesc, dague_data_key_t key)
+static uint32_t irregular_tiled_matrix_rank_of_key(parsec_ddesc_t* ddesc, parsec_data_key_t key)
 {
 	int i, j;
 	irregular_tiled_matrix_key_to_coords(ddesc, key, &i, &j);
 	return irregular_tiled_matrix_rank_of(ddesc, i, j);
 }
 
-static int32_t irregular_tiled_matrix_vpid_of_key(dague_ddesc_t* ddesc, dague_data_key_t key)
+static int32_t irregular_tiled_matrix_vpid_of_key(parsec_ddesc_t* ddesc, parsec_data_key_t key)
 {
 	int i, j;
 	irregular_tiled_matrix_key_to_coords(ddesc, key, &i, &j);
 	return irregular_tiled_matrix_vpid_of(ddesc, i, j);
 }
 
-static dague_data_t* irregular_tiled_matrix_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key)
+static parsec_data_t* irregular_tiled_matrix_data_of_key(parsec_ddesc_t* ddesc, parsec_data_key_t key)
 {
 	int i, j;
 	irregular_tiled_matrix_key_to_coords(ddesc, key, &i, &j);
 	return irregular_tiled_matrix_data_of(ddesc, i, j);
 }
 
-static dague_data_t* irregular_tiled_matrix_C_data_of_key(dague_ddesc_t* ddesc, dague_data_key_t key)
+static parsec_data_t* irregular_tiled_matrix_C_data_of_key(parsec_ddesc_t* ddesc, parsec_data_key_t key)
 {
 	int i, j;
 	irregular_tiled_matrix_key_to_coords(ddesc, key, &i, &j);
@@ -242,7 +242,7 @@ static dague_data_t* irregular_tiled_matrix_C_data_of_key(dague_ddesc_t* ddesc, 
 	return irregular_tiled_matrix_C_data_of(ddesc, i, j);
 }
 
-static uint32_t irregular_tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
+static uint32_t irregular_tiled_matrix_data_key(struct parsec_ddesc_s *d, ...)
 {
 	irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)d;
 	int i, j;
@@ -261,8 +261,8 @@ static uint32_t irregular_tiled_matrix_data_key(struct dague_ddesc_s *d, ...)
 	return k;
 }
 
-#if defined(DAGUE_PROF_TRACE)
-static int irregular_tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key_t key, char * buffer, uint32_t buffer_size)
+#if defined(PARSEC_PROF_TRACE)
+static int irregular_tiled_matrix_key_to_string(parsec_ddesc_t *d, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
 {
 	unsigned int m, n;
 	int res;
@@ -272,7 +272,7 @@ static int irregular_tiled_matrix_key_to_string(dague_ddesc_t *d, dague_data_key
 	n = key / desc->lnt;
 	res = snprintf(buffer, buffer_size, "(%u, %u)", m, n);
 	if (res < 0)
-		dague_warning("Wrong key_to_string for tile (%u, %u) key: %u", m, n, key);
+		parsec_warning("Wrong key_to_string for tile (%u, %u) key: %u", m, n, key);
 	return res;
 }
 #endif
@@ -309,15 +309,15 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                                       void *(*future_resolve_fct)(void*))
 {
 	unsigned int k;
-	dague_ddesc_t *d = (dague_ddesc_t*)ddesc;
+	parsec_ddesc_t *d = (parsec_ddesc_t*)ddesc;
 
 	if(nodes < P)
-        dague_abort("Block Cyclic Distribution:\tThere are not enough nodes (%d) to make a process grid with P=%d", nodes, P);
+        parsec_abort("Block Cyclic Distribution:\tThere are not enough nodes (%d) to make a process grid with P=%d", nodes, P);
     int Q = nodes / P;
     if(nodes != P*Q)
-        dague_warning("Block Cyclic Distribution:\tNumber of nodes %d doesn't match the process grid %dx%d", nodes, P, Q);
+        parsec_warning("Block Cyclic Distribution:\tNumber of nodes %d doesn't match the process grid %dx%d", nodes, P, Q);
 
-	dague_ddesc_init(d, nodes, myrank);
+	parsec_ddesc_init(d, nodes, myrank);
 
 	d->rank_of     = irregular_tiled_matrix_rank_of;
 	d->rank_of_key = irregular_tiled_matrix_rank_of_key;
@@ -327,7 +327,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 	d->data_of_key = irregular_tiled_matrix_data_of_key;
 	d->data_key    = irregular_tiled_matrix_data_key;
 
-#if defined(DAGUE_PROF_TRACE)
+#if defined(PARSEC_PROF_TRACE)
 	d->key_to_string = irregular_tiled_matrix_key_to_string;
 #endif
 
@@ -335,7 +335,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 
 	ddesc->data_map = (irregular_tile_t*)malloc(lmt*lnt*sizeof(irregular_tile_t));
 
-	ddesc->local_data_map = (dague_data_t**)calloc(lmt*lnt, sizeof(dague_data_t*));
+	ddesc->local_data_map = (parsec_data_t**)calloc(lmt*lnt, sizeof(parsec_data_t*));
 	/* lmt, lnt sized arrays */
 	ddesc->Mtiling = (unsigned int*)malloc(lmt*sizeof(unsigned int));
 	ddesc->Ntiling = (unsigned int*)malloc(lnt*sizeof(unsigned int));
@@ -406,12 +406,12 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 	(void)vpid;
 	(void)rank;
 
-	uint32_t idx = ((dague_ddesc_t*)ddesc)->data_key((dague_ddesc_t*)ddesc, i, j);
+	uint32_t idx = ((parsec_ddesc_t*)ddesc)->data_key((parsec_ddesc_t*)ddesc, i, j);
 
 	if (NULL != actual_data) {
 		irregular_tile_data_create(
 			ddesc->local_data_map+idx, ddesc, idx, actual_data,
-			mb, nb, dague_irregular_tiled_matrix_getsizeoftype(ddesc->mtype));
+			mb, nb, parsec_irregular_tiled_matrix_getsizeoftype(ddesc->mtype));
 
 		ddesc->nb_local_tiles++;
 	}
