@@ -130,6 +130,9 @@ SUMMA(m, n, k)
 m = 0 .. descC->mt-1
 n = 0 .. descC->nt-1
 k = 0 .. descA->nt-1
+iAm = %{ return descA->Mtiling[m]; %}
+iBk = %{ return descB->Mtiling[k]; %}
+iCn = %{ return descB->Ntiling[n]; %}
 
 // Parallel partitioning
 : descC(m, n)
