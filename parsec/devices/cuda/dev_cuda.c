@@ -152,7 +152,7 @@ static int parsec_cuda_memory_register(parsec_device_t* device, parsec_ddesc_t* 
     int rc = PARSEC_ERROR;
 
     if (NULL == ptr) {
-        return DAGUE_SUCCESS;
+        return PARSEC_SUCCESS;
     }
 
     if (desc->memory_registration_status == MEMORY_STATUS_REGISTERED) {
