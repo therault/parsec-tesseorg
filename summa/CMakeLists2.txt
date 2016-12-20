@@ -6,7 +6,7 @@ cmake_minimum_required (VERSION 2.8)
 #
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 
-find_package(DAGUE)
+find_package(PARSEC)
 
 find_package(DPLASMA)
 
@@ -14,7 +14,7 @@ option(SUMMA_WITH_RECURSIVE
   "Enable recursive kernels to be called when available" OFF)
 if(DPLASMA_WITH_RECURSIVE)
   # TODO: This will need to be added to the futur dplasma_config.h.in
-  add_definitions(-DDAGUE_HAVE_RECURSIVE)
+  add_definitions(-DPARSEC_HAVE_RECURSIVE)
 endif()
 
 set(SUMMA_PRECISIONS "s;d;c;z" CACHE STRING "The precisions to compile in summa (accepts a colon separated list of s;d;c;z)" FORCE)
