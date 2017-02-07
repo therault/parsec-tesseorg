@@ -31,7 +31,7 @@ static int future_input_for_read_a_task(parsec_execution_unit_t * context, __par
     const int m = this_task->locals.m.value;
     const int k = this_task->locals.k.value;
     /** Lookup the input data, and store them in the context if any */
-    assert(NULL == this_task->data.A.data_in);
+    assert(NULL == this_task->data._f_A.data_in);
     copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descA)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descA), m, k), 0);
     f = PARSEC_DATA_COPY_GET_PTR(copy);
     tile = vf->resolve_future_function(f);
@@ -48,7 +48,7 @@ static int future_input_for_read_b_task(parsec_execution_unit_t * context, __par
     const int k = this_task->locals.k.value;
     const int n = this_task->locals.n.value;
     /** Lookup the input data, and store them in the context if any */
-    assert(NULL == this_task->data.B.data_in);
+    assert(NULL == this_task->data._f_B.data_in);
     copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descB)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descB), k, n), 0);
     f = PARSEC_DATA_COPY_GET_PTR(copy);
     tile = vf->resolve_future_function(f);
@@ -67,7 +67,7 @@ static int future_input_for_summa_task(parsec_execution_unit_t * context, __pars
     const int k = this_task->locals.k.value;
     if(k == 0 ) {
         /** Lookup the input data, and store them in the context if any */
-        assert(NULL == this_task->data.C.data_in);
+        assert(NULL == this_task->data._f_C.data_in);
         copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descC)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descC), m, n), 0);
         f = PARSEC_DATA_COPY_GET_PTR(copy);
         tile = vf->resolve_future_function(f);

@@ -97,7 +97,6 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
     two_dim_block_cyclic_t *Cdist;
     parsec_handle_t* zgemm_handle;
     parsec_arena_t* arena;
-    two_dim_block_cyclic_t *Cdist;
     int P, Q, m, n;
 
     /* Check input arguments */
