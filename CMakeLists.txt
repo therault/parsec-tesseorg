@@ -665,7 +665,7 @@ IF(CMAKE_CROSSCOMPILING OR WITH_SCOREP_PROFILING)
   SET(parsec_ptgpp_EXE native-parsec_ptgpp)
 ELSE(CMAKE_CROSSCOMPILING)
   SET(parsec_ptgpp_EXE parsec_ptgpp)
-ENDIF(CMAKE_CROSSCOMPILING)
+ENDIF(CMAKE_CROSSCOMPILING OR WITH_SCOREP_PROFILING)
 
 # List of files that will go through documentation generation
 include(AddDocumentedFiles)
