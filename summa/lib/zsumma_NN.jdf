@@ -13,7 +13,7 @@ extern "C" %{
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "summa_z.h"
 #include "flops.h"
-	
+#include "irregular_tiled_matrix.h"
 #include <math.h>
 
 #if defined(PARSEC_HAVE_CUDA)
@@ -343,6 +343,15 @@ BODY
     int ldam = cAmb;
     int ldbk = cBmb;
     int ldcm = cCmb;
+
+    /* fprintf(stdout, "summa( %d, %d, %d )\n" */
+    /*          "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n", */
+    /*          m, n, k, */
+    /*          plasma_const( transA ), plasma_const( transB ), */
+    /*          tempmm, tempnn, tempkk, */
+    /*          creal(alpha), m, k, ldam, */
+    /*                        k, n, ldbk, */
+    /*          creal(lbeta), m, n, ldcm ); */
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
