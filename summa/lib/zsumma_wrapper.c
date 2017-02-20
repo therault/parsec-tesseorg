@@ -499,6 +499,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_handle_t* zsumma_handle;
     parsec_arena_t* arena;
     int P, Q, m, n;
+
     int Asize, Bsize, Csize;
 
     /* Check input arguments */
@@ -635,6 +636,10 @@ void
 summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
+    if ( zsumma_handle->_g_Cdist != NULL ) {
+        tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+        free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
+    }
 
     if( zsumma_handle->_g_summa_type == SUMMA_NN ||
         zsumma_handle->_g_summa_type == SUMMA_NT ||

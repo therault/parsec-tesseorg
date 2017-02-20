@@ -227,7 +227,6 @@ BODY
     int tempmm = cCmb;
     int tempnn = cCnb;
     int tempkk = cAmb;
-
     /* The use of ldak may be wrong, check all the results (NN,TN,TT,NT) before removing this comment. */
     int ldak = cAnb;
     int ldam = cAnb;

@@ -104,9 +104,9 @@ typedef struct irregular_tiled_matrix_desc_s {
     int                          bsiz;            /**< size in elements incl padding of a tile - derived parameter */
     int                          lm;              /**< number of rows of the entire matrix */
     int                          ln;              /**< number of columns of the entire matrix */
-	int                          llm;
-	int                          lln;
-	int                          lmt;             /**< number of tile rows of the entire matrix */
+    int                          llm;
+    int                          lln;
+    int                          lmt;             /**< number of tile rows of the entire matrix */
     int                          lnt;             /**< number of tile columns of the entire matrix */
     int                          i;               /**< row tile index to the beginning of the submatrix */
     int                          j;               /**< column tile index to the beginning of the submatrix */
@@ -120,6 +120,8 @@ typedef struct irregular_tiled_matrix_desc_s {
     void *(*future_resolve_fct)(void*);           /**< Function to use to resolve future if this is needed */
 } irregular_tiled_matrix_desc_t;
 
+/* PARSEC_DECLSPEC parsec_data_t* irregular_tile_data_new(void); */
+
 /* Workaround : irregular_tile_data_copy_t* irregular_tile_data_copy_create( irregular_tile_data_copy_t **holder, */
 /*                                                              parsec_data_key_t key, int owner, int mb, int nb); */
 parsec_data_copy_t* irregular_tile_data_copy_create( parsec_data_copy_t **holder,
@@ -132,26 +134,27 @@ parsec_data_t* irregular_tile_data_create(parsec_data_t **holder,
 int get_tile_count(const irregular_tiled_matrix_desc_t *desc, int m, int n);
 
 int tile_is_local(int i, int j, grid_2Dcyclic_t* g);
+
 unsigned int tile_owner(int i, int j, grid_2Dcyclic_t* g);
 
 void export_pythons(irregular_tiled_matrix_desc_t *A, irregular_tiled_matrix_desc_t *B, irregular_tiled_matrix_desc_t *C, int P, int Q, int N, int NB, int MB, int psize);
 
 void irregular_tiled_matrix_desc_init(
-	irregular_tiled_matrix_desc_t* ddesc,
-	enum tile_coll_type mtype,
-	unsigned int nodes, unsigned int myrank,
-	/* global number of rows/cols */
-	unsigned int lm, unsigned int ln,
-	/* global number of tiles */
-	unsigned int lmt, unsigned int lnt,
-	/* tiling of the submatrix */
-	unsigned int*Mtiling, unsigned int* Ntiling,
-	/* first tile of the submatrix */
-	unsigned int i, unsigned int j,
-	/* number of tiles of the submatrix */
-	unsigned int mt, unsigned int nt,
-	unsigned int P,
-	void *(*future_resolve_fct)(void*));
+    irregular_tiled_matrix_desc_t* ddesc,
+    enum tile_coll_type mtype,
+    unsigned int nodes, unsigned int myrank,
+    /* global number of rows/cols */
+    unsigned int lm, unsigned int ln,
+    /* global number of tiles */
+    unsigned int lmt, unsigned int lnt,
+    /* tiling of the submatrix */
+    unsigned int*Mtiling, unsigned int* Ntiling,
+    /* first tile of the submatrix */
+    unsigned int i, unsigned int j,
+    /* number of tiles of the submatrix */
+    unsigned int mt, unsigned int nt,
+    unsigned int P,
+    void *(*future_resolve_fct)(void*));
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */
