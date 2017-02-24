@@ -393,6 +393,12 @@ int main(int argc, char ** argv)
     fprintf(stdout, "Matrix C:\n");
     print_matrix_meta(&ddescC);
 #endif
+    fprintf(stdout, "Matrix A:\n");
+    print_matrix_meta(&ddescA);
+    fprintf(stdout, "Matrix B:\n");
+    print_matrix_meta(&ddescB);
+    fprintf(stdout, "Matrix C:\n");
+    print_matrix_meta(&ddescC);
 
     double A = 1, B = 2, C = 0;
     CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,
@@ -409,7 +415,6 @@ int main(int argc, char ** argv)
     if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
         summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
 #endif
-    
     parsec_enqueue(parsec, PARSEC_zsumma);
     if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
@@ -422,6 +427,9 @@ int main(int argc, char ** argv)
                            gflops=(flops/1e9)/sync_time_elapsed));
 
     summa_zsumma_Destruct( PARSEC_zsumma );
+
+    if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
+        parsec_handle_sync_ids(); /* recursive DAGs are not synchronous on ids */
 
     if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
         parsec_handle_sync_ids(); /* recursive DAGs are not synchronous on ids */

@@ -117,14 +117,17 @@ static void attach_futures_prepare_input(parsec_handle_t *handle, const char *ta
 
 static int
 zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
-							 parsec_complex64_t alpha,
-							 const irregular_tiled_matrix_desc_t *A,
-							 const irregular_tiled_matrix_desc_t *B,
-							 irregular_tiled_matrix_desc_t *C)
+                             parsec_complex64_t alpha,
+                             const irregular_tiled_matrix_desc_t *A,
+                             const irregular_tiled_matrix_desc_t *B,
+                             irregular_tiled_matrix_desc_t *C)
 {
-	(void)alpha;
-	int b = 1, i;
-	unsigned int *mAtiling = A->Mtiling;
+<<<<<<< HEAD
+    (void)alpha;
+=======
+>>>>>>> Temp commit
+    int b = 1, i;
+    unsigned int *mAtiling = A->Mtiling;
     unsigned int *nAtiling = A->Ntiling;
     unsigned int *mBtiling = B->Mtiling;
     unsigned int *nBtiling = B->Ntiling;
@@ -188,25 +191,25 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
     unsigned int *nCsubtiling = nCtiling+C->j;
 
     if (Amt != C->mt || Ant != Bmt || Bnt != C->nt) {
-	    dplasma_error("summa_zsumma","Symbolic tilings differ");
-	    return -101;
+        dplasma_error("summa_zsumma","Symbolic tilings differ");
+        return -101;
     }
 
     for (i = 0; i < Amt; ++i)
-	    if (mAsubtiling[i] != mCsubtiling[i])
-		    b = -102;
+        if (mAsubtiling[i] != mCsubtiling[i])
+            b = -102;
 
     for (i = 0; i < Ant; ++i)
-	    if (nAsubtiling[i] != mBsubtiling[i])
-		    b = -103;
+        if (nAsubtiling[i] != mBsubtiling[i])
+            b = -103;
 
     for (i = 0; i < Bnt; ++i)
-	    if (nBsubtiling[i] != nCsubtiling[i])
-		    b = -104;
+        if (nBsubtiling[i] != nCsubtiling[i])
+            b = -104;
 
     if (b < -100) {
-	    dplasma_error("summa_zsumma", "Tile sizes differ");
-	    return b;
+        dplasma_error("summa_zsumma", "Tile sizes differ");
+        return b;
     }
 
     if ( (Am != C->m) || (An != Bm) || (Bn != C->n) ) {
@@ -224,9 +227,10 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
         return -3.;
     }
 
-	return b;
+    return b;
 }
 
+<<<<<<< HEAD
 struct gemm_plan_s {
     int mt;
     int nt;
@@ -424,6 +428,8 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
 
     return zgemm_handle;
 }
+=======
+>>>>>>> Temp commit
 
 
 /**
@@ -641,6 +647,7 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
         free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
     }
 
+<<<<<<< HEAD
     if( zsumma_handle->_g_summa_type == SUMMA_NN ||
         zsumma_handle->_g_summa_type == SUMMA_NT ||
         zsumma_handle->_g_summa_type == SUMMA_TN ||
@@ -659,6 +666,11 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
         if (arena)
             parsec_matrix_del2arena( ((parsec_zgemm_bcast_NN_handle_t *)handle)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
     }
+=======
+    parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
+    if (arena)
+        parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+>>>>>>> Temp commit
     parsec_handle_free(handle);
 }
 
@@ -746,7 +758,7 @@ summa_zsumma(parsec_context_t *parsec,
     parsec_handle_t *parsec_zsumma = NULL;
     int M, N, K;
 
-	zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
+    zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
 
     M = C->m;
     N = C->n;
@@ -776,36 +788,36 @@ summa_zsumma(parsec_context_t *parsec,
 void
 summa_zsumma_setrecursive(parsec_handle_t *handle, int bigtile, int opttile)
 {
-	parsec_zsumma_NN_handle_t *parsec_zsumma = (parsec_zsumma_NN_handle_t*)handle;
-	if (bigtile > 0 && opttile > 0) {
-		parsec_zsumma->_g_bigtile = bigtile;
-		parsec_zsumma->_g_opttile = opttile;
-	}
+    parsec_zsumma_NN_handle_t *parsec_zsumma = (parsec_zsumma_NN_handle_t*)handle;
+    if (bigtile > 0 && opttile > 0) {
+        parsec_zsumma->_g_bigtile = bigtile;
+        parsec_zsumma->_g_opttile = opttile;
+    }
 }
 
 
 int
 summa_zsumma_rec(parsec_context_t *parsec,
-				 PLASMA_enum transA, PLASMA_enum transB,
-				 parsec_complex64_t alpha,
-				 const irregular_tiled_matrix_desc_t *A,
-				 const irregular_tiled_matrix_desc_t *B,
-				 irregular_tiled_matrix_desc_t *C, int bigtile, int opttile)
+                 PLASMA_enum transA, PLASMA_enum transB,
+                 parsec_complex64_t alpha,
+                 const irregular_tiled_matrix_desc_t *A,
+                 const irregular_tiled_matrix_desc_t *B,
+                 irregular_tiled_matrix_desc_t *C, int bigtile, int opttile)
 {
-	parsec_handle_t *parsec_zsumma = NULL;
+    parsec_handle_t *parsec_zsumma = NULL;
 
-	zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
+    zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
 
-	parsec_zsumma = summa_zsumma_New(transA, transB, alpha, A, B, C);
+    parsec_zsumma = summa_zsumma_New(transA, transB, alpha, A, B, C);
 
-	if (parsec_zsumma) {
-		parsec_enqueue(parsec, parsec_zsumma);
-		summa_zsumma_setrecursive(parsec_zsumma, bigtile, opttile);
-		dplasma_progress(parsec);
-		summa_zsumma_recursive_Destruct(parsec_zsumma);
-		parsec_handle_sync_ids();
-	}
+    if (parsec_zsumma) {
+        parsec_enqueue(parsec, parsec_zsumma);
+        summa_zsumma_setrecursive(parsec_zsumma, bigtile, opttile);
+        dplasma_progress(parsec);
+        summa_zsumma_recursive_Destruct(parsec_zsumma);
+        parsec_handle_sync_ids();
+    }
 
-	return 0;
+    return 0;
 }
 #endif

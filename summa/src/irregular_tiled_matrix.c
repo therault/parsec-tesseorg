@@ -306,7 +306,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
 
     ddesc->data_map = (irregular_tile_t*)calloc(lmt*lnt, sizeof(irregular_tile_t));
     ddesc->local_data_map = (parsec_data_t**)calloc(lmt*lnt, sizeof(parsec_data_t*));
-    /* lmt, lnt sized arrays */
+
     ddesc->Mtiling = (unsigned int*)malloc(lmt*sizeof(unsigned int));
     ddesc->Ntiling = (unsigned int*)malloc(lnt*sizeof(unsigned int));
 
@@ -347,7 +347,6 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                 /* Worst case scenario */
                 ddesc->max_tile = Mtiling[i]*Ntiling[j];
     }
-
     ddesc->future_resolve_fct = future_resolve_fct;
 }
 
@@ -375,15 +374,6 @@ void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
 
     parsec_ddesc_destroy((parsec_ddesc_t*)ddesc);
 }
-
-/* void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc) */
-/* { */
-/*     (void)ddesc; */
-
-
-
-
-/* } */
 
 /* sets up the tile by constructing a new object, then filling specific fields with input parameter */
  void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, void *actual_data, uint32_t idx, int mb, int nb, int vpid, int rank)

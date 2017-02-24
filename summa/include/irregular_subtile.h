@@ -7,10 +7,14 @@
 #define __IRREGULAR_SUBTILE_H__
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include "irregular_tiled_matrix.h"
 =======
 #include "summa/irregular_tiled_matrix.h"
 >>>>>>> Adds: recursive tiling for irregular tiling
+=======
+#include "irregular_tiled_matrix.h"
+>>>>>>> Temp commit
 
 BEGIN_C_DECLS
 
@@ -21,6 +25,8 @@ BEGIN_C_DECLS
 typedef struct irregular_subtile_desc_s {
     irregular_tiled_matrix_desc_t super;
     void *mat;      /**< pointer to the beginning of the matrix */
+	int lmt;     /**< subtile happens to have a leading dimension */
+	int lnt;
     int vpid;
 } irregular_subtile_desc_t;
 

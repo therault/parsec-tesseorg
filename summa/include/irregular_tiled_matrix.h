@@ -120,8 +120,6 @@ typedef struct irregular_tiled_matrix_desc_s {
     void *(*future_resolve_fct)(void*);           /**< Function to use to resolve future if this is needed */
 } irregular_tiled_matrix_desc_t;
 
-/* PARSEC_DECLSPEC parsec_data_t* irregular_tile_data_new(void); */
-
 /* Workaround : irregular_tile_data_copy_t* irregular_tile_data_copy_create( irregular_tile_data_copy_t **holder, */
 /*                                                              parsec_data_key_t key, int owner, int mb, int nb); */
 parsec_data_copy_t* irregular_tile_data_copy_create( parsec_data_copy_t **holder,
@@ -167,6 +165,8 @@ void irregular_tiled_matrix_desc_set_data(irregular_tiled_matrix_desc_t *ddesc, 
 void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc);
 
 int summa_aux_getSUMMALookahead( irregular_tiled_matrix_desc_t *ddesc );
+
+two_dim_block_cyclic_t* recursive_fake_Cdist(const two_dim_block_cyclic_t* original);
 
 END_C_DECLS
 
