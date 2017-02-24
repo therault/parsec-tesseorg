@@ -29,11 +29,6 @@ elif [ "x$USER" = "xrhoque" ]; then
 elif [ "x$USER" = "xdgenet" ]; then
     USER_OPTIONS+=" -DDPLASMA_PRECISIONS=d"
     HWLOC_DIR="/opt/hwloc/current"
-    #MPI_DIR="/opt/ompi/2.0.1/"
-    #CC=gcc
-    #CXX=g++
-    #FC=gfortran
-    #PLASMA_DIR="/opt/plasma-gcc"
 
 
     while [ $# -ge 1 ]; do
