@@ -166,8 +166,6 @@ void irregular_tiled_matrix_desc_build(irregular_tiled_matrix_desc_t *ddesc);
 
 int summa_aux_getSUMMALookahead( irregular_tiled_matrix_desc_t *ddesc );
 
-two_dim_block_cyclic_t* recursive_fake_Cdist(const two_dim_block_cyclic_t* original);
-
 END_C_DECLS
 
 #endif /* _TILE_COLLECTION_H_ */

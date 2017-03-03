@@ -393,12 +393,10 @@ int main(int argc, char ** argv)
     fprintf(stdout, "Matrix C:\n");
     print_matrix_meta(&ddescC);
 #endif
-    fprintf(stdout, "Matrix A:\n");
-    print_matrix_meta(&ddescA);
-    fprintf(stdout, "Matrix B:\n");
-    print_matrix_meta(&ddescB);
-    fprintf(stdout, "Matrix C:\n");
-    print_matrix_meta(&ddescC);
+
+	double A = 1, B = 2, C = 0;
+	CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,
+			   1, 1, 1, 3., &A, 1, &B, 1, 1., &C, 1);
 
     double A = 1, B = 2, C = 0;
     CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,
@@ -414,7 +412,7 @@ int main(int argc, char ** argv)
 #if defined(PARSEC_HAVE_RECURSIVE)
     if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
         summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
-#endif
+
     parsec_enqueue(parsec, PARSEC_zsumma);
     if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 

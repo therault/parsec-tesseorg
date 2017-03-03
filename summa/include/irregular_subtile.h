@@ -25,8 +25,6 @@ BEGIN_C_DECLS
 typedef struct irregular_subtile_desc_s {
     irregular_tiled_matrix_desc_t super;
     void *mat;      /**< pointer to the beginning of the matrix */
-	int lmt;     /**< subtile happens to have a leading dimension */
-	int lnt;
     int vpid;
 } irregular_subtile_desc_t;
 

@@ -643,6 +643,7 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
     if ( zsumma_handle->_g_Cdist != NULL ) {
+		/* DAMIEN rewrite this! */
         tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
         free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
     }

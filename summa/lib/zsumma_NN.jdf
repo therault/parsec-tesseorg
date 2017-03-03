@@ -12,6 +12,7 @@ extern "C" %{
 #include "summa/lib/dplasmaaux.h"
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "summa_z.h"
+#include "flops.h"
 #include <math.h>
 
 #if defined(PARSEC_HAVE_CUDA)
@@ -245,6 +246,7 @@ BODY [type=RECURSIVE]
     int ldcm = SUMMA_BLKLDD(descC, m);
 
 #if defined(PARSEC_HAVE_RECURSIVE)
+
     double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
     double optiflops = FLOPS_ZSUMMA((double)opttile, (double)opttile, (double)opttile);
     int factor = flops/optiflops;
@@ -277,7 +279,8 @@ BODY [type=RECURSIVE]
         /* fprintf(stdout, "Subtiling B %d;%d ...", k, n); */
         small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
         /* fprintf(stdout, "Subtiling C %d;%d ...", m, n); */
-        small_descC = irregular_subtile_desc_create(descC, m, n, ktile, ktile);
+        small_descC = irregular_subtile_desc_create(descC, m, n, mtile, ntile);
+        parsec_zsumma_NN_handle_t *parsec_zsumma;
 
         /* parsec_object */
         parsec_zsumma = parsec_zsumma_NN_new(PlasmaNoTrans, PlasmaNoTrans, alpha,
