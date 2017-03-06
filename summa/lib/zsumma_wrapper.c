@@ -122,10 +122,7 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
                              const irregular_tiled_matrix_desc_t *B,
                              irregular_tiled_matrix_desc_t *C)
 {
-<<<<<<< HEAD
     (void)alpha;
-=======
->>>>>>> Temp commit
     int b = 1, i;
     unsigned int *mAtiling = A->Mtiling;
     unsigned int *nAtiling = A->Ntiling;
@@ -230,7 +227,6 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
     return b;
 }
 
-<<<<<<< HEAD
 struct gemm_plan_s {
     int mt;
     int nt;
@@ -428,8 +424,6 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
 
     return zgemm_handle;
 }
-=======
->>>>>>> Temp commit
 
 
 /**
@@ -643,12 +637,11 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
     if ( zsumma_handle->_g_Cdist != NULL ) {
-		/* DAMIEN rewrite this! */
+        /* DAMIEN rewrite this! */
         tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
         free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
     }
 
-<<<<<<< HEAD
     if( zsumma_handle->_g_summa_type == SUMMA_NN ||
         zsumma_handle->_g_summa_type == SUMMA_NT ||
         zsumma_handle->_g_summa_type == SUMMA_TN ||
@@ -667,11 +660,6 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
         if (arena)
             parsec_matrix_del2arena( ((parsec_zgemm_bcast_NN_handle_t *)handle)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
     }
-=======
-    parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
-    if (arena)
-        parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
->>>>>>> Temp commit
     parsec_handle_free(handle);
 }
 

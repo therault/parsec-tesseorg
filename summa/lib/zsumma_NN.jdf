@@ -246,7 +246,6 @@ BODY [type=RECURSIVE]
     int ldcm = SUMMA_BLKLDD(descC, m);
 
 #if defined(PARSEC_HAVE_RECURSIVE)
-
     double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
     double optiflops = FLOPS_ZSUMMA((double)opttile, (double)opttile, (double)opttile);
     int factor = flops/optiflops;
@@ -259,12 +258,8 @@ BODY [type=RECURSIVE]
             factor = factor >> 1;
             ntile = ntile << 1;
         }
-        if (factor >= 2) {
-            factor = factor >> 1;
-            ktile = ktile << 1;
-        }
     }
-  
+
     if (mtile > 1 || ntile > 1 || ktile > 1) {
         /* fprintf(stdout, "TRIGGERED for (%d;%d;%d): bigtile=%d <=? tiling[m]=%d, tiling[n]=%d, tiling[k]=%d\n", */
         /*         m,n,k,bigtile, tempmm, tempnn, tempkk); */
@@ -272,7 +267,6 @@ BODY [type=RECURSIVE]
         irregular_subtile_desc_t *small_descA;
         irregular_subtile_desc_t *small_descB;
         irregular_subtile_desc_t *small_descC;
-        parsec_zsumma_NN_handle_t *parsec_zsumma;
 
         /* fprintf(stdout, "Subtiling A %d;%d ...", m, k); */
         small_descA = irregular_subtile_desc_create(descA, m, k, mtile, ktile);

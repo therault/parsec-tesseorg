@@ -412,6 +412,7 @@ int main(int argc, char ** argv)
 #if defined(PARSEC_HAVE_RECURSIVE)
     if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
         summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
+#endif
 
     parsec_enqueue(parsec, PARSEC_zsumma);
     if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
