@@ -29,31 +29,19 @@ elif [ "x$USER" = "xrhoque" ]; then
 elif [ "x$USER" = "xdgenet" ]; then
     USER_OPTIONS+=" -DDPLASMA_PRECISIONS=d"
     HWLOC_DIR="/opt/hwloc/current"
-    PLASMA_DIR="/opt/plasma-2.8.0"
-    MPI_DIR="/opt/ompi/2.0.1/"
-    CC=gcc
-    CXX=g++
-    FC=gfortran
-    PLASMA_DIR="/opt/plasma-gcc"
 
     while [ $# -ge 1 ]; do
+		# MPI is detected after loading a module
         if [ "x$1" = "xICC" ]; then
             CC=icc
             CXX=icpc
             FC=ifort
             PLASMA_DIR="/opt/plasma-intel"
-        elif [ "x$1" = "xSCOREP" ]; then
-            TOOL_SUBDIR="toto"
-            OLDDIR=`pwd`
-            echo "+++ old working dir: $OLDDIR"
-            . $(dirname $0)/build_parsecpp
-            cd $OLDDIR
-            echo `pwd`
-            CC=scorep-gcc
-            CXX=scorep-g++
-            FC=scorep-gfortran
-            USER_OPTIONS+=" -DWITH_SCOREP_PROFILING=TRUE"
-            USER_OPTIONS+=" -DIMPORT_EXECUTABLES=$TOOL_SUBDIR/ImportExecutables.cmake"
+        elif [ "x$1" = "xGCC" ]; then
+            CC=gcc
+            CXX=g++
+            FC=gfortran
+			PLASMA_DIR="/opt/plasma-gcc"
         else
             USER_OPTIONS+=" -D$1"
         fi

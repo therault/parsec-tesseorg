@@ -11,6 +11,11 @@ if(SUMMA_WITH_RANDOM_TILING)
   add_definitions(-DSUMMA_WITH_RANDOM_TILING)
 endif()
 
+if(DPLASMA_WITH_RECURSIVE)
+  # TODO: This will need to be added to the futur dplasma_config.h.in
+  add_definitions(-DPARSEC_HAVE_RECURSIVE)
+endif()
+
 LIST(APPEND CMAKE_MODULE_PATH "${PARSEC_SOURCE_DIR}/dplasma/cmake_modules/")
  find_package(COREBLAS REQUIRED)
 if(NOT COREBLAS_FOUND)
@@ -33,16 +38,9 @@ include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
 include_directories( ${PARSEC_SOURCE_DIR}/data_dist/matrix )
 include_directories( ${COREBLAS_INCLUDE_DIRS} )
 
-option(SUMMA_WITH_RECURSIVE
-  "Enable recursive kernels to be called when available" OFF)
-if(DPLASMA_WITH_RECURSIVE)
-  # TODO: This will need to be added to the futur dplasma_config.h.in
-  add_definitions(-DPARSEC_HAVE_RECURSIVE)
-endif()
-
-
 set(EXTRA_SOURCES
   src/irregular_tiled_matrix.c
+  src/irregular_subtile.c
   )
 
 include(RulesPrecisions)
@@ -101,6 +99,7 @@ install(TARGETS summa
 
 install(FILES
   ${CMAKE_SOURCE_DIR}/summa/include/irregular_tiled_matrix.h
+  ${CMAKE_SOURCE_DIR}/summa/include/irregular_subtile.h
   DESTINATION include)
 
 
