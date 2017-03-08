@@ -10,6 +10,7 @@
 
 #include "dplasma.h"
 #include "dplasma/lib/dplasmatypes.h"
+#include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "irregular_tiled_matrix.h"
 #include "zsumma_NN.h"
 #include "zsumma_NT.h"
@@ -106,6 +107,120 @@ static void attach_futures_prepare_input(parsec_handle_t *handle, const char *ta
     handle->functions_array[fid] = (parsec_function_t*)vf;
 }
 
+static int
+zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
+							 parsec_complex64_t alpha,
+							 const irregular_tiled_matrix_desc_t *A,
+							 const irregular_tiled_matrix_desc_t *B,
+							 irregular_tiled_matrix_desc_t *C)
+{
+	(void)alpha;
+	int b = 1, i;
+	unsigned int *mAtiling = A->Mtiling;
+    unsigned int *nAtiling = A->Ntiling;
+    unsigned int *mBtiling = B->Mtiling;
+    unsigned int *nBtiling = B->Ntiling;
+    unsigned int *mCtiling = C->Mtiling;
+    unsigned int *nCtiling = C->Ntiling;
+
+    int Am, An, Ai, Aj, Amt, Ant;
+    int Bm, Bn, Bi, Bj, Bmt, Bnt;
+
+    /* Check input arguments */
+    if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
+        dplasma_error("summa_zsumma", "illegal value of transA");
+        return -1;
+    }
+    if ((transB != PlasmaNoTrans) && (transB != PlasmaTrans) && (transB != PlasmaConjTrans)) {
+        dplasma_error("summa_zsumma", "illegal value of transB");
+        return -2;
+    }
+
+    if ( transA == PlasmaNoTrans ) {
+        Am  = A->m;
+        An  = A->n;
+        Ai  = A->i;
+        Aj  = A->j;
+        Amt = A->mt;
+        Ant = A->nt;
+    } else {
+        Am  = A->n;
+        An  = A->m;
+        mAtiling = A->Ntiling;
+        nAtiling = A->Mtiling;
+        Ai  = A->j;
+        Aj  = A->i;
+        Amt = A->nt;
+        Ant = A->mt;
+    }
+
+    if ( transB == PlasmaNoTrans ) {
+        Bm  = B->m;
+        Bn  = B->n;
+        Bi  = B->i;
+        Bj  = B->j;
+        Bmt = B->mt;
+        Bnt = B->nt;
+    } else {
+        Bm  = B->n;
+        Bn  = B->m;
+        mBtiling = B->Ntiling;
+        nBtiling = B->Mtiling;
+        Bi  = B->j;
+        Bj  = B->i;
+        Bmt = B->nt;
+        Bnt = B->mt;
+    }
+
+    unsigned int *mAsubtiling = mAtiling+Ai;
+    unsigned int *nAsubtiling = nAtiling+Aj;
+    unsigned int *mBsubtiling = mBtiling+Bi;
+    unsigned int *nBsubtiling = nBtiling+Bj;
+    unsigned int *mCsubtiling = mCtiling+C->i;
+    unsigned int *nCsubtiling = nCtiling+C->j;
+
+    if (Amt != C->mt || Ant != Bmt || Bnt != C->nt) {
+	    dplasma_error("summa_zsumma","Symbolic tilings differ");
+	    return -101;
+    }
+
+    for (i = 0; i < Amt; ++i)
+	    if (mAsubtiling[i] != mCsubtiling[i])
+		    b = -102;
+
+    for (i = 0; i < Ant; ++i)
+	    if (nAsubtiling[i] != mBsubtiling[i])
+		    b = -103;
+
+    for (i = 0; i < Bnt; ++i)
+	    if (nBsubtiling[i] != nCsubtiling[i])
+		    b = -104;
+
+    if (b < -100) {
+	    dplasma_error("summa_zsumma", "Tile sizes differ");
+	    return b;
+    }
+
+    if ( (Am != C->m) || (An != Bm) || (Bn != C->n) ) {
+        dplasma_error("summa_zsumma", "sizes of submatrices have to match");
+        return -101;
+    }
+
+    if ( (Ai != C->i) || (Aj != Bi) || (Bj != C->j) ) {
+        dplasma_error("summa_zsumma", "start indexes have to match");
+        return -101;
+    }
+
+    if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
+        dplasma_error("summa_zsumma", "illegal type of descriptor for C");
+        return -3.;
+    }
+
+	return b;
+}
+
+
+
 /**
  *******************************************************************************
  *
@@ -175,11 +290,10 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
                  const irregular_tiled_matrix_desc_t* B,
                  irregular_tiled_matrix_desc_t* C)
 {
-    irregular_tiled_matrix_desc_t *Cdist;
+    two_dim_block_cyclic_t *Cdist;
     parsec_handle_t* zsumma_handle;
     parsec_arena_t* arena;
     int P, Q, m, n;
-    int i, j, k, l;
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
@@ -198,33 +312,21 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
     Q = ((irregular_tiled_matrix_desc_t*)C)->grid.cols;
 
-    m = summa_imax(C->mt, P);
-    n = summa_imax(C->nt, Q);
+    m = (C->mt > P) ? C->mt : P;
+    n = (C->nt > Q) ? C->nt : Q;
 
-    /* Create a copy of the A matrix to be used as a data distribution metric.
-     * As it is used as a NULL value we must have a data_copy and a data associated
-     * with it, so we can create them here.
-     * Create the task distribution */
-    Cdist = (irregular_tiled_matrix_desc_t*)malloc(sizeof(irregular_tiled_matrix_desc_t));
+    Cdist = (two_dim_block_cyclic_t*)malloc(sizeof(two_dim_block_cyclic_t));
 
-    irregular_tiled_matrix_desc_init(
-        Cdist, tile_coll_RealDouble,
-        C->super.nodes, C->super.myrank,
-        m, n, /* Dimensions of the matrix             */
-        C->mt, C->nt,
-        C->Mtiling, C->Ntiling,
-        0, 0, /* Starting points (not important here) */
-        C->mt, C->nt, P, 0);
-
-    for (i = Cdist->grid.rrank*Cdist->grid.strows; i < C->mt; i+=Cdist->grid.rows*Cdist->grid.strows)
-        for (k = 0; k < Cdist->grid.stcols; ++k)
-            for (j = Cdist->grid.crank*Cdist->grid.stcols; j < C->nt; j+=Cdist->grid.cols*Cdist->grid.stcols)
-                for (l = 0; l < Cdist->grid.stcols; ++l) {
-	                irregular_tiled_matrix_desc_set_data(Cdist, NULL, i+k, j+l, C->Mtiling[i+k], C->Ntiling[j+l], 0, ((parsec_ddesc_t*)C)->rank_of((parsec_ddesc_t*)C, i+k, j+l));
-                }
-
-    Cdist->super.data_of = NULL;
-    Cdist->super.data_of_key = NULL;
+        two_dim_block_cyclic_init(
+            Cdist, matrix_RealDouble, matrix_Tile,
+            C->super.nodes, C->super.myrank,
+            1, 1, /* Dimensions of the tiles              */
+            m, n, /* Dimensions of the matrix             */
+            0, 0, /* Starting points (not important here) */
+            m, n, /* Dimensions of the submatrix          */
+            1, 1, P);
+        Cdist->super.super.data_of = NULL;
+        Cdist->super.super.data_of_key = NULL;
 
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
@@ -233,8 +335,8 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
-                                          (parsec_ddesc_t*)Cdist,
-                                          0);
+                                          Cdist,
+                                          0/*createC*/);
             arena = handle->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
             zsumma_handle = (parsec_handle_t*)handle;
         } else {
@@ -243,7 +345,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
-                                          (parsec_ddesc_t*)Cdist,
+                                          Cdist,
                                           0);
             arena = handle->arenas[PARSEC_zsumma_NT_DEFAULT_ARENA];
             zsumma_handle = (parsec_handle_t*)handle;
@@ -255,7 +357,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
-                                          (parsec_ddesc_t*)Cdist,
+                                          Cdist,
                                           0);
             arena = handle->arenas[PARSEC_zsumma_TN_DEFAULT_ARENA];
             zsumma_handle = (parsec_handle_t*)handle;
@@ -266,7 +368,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
-                                          (parsec_ddesc_t*)Cdist,
+                                          Cdist,
                                           0);
             arena = handle->arenas[PARSEC_zsumma_TT_DEFAULT_ARENA];
             zsumma_handle = (parsec_handle_t*)handle;
@@ -284,14 +386,12 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         attach_futures_prepare_input(zsumma_handle, "SUMMA", C->future_resolve_fct);
     }
 
-    unsigned int max_tile = summa_imax(A->max_tile, summa_imax(B->max_tile, C->max_tile));
-    unsigned int max_mb = summa_imax(A->max_mb, summa_imax(B->max_mb, C->max_mb));
+    parsec_datatype_t mtype;
+    parsec_type_create_contiguous(1, parsec_datatype_double_complex_t, &mtype);
 
-    dplasma_add2arena_tile(arena,
-                           /* FIXME: The size has to be optimized, the worst case will do for now */
-                           max_tile*sizeof(parsec_complex64_t),
+    parsec_arena_construct(arena, sizeof(parsec_complex64_t),
                            PARSEC_ARENA_ALIGNMENT_SSE,
-                           parsec_datatype_double_complex_t, max_mb);
+                           mtype);
 
     return zsumma_handle;
 }
@@ -320,10 +420,26 @@ void
 summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
-    irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
-    free( zsumma_handle->_g_Cdist );
+    if ( zsumma_handle->_g_Cdist != NULL ) {
+		/* DAMIEN rewrite this! */
+        tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+        free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
+    }
 
-    parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+	parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
+	if (arena)
+		parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+    parsec_handle_free(handle);
+}
+
+void
+summa_zsumma_recursive_Destruct(parsec_handle_t *handle)
+{
+    parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
+    if ( zsumma_handle->_g_Cdist != NULL ) {
+        tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+        free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
+    }
     parsec_handle_free(handle);
 }
 
@@ -391,7 +507,7 @@ summa_zsumma_Destruct( parsec_handle_t *handle )
  *
  ******************************************************************************/
 int
-summa_zsumma( parsec_context_t *parsec,
+summa_zsumma(parsec_context_t *parsec,
              PLASMA_enum transA, PLASMA_enum transB,
              parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t *A,
              const irregular_tiled_matrix_desc_t *B,
@@ -399,113 +515,12 @@ summa_zsumma( parsec_context_t *parsec,
 {
     parsec_handle_t *parsec_zsumma = NULL;
     int M, N, K;
-    int Am, An, Ai, Aj, Amt, Ant;
-    int Bm, Bn, Bi, Bj, Bmt, Bnt;
 
-    /* Check input arguments */
-    if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
-        dplasma_error("summa_zsumma", "illegal value of transA");
-        return -1;
-    }
-    if ((transB != PlasmaNoTrans) && (transB != PlasmaTrans) && (transB != PlasmaConjTrans)) {
-        dplasma_error("summa_zsumma", "illegal value of transB");
-        return -2;
-    }
-
-    unsigned int *mAtiling = A->Mtiling;
-    unsigned int *nAtiling = A->Ntiling;
-    unsigned int *mBtiling = B->Mtiling;
-    unsigned int *nBtiling = B->Ntiling;
-    unsigned int *mCtiling = C->Mtiling;
-    unsigned int *nCtiling = C->Ntiling;
-
-    if ( transA == PlasmaNoTrans ) {
-        Am  = A->m;
-        An  = A->n;
-        Ai  = A->i;
-        Aj  = A->j;
-        Amt = A->mt;
-        Ant = A->nt;
-    } else {
-        Am  = A->n;
-        An  = A->m;
-        mAtiling = A->Ntiling;
-        nAtiling = A->Mtiling;
-        Ai  = A->j;
-        Aj  = A->i;
-        Amt = A->nt;
-        Ant = A->mt;
-    }
-
-    if ( transB == PlasmaNoTrans ) {
-        Bm  = B->m;
-        Bn  = B->n;
-        Bi  = B->i;
-        Bj  = B->j;
-        Bmt = B->mt;
-        Bnt = B->nt;
-    } else {
-        Bm  = B->n;
-        Bn  = B->m;
-        mBtiling = B->Ntiling;
-        nBtiling = B->Mtiling;
-        Bi  = B->j;
-        Bj  = B->i;
-        Bmt = B->nt;
-        Bnt = B->mt;
-    }
-
-
-
-
-    int b = 1, i;
-    unsigned int *mAsubtiling = mAtiling+Ai;
-    unsigned int *nAsubtiling = nAtiling+Aj;
-    unsigned int *mBsubtiling = mBtiling+Bi;
-    unsigned int *nBsubtiling = nBtiling+Bj;
-    unsigned int *mCsubtiling = mCtiling+C->i;
-    unsigned int *nCsubtiling = nCtiling+C->j;
-
-    if (Amt != C->mt || Ant != Bmt || Bnt != C->nt) {
-	    dplasma_error("summa_zsumma","Symbolic tilings differ");
-	    return -101;
-    }
-
-    for (i = 0; i < Amt; ++i)
-	    if (mAsubtiling[i] != mCsubtiling[i])
-		    b = -102;
-
-    for (i = 0; i < Ant; ++i)
-	    if (nAsubtiling[i] != mBsubtiling[i])
-		    b = -103;
-
-    for (i = 0; i < Bnt; ++i)
-	    if (nBsubtiling[i] != nCsubtiling[i])
-		    b = -104;
-
-    if (b < -100) {
-	    dplasma_error("summa_zsumma", "Tile sizes differ");
-	    return b;
-    }
-
-    if ( (Am != C->m) || (An != Bm) || (Bn != C->n) ) {
-        dplasma_error("summa_zsumma", "sizes of submatrices have to match");
-        return -101;
-    }
-
-    if ( (Ai != C->i) || (Aj != Bi) || (Bj != C->j) ) {
-        dplasma_error("summa_zsumma", "start indexes have to match");
-        return -101;
-    }
-
-    if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
-        dplasma_error("summa_zsumma", "illegal type of descriptor for C");
-        return -3.;
-    }
+	zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
 
     M = C->m;
     N = C->n;
-    K = An;
+    K = (transA == PlasmaNoTrans) ? A->n : A->m;
 
     /* Quick return */
     if (M == 0 || N == 0 || ((alpha == (PLASMA_Complex64_t)0.0 || K == 0)))
@@ -526,3 +541,41 @@ summa_zsumma( parsec_context_t *parsec,
         return -101;
     }
 }
+
+#if defined(PARSEC_HAVE_RECURSIVE)
+void
+summa_zsumma_setrecursive(parsec_handle_t *handle, int bigtile, int opttile)
+{
+	parsec_zsumma_NN_handle_t *parsec_zsumma = (parsec_zsumma_NN_handle_t*)handle;
+	if (bigtile > 0 && opttile > 0) {
+		parsec_zsumma->_g_bigtile = bigtile;
+		parsec_zsumma->_g_opttile = opttile;
+	}
+}
+
+
+int
+summa_zsumma_rec(parsec_context_t *parsec,
+				 PLASMA_enum transA, PLASMA_enum transB,
+				 parsec_complex64_t alpha,
+				 const irregular_tiled_matrix_desc_t *A,
+				 const irregular_tiled_matrix_desc_t *B,
+				 irregular_tiled_matrix_desc_t *C, int bigtile, int opttile)
+{
+	parsec_handle_t *parsec_zsumma = NULL;
+
+	zsumma_check_operation_valid(transA, transB, alpha, A, B, C);
+
+	parsec_zsumma = summa_zsumma_New(transA, transB, alpha, A, B, C);
+
+	if (parsec_zsumma) {
+		parsec_enqueue(parsec, parsec_zsumma);
+		summa_zsumma_setrecursive(parsec_zsumma, bigtile, opttile);
+		dplasma_progress(parsec);
+		summa_zsumma_recursive_Destruct(parsec_zsumma);
+		parsec_handle_sync_ids();
+	}
+
+	return 0;
+}
+#endif
