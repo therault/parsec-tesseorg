@@ -91,9 +91,6 @@ static void init_random_matrix(irregular_tiled_matrix_desc_t *M, unsigned long l
                     irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
                     storage_map[idx] = ptr;
                 }
-
-
-    fprintf(stdout, "Allocated %d blocks of size %dx%d\n", u, M->max_mb, M->max_tile/M->max_mb);
 }
 
 static void init_empty_matrix(irregular_tiled_matrix_desc_t *M, parsec_complex64_t **storage_map)
@@ -113,9 +110,6 @@ static void init_empty_matrix(irregular_tiled_matrix_desc_t *M, parsec_complex64
                     irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
                     storage_map[idx] = ptr;
                 }
-
-
-    fprintf(stdout, "Allocated %d blocks of size %d\n", u, M->max_tile);
 }
 
 static void fini_matrix(parsec_complex64_t **Mstorage, int nb)
@@ -330,15 +324,12 @@ int main(int argc, char ** argv)
         int i;
         fprintf(stdout, "(MT = %d, mean(MB) = %d) x (KT = %d, mean(KB) = %d) x (NT = %d, mean(NB) = %d)\n",
                 MT, MB, KT, KB, NT, NB);
-        fprintf(stdout, "M tiling:");
-        for (i = 0; i < MT; ++i) fprintf(stdout, " %d", Mtiling[i]);
-        fprintf(stdout, "\n");
-        fprintf(stdout, "K tiling:");
-        for (i = 0; i < KT; ++i) fprintf(stdout, " %d", Ktiling[i]);
-        fprintf(stdout, "\n");
-        fprintf(stdout, "N tiling:");
-        for (i = 0; i < NT; ++i) fprintf(stdout, " %d", Ntiling[i]);
-        fprintf(stdout, "\n");
+        for (i = 0; i < MT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"M tiling: ":" ", Mtiling[i], (i == MT-1)?"\n":"");
+        for (i = 0; i < KT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"K tiling: ":" ", Ktiling[i], (i == KT-1)?"\n":"");
+        for (i = 0; i < NT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"N tiling: ":" ", Ntiling[i], (i == NT-1)?"\n":"");
     }
 
     /* initializing matrix structure */
@@ -360,7 +351,6 @@ int main(int argc, char ** argv)
 
     unsigned int max_tile = summa_imax(ddescA.max_tile, summa_imax(ddescB.max_tile, ddescC.max_tile));
     unsigned int max_mb = summa_imax(ddescA.max_mb, summa_imax(ddescB.max_mb, ddescC.max_mb));
-
     ddescA.max_tile = ddescB.max_tile = ddescC.max_tile = max_tile;
     ddescA.max_mb = ddescB.max_mb = ddescC.max_mb = max_mb;
 
@@ -443,6 +433,14 @@ int main(int argc, char ** argv)
     free(Astorage);
     free(Bstorage);
     free(Cstorage);
+
+	fini_matrix(Astorage, MT*KT);
+	fini_matrix(Bstorage, KT*NT);
+	fini_matrix(Cstorage, MT*NT);
+
+	free(Astorage);
+	free(Bstorage);
+	free(Cstorage);
 
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);

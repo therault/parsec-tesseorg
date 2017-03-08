@@ -158,7 +158,9 @@ static int32_t irregular_subtile_vpid_of(parsec_ddesc_t* ddesc, ...)
         return 0;
 
 	int i, j, vpid = 0;
-    va_list ap;
+	(void)i;
+	(void)j;
+	va_list ap;
     /* Get coordinates */
     va_start(ap, ddesc);
     i = (int)va_arg(ap, unsigned int);

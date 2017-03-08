@@ -362,10 +362,8 @@ void irregular_tiled_matrix_destroy_data(irregular_tiled_matrix_desc_t* ddesc)
             }
 }
 
-
 void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
 {
-    (void)ddesc;
     irregular_tiled_matrix_destroy_data(ddesc);
 
     if (ddesc->data_map)       free(ddesc->data_map);
@@ -387,7 +385,6 @@ void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
     if (NULL != actual_data) {
         parsec_data_create(ddesc->local_data_map+idx,(parsec_ddesc_t*)ddesc, idx, actual_data,
                            mb*nb*parsec_irregular_tiled_matrix_getsizeoftype(ddesc->mtype));
-
         /* Workaround: irregular_tile_data_create( */
         /*     ddesc->local_data_map+idx, ddesc, idx, actual_data, */
         /*     mb, nb, parsec_irregular_tiled_matrix_getsizeoftype(ddesc->mtype)); */
