@@ -37,7 +37,8 @@ static inline int parsec_recursivecall( parsec_execution_unit_t    *eu,
                                        parsec_execution_context_t *context,
                                        parsec_handle_t            *handle,
                                        void (*handle_destroy)(parsec_handle_t *),
-                                       int nbdesc,
+										int (*callback)(parsec_handle_t*, void *),
+										int nbdesc,
                                        ... )
 {
     cb_data_t *cbdata = NULL;
@@ -61,7 +62,7 @@ static inline int parsec_recursivecall( parsec_execution_unit_t    *eu,
     }
     va_end(ap);
 
-    parsec_set_complete_callback( handle, parsec_recursivecall_callback,
+    parsec_set_complete_callback( handle, callback,
                                  (void *)cbdata );
 
     parsec_enqueue( eu->virtual_process->parsec_context,
