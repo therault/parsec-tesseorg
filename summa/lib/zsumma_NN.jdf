@@ -174,6 +174,9 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
+    fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n",m,n,k);
+    return PARSEC_HOOK_RETURN_NEXT;
+
     /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
     /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
     /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
@@ -197,6 +200,15 @@ BODY [type=CUDA
     int ldam = cAmb;
     int ldbk = cBmb;
     int ldcm = cCmb;
+
+    double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
+    double miniflops = FLOPS_ZSUMMA(400., 400., 400.);
+    /* If we think the GEMM is too small, we fall back to the next hook, should be CPU */
+    /* Is it safe, can it be stuck in an infinite loop? */
+    if (flops < miniflops) {
+        fprintf(stdout, "  > SENDING TO RECURSIVE BODY: Task (%d;%d;%d)\n", m, n, k);
+        return PARSEC_HOOK_RETURN_NEXT;
+    }
 
     /* fprintf(stdout, "CUDA: summa( %d, %d, %d )\n" */
     /*         "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n", */
@@ -228,7 +240,9 @@ END
 
 BODY [type=RECURSIVE]
 {
+    fprintf(stdout, "RECURSIVE BODY for task (%d;%d;%d)\n",m,n,k);
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
+    return PARSEC_HOOK_RETURN_NEXT;
 
     int cAmb = descA->Mtiling[m];
     int cAnb = descA->Ntiling[k];
@@ -268,13 +282,16 @@ BODY [type=RECURSIVE]
         irregular_subtile_desc_t *small_descB;
         irregular_subtile_desc_t *small_descC;
 
-        /* fprintf(stdout, "Subtiling A %d;%d ...", m, k); */
-        small_descA = irregular_subtile_desc_create(descA, m, k, mtile, ktile);
-        /* fprintf(stdout, "Subtiling B %d;%d ...", k, n); */
-        small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
-        /* fprintf(stdout, "Subtiling C %d;%d ...", m, n); */
-        small_descC = irregular_subtile_desc_create(descC, m, n, mtile, ntile);
         parsec_zsumma_NN_handle_t *parsec_zsumma;
+        small_descA = irregular_subtile_desc_create(descA, m, k, mtile, ktile);
+        small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
+        small_descC = irregular_subtile_desc_create(descC, m, n, mtile, ntile);
+        small_descA->i = m;
+        small_descA->j = k;
+        small_descB->i = k;
+        small_descB->j = n;
+        small_descC->i = m;
+        small_descC->j = n;
 
         /* parsec_object */
         parsec_zsumma = parsec_zsumma_NN_new(PlasmaNoTrans, PlasmaNoTrans, alpha,
@@ -282,6 +299,9 @@ BODY [type=RECURSIVE]
                                              (const irregular_tiled_matrix_desc_t*) small_descB,
                                              (irregular_tiled_matrix_desc_t*) small_descC,
                                              recursive_fake_Cdist(Cdist), 0 /*createC*/);
+
+        /* Let's skip CUDA and recursive for this handle and directly execute it on CPU */
+        parsec_devices_handle_restrict((parsec_handle_t*)parsec_zsumma, PARSEC_DEV_CPU);
 
         /* recursive call */
         parsec_recursivecall(context, (parsec_execution_context_t*)this_task,
@@ -291,8 +311,10 @@ BODY [type=RECURSIVE]
 
         return PARSEC_HOOK_RETURN_ASYNC;
     }
-    else
+    else {
+        fprintf(stdout, "  > SENDING TO CPU BODY: Task (%d;%d;%d)\n", m, n, k);
         return PARSEC_HOOK_RETURN_NEXT;
+    }
 #else
 #  if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
@@ -316,6 +338,14 @@ END
 
 BODY
 {
+    fprintf(stdout, "CPU BODY for task (%d;%d;%d)",m,n,k);
+    if (descA->storage == matrix_Lapack) {
+        irregular_subtile_desc_t *small_descA = (irregular_subtile_desc_t*)descA;
+        irregular_subtile_desc_t *small_descB = (irregular_subtile_desc_t*)descB;
+        irregular_subtile_desc_t *small_descC = (irregular_subtile_desc_t*)descC;
+        fprintf(stdout, " recursively cut from task (%d;%d;%d)", descA->i, descC->j, descB->i);
+    }
+    fprintf(stdout, "\n");
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
     /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
     /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
