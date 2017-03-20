@@ -26,7 +26,7 @@ typedef struct irregular_subtile_desc_s {
     irregular_tiled_matrix_desc_t super;
     void *mat;      /**< pointer to the beginning of the matrix */
     int vpid;
-	int i, j;
+    int i, j;
 } irregular_subtile_desc_t;
 
 /**

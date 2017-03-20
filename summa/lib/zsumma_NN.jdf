@@ -167,6 +167,8 @@ BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
       weight=(descA->nt-k)]
 {
+    /* fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n", m,n,k); */
+    return PARSEC_HOOK_RETURN_NEXT;
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
     cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
@@ -174,9 +176,6 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n",m,n,k);
-    return PARSEC_HOOK_RETURN_NEXT;
-
     /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
     /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
     /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
@@ -206,7 +205,7 @@ BODY [type=CUDA
     /* If we think the GEMM is too small, we fall back to the next hook, should be CPU */
     /* Is it safe, can it be stuck in an infinite loop? */
     if (flops < miniflops) {
-        fprintf(stdout, "  > SENDING TO RECURSIVE BODY: Task (%d;%d;%d)\n", m, n, k);
+        /* fprintf(stdout, "  > SENDING TO RECURSIVE BODY: Task (%d;%d;%d)\n", m, n, k); */
         return PARSEC_HOOK_RETURN_NEXT;
     }
 
@@ -240,9 +239,9 @@ END
 
 BODY [type=RECURSIVE]
 {
-    fprintf(stdout, "RECURSIVE BODY for task (%d;%d;%d)\n",m,n,k);
-    parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
+    /* fprintf(stdout, "  > RECURSIVE BODY for task (%d;%d;%d)\n",m,n,k); */
     return PARSEC_HOOK_RETURN_NEXT;
+    parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
 
     int cAmb = descA->Mtiling[m];
     int cAnb = descA->Ntiling[k];
@@ -275,9 +274,8 @@ BODY [type=RECURSIVE]
     }
 
     if (mtile > 1 || ntile > 1 || ktile > 1) {
-        /* fprintf(stdout, "TRIGGERED for (%d;%d;%d): bigtile=%d <=? tiling[m]=%d, tiling[n]=%d, tiling[k]=%d\n", */
-        /*         m,n,k,bigtile, tempmm, tempnn, tempkk); */
-
+        /* fprintf(stdout, "    > RECURSIVE CUTTING for T (%d;%d;%d) in %d/%d/%d\n", */
+        /*         m,n,k,mtile, ntile, ktile); */
         irregular_subtile_desc_t *small_descA;
         irregular_subtile_desc_t *small_descB;
         irregular_subtile_desc_t *small_descC;
@@ -312,7 +310,7 @@ BODY [type=RECURSIVE]
         return PARSEC_HOOK_RETURN_ASYNC;
     }
     else {
-        fprintf(stdout, "  > SENDING TO CPU BODY: Task (%d;%d;%d)\n", m, n, k);
+        /* fprintf(stdout, "  > SENDING TO CPU BODY: Task (%d;%d;%d)\n", m, n, k); */
         return PARSEC_HOOK_RETURN_NEXT;
     }
 #else
@@ -338,14 +336,13 @@ END
 
 BODY
 {
-    fprintf(stdout, "CPU BODY for task (%d;%d;%d)",m,n,k);
     if (descA->storage == matrix_Lapack) {
         irregular_subtile_desc_t *small_descA = (irregular_subtile_desc_t*)descA;
         irregular_subtile_desc_t *small_descB = (irregular_subtile_desc_t*)descB;
         irregular_subtile_desc_t *small_descC = (irregular_subtile_desc_t*)descC;
-        fprintf(stdout, " recursively cut from task (%d;%d;%d)", descA->i, descC->j, descB->i);
+        /* fprintf(stdout, "    > CPU BODY for task (%d;%d;%d)",m,n,k); */
+        /* fprintf(stdout, " recursively cut from task (%d;%d;%d)\n", small_descA->i, small_descC->j, small_descB->i); */
     }
-    fprintf(stdout, "\n");
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
     /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
     /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */

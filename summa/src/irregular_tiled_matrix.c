@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2016-2017 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
@@ -47,7 +46,7 @@ static void irregular_tile_data_copy_construct(irregular_tile_data_copy_t* t)
 static void irregular_tile_data_copy_destruct(irregular_tile_data_copy_t* tile)
 {
     parsec_data_copy_t *obj = (parsec_data_copy_t*)tile;
-	(void)obj;
+    (void)obj;
     PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Release irregular tile data copy %p", obj);
     /* nothing to erase in this type */
 }
@@ -512,7 +511,7 @@ export_pythons(irregular_tiled_matrix_desc_t *A, irregular_tiled_matrix_desc_t *
                 fprintf(fp, "ax[%d,%d].bar(x, y%d, delta)\n", p, q, q*P+p);
                 fprintf(fp, "ax[%d,%d].axvline(x=%lf, color='red')\n", p, q, 2.*MB*MB*MB/1000000000);
             }
-        fprintf(fp, "\nplt.suptitle('Number of occurences against tile size as Flops, N=%d, t=%d, PxQ=(%dx%d)\nRed line is the nominal %d tile size.')\n", N, NB, P, Q, NB);
+        fprintf(fp, "\nplt.suptitle('Number of occurences against tile size as Flops, N=%d, t=%d, PxQ=(%dx%d)\nRed line is the nominal %d square tile size.')\n", N, NB, P, Q, NB);
         fprintf(fp, "plt.show()\n");
         fclose(fp);
     }

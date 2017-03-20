@@ -61,7 +61,7 @@ irregular_subtile_desc_t *irregular_subtile_desc_create(const irregular_tiled_ma
     /* if (MT > 1 && Mtiling[MT-1] < bigtile) { Mtiling[MT-2] += Mtiling[MT-1]; MT--;} */
     /* if (NT > 1 && Ntiling[NT-1] < bigtile) { Ntiling[NT-2] += Ntiling[NT-1]; NT--;} */
 
-    fprintf(stdout, " in %d along m, in %d along n\n", MT, NT);
+    /* fprintf(stdout, " in %d along m, in %d along n\n", MT, NT); */
     /* for (i = 0; i < MT; ++i) fprintf(stdout, "%s %d%s", (i == 0) ? "  -> Mtiling:" : ",", Mtiling[i], (i == MT-1) ? "\n" : ""); */
     /* for (i = 0; i < NT; ++i) fprintf(stdout, "%s %d%s", (i == 0) ? "  -> Ntiling:" : ",", Ntiling[i], (i == NT-1) ? "\n" : ""); */
 
