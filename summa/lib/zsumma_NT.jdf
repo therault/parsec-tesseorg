@@ -27,6 +27,13 @@ extern "C" %{
 /*
  * Globals
  */
+
+/* Keep this first, as in all jdf in this directory, to
+ * enable switching between SUMMA implementations.
+ * This is the JDF-like CRTP ;)
+ */
+summa_type [type = int]
+
 transA  [type = int]
 transB  [type = int]
 
