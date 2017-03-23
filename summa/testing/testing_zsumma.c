@@ -188,24 +188,6 @@ static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid,
 #endif
 
 /* prints meta deta of the matrix */
-#if defined(PARSEC_DEBUG_NOISIER)
-static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
-{
-    fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
-    fprintf(stdout, "  M=%d, N=%d, MT=%d, NT=%d\n", A->m, A->n, A->mt, A->nt);
-
-    int i;
-    fprintf(stdout, "  M tiling:");
-    for (i = 0; i < A->mt; ++i) fprintf(stdout, " %d", A->Mtiling[i]);
-    fprintf(stdout, "\n");
-    fprintf(stdout, "  N tiling:");
-    for (i = 0; i < A->nt; ++i) fprintf(stdout, " %d", A->Ntiling[i]);
-    fprintf(stdout, "\n");
-
-    fprintf(stdout, "  i=%d, j=%d, nb_local_tiles=%d\n", A->i, A->j, A->nb_local_tiles);
-    fprintf(stdout, "  lm=%d, ln=%d, lmt=%d, lnt=%d\n", A->lm, A->ln, A->lmt, A->lnt);
-}
-#endif
 static void print_matrix_meta(irregular_tiled_matrix_desc_t* A)
 {
     fprintf(stdout, "  Grid: %dx%d\n",A->grid.rows, A->grid.cols);
