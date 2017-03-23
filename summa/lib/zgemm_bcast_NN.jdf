@@ -31,6 +31,12 @@ int prev_gemm(int m, int n, gemm_plan_t *plan, int k);
 
 %}
 
+/* Keep this first, as in all jdf in this directory, to
+ * enable switching between SUMMA implementations.
+ * This is the JDF-like CRTP ;)
+ */
+summa_type [type = int]
+
 transA [ type = int ]
 transB [ type = int ]
 alpha  [ type = parsec_complex64_t ]
@@ -97,7 +103,7 @@ GEMM(m, n, k)
   k = 0 .. descB->mt-1
   kprev = %{ return gemm_plan_prev(plan, m, n, k); %}
   knext = %{ return gemm_plan_next(plan, m, n, k); %}
-  index = %{ return gemm_plan_red_index(plan, m, n, k); %}
+  index = %{ if(knext==-1) return gemm_plan_red_index(plan, m, n, k); else return -1; %}
 
 : CompDist(k, n)
 
