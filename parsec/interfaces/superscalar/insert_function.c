@@ -46,6 +46,7 @@
 #include "parsec/interfaces/interface.h"
 #include "parsec/interfaces/superscalar/insert_function_internal.h"
 #include "parsec/parsec_prof_grapher.h"
+#include "parsec/mca/pins/pins.h"
 
 int dtd_window_size             =  2048; /**< Default window size */
 uint32_t dtd_threshold_size     =  2048; /**< Default threshold size of tasks for master thread to wait on */
