@@ -12,10 +12,12 @@
 #include "dplasma/lib/dplasmatypes.h"
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "irregular_tiled_matrix.h"
+#include "summa_z.h"
 #include "zsumma_NN.h"
 #include "zsumma_NT.h"
 #include "zsumma_TN.h"
 #include "zsumma_TT.h"
+#include "zgemm_bcast_NN.h"
 
 typedef struct parsec_function_vampire_s {
     parsec_function_t super;
@@ -219,6 +221,193 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
 	return b;
 }
 
+struct gemm_plan_s {
+    int mt;
+    int nt;
+    int P;
+    int *prev;  /* prev[m,n,k]: is the previous local GEMM to contribute to C(m ,n) */
+    int *next;  /* next[m,n,k]: next GEMM to do after GEMM on k for C(m,n) */
+    int *ip;    /* ip[m, n, x], 0 <= x <= P, 
+                 * defines the reduction index / last GEMM contribution pair.
+                 * if ip[m, n, x] == -1, then there are x-1 elements in this array
+                 * There cannot be more than P elements in this array.
+                 * Otherwise, ip[m, n, x] is the k such that GEMM(m, n, k) was
+                 * the last contribution of a node, and that contribution is at
+                 * index x in the reduction pipeline.
+                 */
+};
+
+/*
+ * Returns k such that gemm_plan_red_index(plan, m, n, k) == i
+ */
+int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+{
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    assert( (i >= 0) && (i<plan->P));
+    return plan->ip[(m*plan->nt+n)*plan->mt + i];
+}
+
+/*
+ * Returns the position in the pipeline reduction of the
+ * different node contributions to C(m, n), such that
+ * k is the last local contribution to C(m, n) for the calling
+ * node.
+ */
+int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
+{
+    int i;
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    for(i = 0; i < plan->P; i++) {
+        if( plan->ip[(m*plan->nt+n)*plan->mt + i] == k )
+            return i;
+    }
+    assert(0);
+}
+
+/*
+ * Returns how many nodes contribute to C(m ,n) 
+ */
+int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
+{
+    int i;
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    for(i = 0; i < plan->P; i++) {
+        if( plan->ip[(m*plan->nt+n)*plan->mt + i] == -1 )
+            break;
+    }
+    return i;
+}
+
+/*
+ * Returns k' such that gemm_plan_next(plan, m, n, k') = k
+ * Return -1 if there is no such k'
+ */
+int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
+{
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    return plan->prev[(m*plan->nt+n)*plan->mt + k];
+}
+
+/*
+ * GEMM(m, n, k) was a previous local contribution to C(m, n)
+ * This function returns k' such that GEMM(m, n, k') is the next
+ * local GEMM to execute
+ * Returns -1 if there is no such k'
+ */
+int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k)
+{
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    return plan->next[(m*plan->nt+n)*plan->mt + k];
+}
+
+parsec_handle_t*
+summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
+                       parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
+                       const irregular_tiled_matrix_desc_t* B,
+                       irregular_tiled_matrix_desc_t* C)
+{
+    parsec_handle_t* zgemm_handle;
+    parsec_arena_t* arena;
+    int P, Q, m, n, i, j, k, rank;
+    gemm_plan_t *plan;
+
+    /* Check input arguments */
+    if ((transA != PlasmaNoTrans)) {
+        dplasma_error("summa_zgemm_bcast_New", "illegal value of transA");
+        return NULL /*-1*/;
+    }
+    if ((transB != PlasmaNoTrans)) {
+        dplasma_error("summa_zgemm_bcast_New", "illegal value of transB");
+        return NULL /*-2*/;
+    }
+    if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
+        dplasma_error("summa_zgemm_bcast_New", "illegal type of descriptor for C (must be irregular_tiled_matrix_desc_t)");
+        return NULL;
+    }
+
+    P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
+    Q = ((irregular_tiled_matrix_desc_t*)C)->grid.cols;
+    plan = (gemm_plan_t*)malloc(sizeof(gemm_plan_t));
+    plan->P = P;
+    plan->mt = C->mt;
+    plan->nt = C->nt;
+    plan->ip   = malloc(C->mt * C->nt * plan->P * sizeof(int));
+    plan->prev = malloc(C->mt * C->nt * B->mt * sizeof(int));
+    plan->next = malloc(C->mt * C->nt * B->mt * sizeof(int));
+    int *lastk = malloc(plan->P * sizeof(int));
+    for(m = 0; m < C->mt; m++) {
+        for(n = 0; n < C->nt; n++) {
+            for(i = 0; i < plan->P; i++)
+                lastk[i] = -1;
+            for(k = 0; k < B->mt; k++) {
+                /* Cubic loop to determine, for each C(m, n),
+                 * what are the local GEMM segments */
+                rank = B->super.rank_of((parsec_ddesc_t*)B, k, n);
+                plan->prev[(m*plan->nt+n)*plan->mt + k] = lastk[rank];
+                if( -1 != lastk[rank] )
+                    plan->next[(m*plan->nt+n)*plan->mt + lastk[rank]] = k;
+                lastk[rank] = k;
+            }
+            /* Mark the last ones as finals */
+            for(i = 0; i < plan->P; i++)
+                if( -1 != lastk[i] )
+                    plan->next[(m*plan->nt+n)*plan->mt + lastk[i]] = -1;
+            /* Now, compute the reduction indexes:
+             *  - Start with rank next to the host of C(m, n), so we can end on C(m, n)
+             *    This is used in an attempt to distribute the order of reductions
+             *  - Remember the last k used by each rank in the index/process array
+             */
+            rank = C->super.rank_of((parsec_ddesc_t*)C, m, n);
+            for(i = ((rank/P)+1) % Q; i != (rank/P); i++) {
+                if( lastk[i] != -1 ) {
+                    plan->ip[(m*plan->nt+n) + j] = lastk[i];
+                    j++;
+                }
+            }
+            for(; j < P; j++)
+                plan->ip[(m*plan->nt+n) + j] = -1;
+        }
+    }
+    free(lastk);
+
+    if( PlasmaNoTrans == transA ) {
+        if( PlasmaNoTrans == transB ) {
+            parsec_zgemm_bcast_NN_handle_t* handle;
+            handle = parsec_zgemm_bcast_NN_new(transA, transB, alpha,
+                                               (const irregular_tiled_matrix_desc_t *)A,
+                                               (const irregular_tiled_matrix_desc_t *)B,
+                                               (irregular_tiled_matrix_desc_t *)C,
+                                               (parsec_ddesc_t*)B,
+                                               plan);
+            arena = handle->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
+            zgemm_handle = (parsec_handle_t*)handle;
+        } 
+    }
+
+    if( A->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zgemm_handle, "READ_A", A->future_resolve_fct);
+    }
+    if( B->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zgemm_handle, "READ_B", B->future_resolve_fct);
+    }
+    if( C->future_resolve_fct != NULL ) {
+        attach_futures_prepare_input(zgemm_handle, "GEMM", C->future_resolve_fct);
+    }
+
+    parsec_datatype_t mtype;
+    parsec_type_create_contiguous(1, parsec_datatype_double_complex_t, &mtype);
+
+    parsec_arena_construct(arena, sizeof(parsec_complex64_t),
+                           PARSEC_ARENA_ALIGNMENT_SSE,
+                           mtype);
+
+    return zgemm_handle;
+}
 
 
 /**
@@ -294,6 +483,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_handle_t* zsumma_handle;
     parsec_arena_t* arena;
     int P, Q, m, n;
+    int Asize, Bsize, Csize;
 
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
@@ -307,6 +497,15 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     if ( !(C->dtype & irregular_tiled_matrix_desc_type) ) {
         dplasma_error("summa_zsumma_New", "illegal type of descriptor for C (must be irregular_tiled_matrix_desc_t)");
         return NULL;
+    }
+
+    Asize = A->m * A->n;
+    Bsize = B->m * B->n;
+    Csize = C->m * C->n;
+
+    if( (transA == PlasmaNoTrans) && (transB == PlasmaNoTrans) &&
+        (10 * (Asize + Csize) < Bsize) ) {
+        return summa_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
 
     P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
