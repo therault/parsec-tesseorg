@@ -19,6 +19,12 @@
 #include "zsumma_TT.h"
 #include "zgemm_bcast_NN.h"
 
+#define SUMMA_NN 1
+#define SUMMA_NT 2
+#define SUMMA_TN 3
+#define SUMMA_TT 4
+#define GEMM_BCAST_NN 5
+
 typedef struct parsec_function_vampire_s {
     parsec_function_t super;
     parsec_hook_t    *saved_prepare_input;
@@ -224,6 +230,7 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
 struct gemm_plan_s {
     int mt;
     int nt;
+    int kt;
     int P;
     int *prev;  /* prev[m,n,k]: is the previous local GEMM to contribute to C(m ,n) */
     int *next;  /* next[m,n,k]: next GEMM to do after GEMM on k for C(m,n) */
@@ -245,7 +252,7 @@ int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
     assert( (i >= 0) && (i<plan->P));
-    return plan->ip[(m*plan->nt+n)*plan->mt + i];
+    return plan->ip[(m*plan->nt+n)*plan->P + i];
 }
 
 /*
@@ -260,7 +267,7 @@ int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
     for(i = 0; i < plan->P; i++) {
-        if( plan->ip[(m*plan->nt+n)*plan->mt + i] == k )
+        if( plan->ip[(m*plan->nt+n)*plan->P + i] == k )
             return i;
     }
     assert(0);
@@ -275,10 +282,10 @@ int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
     for(i = 0; i < plan->P; i++) {
-        if( plan->ip[(m*plan->nt+n)*plan->mt + i] == -1 )
+        if( plan->ip[(m*plan->nt+n)*plan->P + i] == -1 )
             break;
     }
-    return i;
+    return i-1;
 }
 
 /*
@@ -287,9 +294,12 @@ int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
  */
 int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
 {
+    int ret;
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
-    return plan->prev[(m*plan->nt+n)*plan->mt + k];
+    assert( (k >= 0) && (k<plan->kt));
+    ret = plan->prev[(m*plan->nt+n)*plan->kt + k];
+    return ret;
 }
 
 /*
@@ -302,7 +312,8 @@ int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k)
 {
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
-    return plan->next[(m*plan->nt+n)*plan->mt + k];
+    assert( (k >= 0) && (k<plan->kt));
+    return plan->next[(m*plan->nt+n)*plan->kt + k];
 }
 
 parsec_handle_t*
@@ -336,6 +347,7 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     plan->P = P;
     plan->mt = C->mt;
     plan->nt = C->nt;
+    plan->kt = B->mt;
     plan->ip   = malloc(C->mt * C->nt * plan->P * sizeof(int));
     plan->prev = malloc(C->mt * C->nt * B->mt * sizeof(int));
     plan->next = malloc(C->mt * C->nt * B->mt * sizeof(int));
@@ -347,30 +359,34 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
             for(k = 0; k < B->mt; k++) {
                 /* Cubic loop to determine, for each C(m, n),
                  * what are the local GEMM segments */
-                rank = B->super.rank_of((parsec_ddesc_t*)B, k, n);
-                plan->prev[(m*plan->nt+n)*plan->mt + k] = lastk[rank];
+                rank = B->super.rank_of((parsec_ddesc_t*)B, k, n)/Q;
+                plan->prev[(m*plan->nt+n)*plan->kt + k] = lastk[rank];
                 if( -1 != lastk[rank] )
-                    plan->next[(m*plan->nt+n)*plan->mt + lastk[rank]] = k;
+                    plan->next[(m*plan->nt+n)*plan->kt + lastk[rank]] = k;
                 lastk[rank] = k;
             }
             /* Mark the last ones as finals */
             for(i = 0; i < plan->P; i++)
                 if( -1 != lastk[i] )
-                    plan->next[(m*plan->nt+n)*plan->mt + lastk[i]] = -1;
+                    plan->next[(m*plan->nt+n)*plan->kt + lastk[i]] = -1;
             /* Now, compute the reduction indexes:
              *  - Start with rank next to the host of C(m, n), so we can end on C(m, n)
              *    This is used in an attempt to distribute the order of reductions
              *  - Remember the last k used by each rank in the index/process array
              */
-            rank = C->super.rank_of((parsec_ddesc_t*)C, m, n);
-            for(i = ((rank/P)+1) % Q; i != (rank/P); i++) {
+            rank = C->super.rank_of((parsec_ddesc_t*)C, m, n)/Q;
+            j = 0;
+            i = rank;
+            do {
+                i = (i+1)%P;
                 if( lastk[i] != -1 ) {
-                    plan->ip[(m*plan->nt+n) + j] = lastk[i];
+                    plan->ip[(m*plan->nt+n)*plan->P + j] = lastk[i];
                     j++;
                 }
-            }
+            } while(i != rank);
+            assert(j != 0);
             for(; j < P; j++)
-                plan->ip[(m*plan->nt+n) + j] = -1;
+                plan->ip[(m*plan->nt+n)*plan->P + j] = -1;
         }
     }
     free(lastk);
@@ -378,7 +394,7 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
             parsec_zgemm_bcast_NN_handle_t* handle;
-            handle = parsec_zgemm_bcast_NN_new(transA, transB, alpha,
+            handle = parsec_zgemm_bcast_NN_new(GEMM_BCAST_NN, transA, transB, alpha,
                                                (const irregular_tiled_matrix_desc_t *)A,
                                                (const irregular_tiled_matrix_desc_t *)B,
                                                (irregular_tiled_matrix_desc_t *)C,
@@ -504,7 +520,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     Csize = C->m * C->n;
 
     if( (transA == PlasmaNoTrans) && (transB == PlasmaNoTrans) &&
-        (10 * (Asize + Csize) < Bsize) ) {
+        (1 || (10 * (Asize + Csize) < Bsize)) ) {
         return summa_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
 
@@ -530,7 +546,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
             parsec_zsumma_NN_handle_t* handle;
-            handle = parsec_zsumma_NN_new(transA, transB, alpha,
+            handle = parsec_zsumma_NN_new(SUMMA_NN, transA, transB, alpha,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
@@ -540,7 +556,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
             zsumma_handle = (parsec_handle_t*)handle;
         } else {
             parsec_zsumma_NT_handle_t* handle;
-            handle = parsec_zsumma_NT_new(transA, transB, alpha,
+            handle = parsec_zsumma_NT_new(SUMMA_NT, transA, transB, alpha,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
@@ -552,7 +568,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     } else {
         if( PlasmaNoTrans == transB ) {
             parsec_zsumma_TN_handle_t* handle;
-            handle = parsec_zsumma_TN_new(transA, transB, alpha,
+            handle = parsec_zsumma_TN_new(SUMMA_TN, transA, transB, alpha,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
@@ -563,7 +579,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         }
         else {
             parsec_zsumma_TT_handle_t* handle;
-            handle = parsec_zsumma_TT_new(transA, transB, alpha,
+            handle = parsec_zsumma_TT_new(SUMMA_TT, transA, transB, alpha,
                                           (const irregular_tiled_matrix_desc_t *)A,
                                           (const irregular_tiled_matrix_desc_t *)B,
                                           (irregular_tiled_matrix_desc_t *)C,
@@ -619,15 +635,25 @@ void
 summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
-    if ( zsumma_handle->_g_Cdist != NULL ) {
-		/* DAMIEN rewrite this! */
-        tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
-        free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
-    }
 
-	parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
-	if (arena)
-		parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+    if( zsumma_handle->_g_summa_type == SUMMA_NN ||
+        zsumma_handle->_g_summa_type == SUMMA_NT ||
+        zsumma_handle->_g_summa_type == SUMMA_TN ||
+        zsumma_handle->_g_summa_type == SUMMA_TT ) {
+        if ( zsumma_handle->_g_Cdist != NULL ) {
+            /* DAMIEN rewrite this! */
+            tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+            free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
+        }
+        parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
+        if (arena)
+            parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+    }
+    if( zsumma_handle->_g_summa_type == GEMM_BCAST_NN ) {
+        parsec_arena_t *arena = ((parsec_zgemm_bcast_NN_handle_t *)handle)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
+        if (arena)
+            parsec_matrix_del2arena( ((parsec_zgemm_bcast_NN_handle_t *)handle)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
+    }
     parsec_handle_free(handle);
 }
 
@@ -726,9 +752,9 @@ summa_zsumma(parsec_context_t *parsec,
         return 0;
 
     parsec_zsumma = summa_zsumma_New(transA, transB,
-                                    alpha, A,
-                                    B,
-                                    C);
+                                     alpha, A,
+                                     B,
+                                     C);
 
     if ( parsec_zsumma != NULL ) {
         parsec_enqueue( parsec, (parsec_handle_t*)parsec_zsumma);
