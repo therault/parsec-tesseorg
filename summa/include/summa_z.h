@@ -81,6 +81,39 @@ static inline int summa_recursivecall_callback(parsec_handle_t* parsec_handle, v
 }
 #endif
 
+/* Helper structures and functions */
+
+/* This will define a GEMM execution plan for the bcast_gemm interface */
+typedef struct gemm_plan_s gemm_plan_t;
+
+/*
+ * Returns k such that gemm_plan_red_index(plan, m, n, k) == i
+ */
+int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i);
+/*
+ * Returns the position in the pipeline reduction of the
+ * different node contributions to C(m, n), such that
+ * k is the last local contribution to C(m, n) for the calling
+ * node.
+ */
+int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k);
+/*
+ * Returns how many nodes contribute to C(m ,n) 
+ */
+int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n);
+/*
+ * Returns k' such that gemm_plan_next(plan, m, n, k') = k
+ * Return -1 if there is no such k'
+ */
+int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k);
+/*
+ * GEMM(m, n, k) was a previous local contribution to C(m, n)
+ * This function returns k' such that GEMM(m, n, k') is the next
+ * local GEMM to execute
+ * Returns -1 if there is no such k'
+ */
+int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k);
+
 END_C_DECLS
 
 #endif /* _zsumma_h_has_been_included_ */
