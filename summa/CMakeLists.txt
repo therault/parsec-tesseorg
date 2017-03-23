@@ -59,6 +59,7 @@ set(SUMMA_JDF
   lib/zsumma_TN.jdf
   lib/zsumma_NN.jdf
   lib/zsumma_NT.jdf
+  lib/zgemm_bcast_NN.jdf
   )
 
 set(SUMMA_WRAPPER_SRC
