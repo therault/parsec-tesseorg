@@ -262,7 +262,7 @@ int get_tile_count(const irregular_tiled_matrix_desc_t *desc, int m, int n)
 {
     assert(0 <= m && m < desc->mt && 0 <= n && n < desc->nt);
     int res = desc->Mtiling[m] * desc->Ntiling[n];
-    /* fprintf(stdout, "m = %d, n = %d > res = %d\n", m, n, res); */
+    fprintf(stdout, "m = %d, n = %d > res = %d\n", m, n, res);
     assert(0 < res && res <= desc->m * desc->n);
     return res;
 }
