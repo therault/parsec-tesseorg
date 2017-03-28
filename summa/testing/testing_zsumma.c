@@ -404,6 +404,7 @@ int main(int argc, char ** argv)
 			   1, 1, 1, 3., &A, 1, &B, 1, 1., &C, 1);
 
     /* Create Parsec handle */
+    for(int run = 0; run < 20; run++) {
     SYNC_TIME_START();
     parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
                                                     (irregular_tiled_matrix_desc_t*)&ddescA,
@@ -427,7 +428,7 @@ int main(int argc, char ** argv)
                            gflops=(flops/1e9)/sync_time_elapsed));
 
 	summa_zsumma_Destruct( PARSEC_zsumma );
-
+}
 	if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
 		parsec_handle_sync_ids(); /* recursive DAGs are not synchronous on ids */
 
