@@ -422,6 +422,9 @@ summa_aux_getSUMMALookahead(irregular_tiled_matrix_desc_t *ddesc)
      */
     int nbunits = vpmap_get_nb_total_threads() * ddesc->super.nodes;
     double alpha =  9. * (double)nbunits / ( ddesc->mt * ddesc->nt );
+    printf("Look ahead of (%dx%d) with %d units is max of %g, %d: %d\n", 
+           ddesc->mt, ddesc->nt, nbunits,
+           alpha, 2, summa_imax( ceil( alpha ), 2 ));
 
     if ( ddesc->super.nodes == 1 ) {
         /* No look ahaead */

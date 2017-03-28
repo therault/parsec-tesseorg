@@ -85,6 +85,23 @@ static int future_input_for_summa_task(parsec_execution_unit_t * context, __pars
     return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
 }
 
+static int future_input_for_accumulate_c_task(parsec_execution_unit_t * context, __parsec_zgemm_bcast_NN_ACCUMULATE_C_task_t * this_task)
+{
+    const parsec_zgemm_bcast_NN_handle_t *__parsec_handle = (parsec_zgemm_bcast_NN_handle_t *) this_task->parsec_handle;
+    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->function;
+    parsec_data_copy_t *copy = NULL;
+    void *f = NULL, *tile = NULL;
+    const int m = this_task->locals.m.value;
+    const int n = this_task->locals.n.value;
+    /** Lookup the input data, and store them in the context if any */
+    assert(NULL == this_task->data._f_C.data_in);
+    copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descC)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descC), m, n), 0);
+    f = PARSEC_DATA_COPY_GET_PTR(copy);
+    tile = vf->resolve_future_function(f);
+    copy->device_private = tile;
+    return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
+}
+
 static void attach_futures_prepare_input(parsec_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*))
 {
     int fid;
@@ -111,7 +128,9 @@ static void attach_futures_prepare_input(parsec_handle_t *handle, const char *ta
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_read_b_task;
     else if( strcmp(task_name, "SUMMA") == 0 )
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_summa_task;
-    else assert(0);
+    else if( strcmp(task_name, "ACCUMULATE_C") == 0 )
+        vf->super.prepare_input = (parsec_hook_t*)future_input_for_accumulate_c_task;
+    else exit(3);
     handle->functions_array[fid] = (parsec_function_t*)vf;
 }
 
@@ -247,7 +266,7 @@ struct gemm_plan_s {
 /*
  * Returns k such that gemm_plan_red_index(plan, m, n, k) == i
  */
-int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+int zgemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
 {
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
@@ -261,7 +280,7 @@ int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
  * k is the last local contribution to C(m, n) for the calling
  * node.
  */
-int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
+int zgemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
 {
     int i;
     assert( (m >= 0) && (m<plan->mt));
@@ -271,12 +290,13 @@ int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
             return i;
     }
     assert(0);
+    return -1;
 }
 
 /*
  * Returns how many nodes contribute to C(m ,n) 
  */
-int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
+int zgemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
 {
     int i;
     assert( (m >= 0) && (m<plan->mt));
@@ -292,7 +312,7 @@ int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
  * Returns k' such that gemm_plan_next(plan, m, n, k') = k
  * Return -1 if there is no such k'
  */
-int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
+int zgemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
 {
     int ret;
     assert( (m >= 0) && (m<plan->mt));
@@ -308,7 +328,7 @@ int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
  * local GEMM to execute
  * Returns -1 if there is no such k'
  */
-int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k)
+int zgemm_plan_next(gemm_plan_t *plan, int m, int n, int k)
 {
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
@@ -412,7 +432,7 @@ summa_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         attach_futures_prepare_input(zgemm_handle, "READ_B", B->future_resolve_fct);
     }
     if( C->future_resolve_fct != NULL ) {
-        attach_futures_prepare_input(zgemm_handle, "GEMM", C->future_resolve_fct);
+        attach_futures_prepare_input(zgemm_handle, "ACCUMULATE_C", C->future_resolve_fct);
     }
 
     parsec_datatype_t mtype;
@@ -521,6 +541,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
 
     if( (transA == PlasmaNoTrans) && (transB == PlasmaNoTrans) &&
         (1 || (10 * (Asize + Csize) < Bsize)) ) {
+	printf("Doing SUMMA(%dx%d, %dx%d, %dx%d)\n", A->m, A->n, B->m, B->n, C->m, C->n);
         return summa_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
 
