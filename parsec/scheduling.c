@@ -411,7 +411,22 @@ int __parsec_complete_execution( parsec_execution_unit_t *eu_context,
     return rc;
 }
 
-int __parsec_context_wait( parsec_execution_unit_t* eu_context )
+typedef int (*cond_function_t)(parsec_context_t*, void *);
+
+static int cond_stop_on_all_done(parsec_context_t *parsec_context, void *cond_function_data)
+{
+    (void)cond_function_data;
+    return all_tasks_done(parsec_context);
+}
+
+static int cond_stop_on_handle_done(parsec_context_t *parsec_context, void *cond_function_data )
+{
+    parsec_handle_t *handle = (parsec_handle_t*)cond_function_data;
+    (void)parsec_context;
+    return (handle->nb_tasks == PARSEC_RUNTIME_RESERVED_NB_TASKS) && (handle->nb_pending_actions == 0);
+}
+
+static int __parsec_wait( parsec_execution_unit_t *eu_context, cond_function_t cond_function_stop, void *cond_function_data )
 {
     uint64_t misses_in_a_row;
     parsec_context_t* parsec_context = eu_context->virtual_process->parsec_context;
@@ -462,7 +477,7 @@ int __parsec_context_wait( parsec_execution_unit_t* eu_context )
     }
 
   skip_first_barrier:
-    while( !all_tasks_done(parsec_context) ) {
+    while( !cond_function_stop(parsec_context, cond_function_data) ) {
 #if defined(DISTRIBUTED)
         if( (1 == parsec_communication_engine_up) &&
             (eu_context->virtual_process[0].parsec_context->nb_nodes == 1) &&
@@ -626,6 +641,17 @@ int __parsec_context_wait( parsec_execution_unit_t* eu_context )
         PINS_THREAD_FINI(eu_context);
     }
     return nbiterations;
+}
+
+void parsec_ptg_handle_wait( parsec_context_t *parsec, parsec_handle_t  *parsec_handle)
+{
+    parsec_execution_unit_t *eu_context = parsec->virtual_processes[0]->execution_units[0];
+    __parsec_wait(eu_context, cond_stop_on_handle_done, parsec_handle);
+}
+
+int __parsec_context_wait( parsec_execution_unit_t* eu_context )
+{
+    return __parsec_wait(eu_context, cond_stop_on_all_done, NULL);
 }
 
 /*  *********** COMPOSITION OF PARSEC_OBJECTS ***************  */
