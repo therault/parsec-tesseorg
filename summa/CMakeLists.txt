@@ -108,6 +108,12 @@ set(TESTING_SUMMA_SRC
   testing/testing_zsumma.c
   )
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/parsec-summa.pc.in"
+    "${PROJECT_INCLUDE_DIR}/parsec-summa.pc" @ONLY)
+
+install(FILES "${PROJECT_INCLUDE_DIR}/parsec-summa.pc"   DESTINATION lib/pkgconfig)
+
 
 link_directories(${COREBLAS_LIBRARY_DIRS})
 

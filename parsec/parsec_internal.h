@@ -80,6 +80,11 @@ typedef void (*parsec_startup_fn_t)(parsec_context_t *context,
 typedef void (*parsec_destruct_fn_t)(parsec_handle_t* parsec_handle);
 
 /**
+ * @brief handle_type for Parameterized Tasks Graphs (PTG)
+ */
+#define PARSEC_HANDLE_TYPE_PTG 0
+
+/**
  * @brief a PaRSEC handle represents an entire DAG of tasks
  */
 struct parsec_handle_s {

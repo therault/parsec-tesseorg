@@ -434,6 +434,15 @@ int parsec_handle_enable(parsec_handle_t* handle,
                         parsec_execution_unit_t * eu,
                         int distributed);
 
+
+/**
+ * This function will block until all the tasks belonging to this handle
+ * complete, and the handle completion function is called.
+ * @todo Move into the PTG interface level.
+ */
+void parsec_ptg_handle_wait( parsec_context_t *parsec,
+                             parsec_handle_t  *parsec_handle );
+
 /**
  * @brief Print PaRSEC usage message.
  *
