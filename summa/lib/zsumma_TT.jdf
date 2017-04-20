@@ -180,7 +180,6 @@ BODY [type=CUDA
     /* int ldcm = cC->mb; */
 
     int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
     int cBnb = descB->Ntiling[n];
     int cCmb = cAmb;
     int cCnb = cBnb;
@@ -188,15 +187,15 @@ BODY [type=CUDA
     int tempmm = cCmb;
     int tempnn = cCnb;
     int tempkk = cAmb;
-    int ldam = cAnb;
-    int ldbn = cBnb;
-    int ldcm = cCmb;
+    int ldak = SUMMA_T_BLKLDD(descA, k);
+    int ldbn = SUMMA_T_BLKLDD(descB, n);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
     cublasStatus_t status;
     cublasSetKernelStream( parsec_body.stream );
     parsec_body.dyld_fn( lapack_const(transA), lapack_const(transB),
              tempmm, tempnn, tempkk,
-             lalpha, (cuDoubleComplex*)A, ldam,
+             lalpha, (cuDoubleComplex*)A, ldak,
                      (cuDoubleComplex*)B, ldbn,
              lbeta,  (cuDoubleComplex*)C, ldcm );
     status = cublasGetError();
@@ -219,7 +218,6 @@ BODY
     /* int ldcm = cC->mb; */
 
     int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
     int cBnb = descB->Ntiling[n];
     int cCmb = cAmb;
     int cCnb = cBnb;
@@ -228,10 +226,9 @@ BODY
     int tempnn = cCnb;
     int tempkk = cAmb;
     /* The use of ldak may be wrong, check all the results (NN,TN,TT,NT) before removing this comment. */
-    int ldak = cAnb;
-    int ldam = cAnb;
-    int ldbn = cBnb;
-    int ldcm = cCmb;
+    int ldak = SUMMA_T_BLKLDD(descA, k);
+    int ldbn = SUMMA_T_BLKLDD(descB, n);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
     fprintf(stdout, "summa( %d, %d, %d )\n"
              "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",

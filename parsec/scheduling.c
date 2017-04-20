@@ -300,6 +300,52 @@ int __parsec_schedule( parsec_execution_unit_t* eu_context,
     return ret;
 }
 
+/**
+ * @brief Reschedule a task on the most appropriate resource.
+ *
+ * @details The function reschedules a task, by trying to locate it as closer
+ *          as possible to the current execution unit. If not available
+ *          execution unit was found, the task is rescheduled on the same
+ *          execution unit. To find the most appropriate execution unit
+ *          we start from the next execution unit after the current one, and
+ *          iterate over all existing execution units (in the current VP,
+ *          then on the next VP and so on).
+ *
+ * @param [IN] eu_context, the start execution_unit (normall it is the current one).
+ * @param [IN] task, the task to be rescheduled.
+ *
+ * @return parsec scheduling return code
+ */
+int __parsec_reschedule(parsec_execution_unit_t* eu_context, parsec_execution_context_t* task)
+{
+    parsec_context_t* context = eu_context->virtual_process->parsec_context;
+    parsec_vp_t* vp_context = eu_context->virtual_process;
+    
+    int vp, start_vp = vp_context->vp_id, next_vp;
+    int eu, start_eu = (eu_context->th_id + 1) % context->virtual_processes[start_vp]->nb_cores, next_eu;
+    
+    for( vp = start_vp, next_vp = (start_vp + 1) % context->nb_vp;
+         next_vp != vp_context->vp_id;
+         ++vp) {
+        if( 1 != context->virtual_processes[vp]->nb_cores ) {
+            for( eu = start_eu, next_eu = (start_eu + 1) % context->virtual_processes[vp]->nb_cores;
+                 next_eu != start_eu;
+                 ++eu ) {
+                return __parsec_schedule(context->virtual_processes[vp]->execution_units[eu], task, 0);
+            }
+        }
+        else if ( context->virtual_processes[vp]->vp_id != vp_context->vp_id ) {
+            /* VP contains only one EU, and it's not my VP, so not me */
+            return __parsec_schedule(context->virtual_processes[vp]->execution_units[0], task, 0);
+        }
+        start_eu = 0;  /* with the exception of the first eu_context, we always iterate from 0 */
+    }
+    /* no luck so far, let's reschedule the task on the same execution unit */
+    return __parsec_schedule(eu_context, task, 0);
+}
+
+
+
 #ifdef  PARSEC_HAVE_SCHED_SETAFFINITY
 #define gettid() syscall(__NR_gettid)
 #endif /* PARSEC_HAVE_SCHED_SETAFFINITY */

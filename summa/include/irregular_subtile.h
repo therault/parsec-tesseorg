@@ -6,15 +6,7 @@
 #ifndef __IRREGULAR_SUBTILE_H__
 #define __IRREGULAR_SUBTILE_H__
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 #include "irregular_tiled_matrix.h"
-=======
-#include "summa/irregular_tiled_matrix.h"
->>>>>>> Adds: recursive tiling for irregular tiling
-=======
-#include "irregular_tiled_matrix.h"
->>>>>>> Temp commit
 
 BEGIN_C_DECLS
 

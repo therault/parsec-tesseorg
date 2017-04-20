@@ -19,12 +19,6 @@
 #include "zsumma_TT.h"
 #include "zgemm_bcast_NN.h"
 
-#define SUMMA_NN 1
-#define SUMMA_NT 2
-#define SUMMA_TN 3
-#define SUMMA_TT 4
-#define GEMM_BCAST_NN 5
-
 typedef struct parsec_function_vampire_s {
     parsec_function_t super;
     parsec_hook_t    *saved_prepare_input;

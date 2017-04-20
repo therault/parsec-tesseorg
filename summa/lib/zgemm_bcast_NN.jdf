@@ -13,7 +13,7 @@ extern "C" %{
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "summa_z.h"
 #include "flops.h"
-	
+    
 #include <math.h>
 
 #if defined(PARSEC_HAVE_CUDA)
@@ -48,6 +48,12 @@ CompDist [ type = "parsec_ddesc_t *" ]
 
 plan     [ type = "gemm_plan_t *" ]
 
+bigtile [type = "int" hidden=on default="-1"]
+opttile [type = "int" hidden=on default="descA->max_mb"]
+
+/**************************************************
+ *                       READ_A                   *
+ **************************************************/
 READ_A(m, k)
   m = 0 .. descA->mt-1
   k = 0 .. descA->nt-1
@@ -114,7 +120,7 @@ RW C <- kprev == -1
      <- kprev != -1
           ? C GEMM(m, n, kprev ) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
      -> knext == -1
-	  ? Ci ACCUMULATE_C(m, n, index)  [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+      ? Ci ACCUMULATE_C(m, n, index)  [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
      -> knext != -1
           ? C GEMM(m, n, knext) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
 
@@ -195,57 +201,55 @@ BODY [type=RECURSIVE]
     int tempmm = cCmb;
     int tempnn = cCnb;
     int tempkk = cAnb;
-    int ldam = GEMM_BLKLDD(descA, m);
-    int ldbk = GEMM_BLKLDD(descB, k);
-    int ldcm = GEMM_BLKLDD(descC, m);
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbk = SUMMA_N_BLKLDD(descB, k);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
 #if defined(PARSEC_HAVE_RECURSIVE)
-	double flops = FLOPS_ZGEMM((double)tempmm,(double)tempnn,(double)tempkk);
-	double optiflops = FLOPS_ZGEMM((double)opttile, (double)opttile, (double)opttile);
-	int factor = flops/optiflops;
+    (void)lbeta;
+    double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
+    double optiflops = FLOPS_ZSUMMA((double)opttile, (double)opttile, (double)opttile);
+    int factor = flops/optiflops;
 
-	int mtile = 1, ntile = 1, ktile = 1;
-	while(factor >= 2) {
-		factor = factor >> 1;
-		mtile = mtile << 1;
-		if (factor >= 2) {
-			factor = factor >> 1;
-			ntile = ntile << 1;
-		}
-		if (factor >= 2) {
-			factor = factor >> 1;
-			ktile = ktile << 1;
-		}
-	}
+    int mtile = 1, ntile = 1, ktile = 1;
+    while(factor >= 2) {
+        factor = factor >> 1;
+        mtile = mtile << 1;
+        if (factor >= 2) {
+            factor = factor >> 1;
+            ntile = ntile << 1;
+        }
+    }
   
-	if (mtile > 1 || ntile > 1 || ktile > 1) {
-		/* fprintf(stdout, "TRIGGERED for (%d;%d;%d): bigtile=%d <=? tiling[m]=%d, tiling[n]=%d, tiling[k]=%d\n", */
-		/* 		m,n,k,bigtile, tempmm, tempnn, tempkk); */
+    if (mtile > 1 || ntile > 1 || ktile > 1) {
+        /* fprintf(stdout, "TRIGGERED for (%d;%d;%d): bigtile=%d <=? tiling[m]=%d, tiling[n]=%d, tiling[k]=%d\n", */
+        /*         m,n,k,bigtile, tempmm, tempnn, tempkk); */
 
-		irregular_subtile_desc_t *small_descA;
-		irregular_subtile_desc_t *small_descB;
-		irregular_subtile_desc_t *small_descC;
-        parsec_zgemm_NN_handle_t *parsec_zgemm;
-		/* fprintf(stdout, "Subtiling A %d;%d ...", m, k); */
+        irregular_subtile_desc_t *small_descA;
+        irregular_subtile_desc_t *small_descB;
+        irregular_subtile_desc_t *small_descC;
         small_descA = irregular_subtile_desc_create(descA, m, k, mtile, ktile);
-		/* fprintf(stdout, "Subtiling B %d;%d ...", k, n); */
-		small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
-		/* fprintf(stdout, "Subtiling C %d;%d ...", m, n); */
-		small_descC = irregular_subtile_desc_create(descC, m, n, ktile, ktile);
+        small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
+        small_descC = irregular_subtile_desc_create(descC, m, n, ktile, ktile);
 
+#if 0
+        parsec_zgemm_NN_handle_t *parsec_zgemm;
         /* parsec_object */
         parsec_zgemm = parsec_zgemm_NN_new(PlasmaNoTrans, PlasmaNoTrans, alpha,
-											 (const irregular_tiled_matrix_desc_t*) small_descA,
-											 (const irregular_tiled_matrix_desc_t*) small_descB,
-											 (irregular_tiled_matrix_desc_t*) small_descC,
-											 recursive_fake_Cdist(Cdist), 0 /*createC*/);
+                                             (const irregular_tiled_matrix_desc_t*) small_descA,
+                                             (const irregular_tiled_matrix_desc_t*) small_descB,
+                                             (irregular_tiled_matrix_desc_t*) small_descC,
+                                             recursive_fake_Cdist(Cdist), 0 /*createC*/);
+
+        /* Let's skip CUDA and recursive for this handle and directly execute it on CPU */
+        parsec_devices_handle_restrict((parsec_handle_t*)parsec_zsumma, PARSEC_DEV_CPU);
 
         /* recursive call */
         parsec_recursivecall(context, (parsec_execution_context_t*)this_task,
-                             (parsec_handle_t*)parsec_zgemm, gemm_zgemm_recursive_Destruct,
-							 gemm_recursivecall_callback,
-							 3, small_descA, small_descB, small_descC);
-
+                             (parsec_handle_t*)parsec_zgemm, summa_zsumma_recursive_Destruct,
+                             summa_recursivecall_callback,
+                             3, small_descA, small_descB, small_descC);
+#endif 0
         return PARSEC_HOOK_RETURN_ASYNC;
     }
     else

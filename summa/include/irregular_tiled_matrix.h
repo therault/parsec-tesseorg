@@ -33,6 +33,14 @@ enum tile_coll_uplo {
 
 /* ColMajor, RowMajor, be careful */
 #define SUMMA_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+/* Could be the oposite... */
+#define SUMMA_N_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+#define SUMMA_T_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+
+#define SUMMA_N_ROWS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+#define SUMMA_N_COLS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+#define SUMMA_T_ROWS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+#define SUMMA_T_COLS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
 
 static inline int parsec_irregular_tiled_matrix_getsizeoftype(enum tile_coll_type type)
 {
@@ -102,10 +110,10 @@ typedef struct irregular_tiled_matrix_desc_s {
     enum matrix_storage          storage;    /**< storage of the matrix   */
     int                          dtype;           /**< Distribution type of descriptor */
     int                          bsiz;            /**< size in elements incl padding of a tile - derived parameter */
-    int                          lm;              /**< number of rows of the entire matrix */
-    int                          ln;              /**< number of columns of the entire matrix */
-    int                          llm;
-    int                          lln;
+    unsigned int                 lm;              /**< number of rows of the entire matrix */
+    unsigned int                 ln;              /**< number of columns of the entire matrix */
+    unsigned int                 llm;
+    unsigned int                 lln;
     int                          lmt;             /**< number of tile rows of the entire matrix */
     int                          lnt;             /**< number of tile columns of the entire matrix */
     int                          i;               /**< row tile index to the beginning of the submatrix */

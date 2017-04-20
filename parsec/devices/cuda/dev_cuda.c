@@ -1988,7 +1988,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
                           NULL,
                           gpu_task, &progress_task );
     if( rc < 0 ) {
-        if( -1 == rc )
+        if( PARSEC_HOOK_RETURN_DISABLE == rc )
             goto disable_gpu;
         /* This block is to handle return code and propagate them to the calling level */
         if( PARSEC_HOOK_RETURN_ASYNC != rc ) {
@@ -1997,12 +1997,12 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
              * must be rescheduled, and thus the chore_id must be incremented.
              */
             if( NULL != progress_task ) {
-                parsec_gpu_kernel_cleanout(gpu_device, progress_task);
-                progress_task->ec->chore_id++;
                 __parsec_reschedule(eu_context, progress_task->ec);
-                progress_task->ec = NULL;
+                parsec_gpu_kernel_cleanout(gpu_device, progress_task);
+                /* progress_task->ec->chore_id++; */
+                /* progress_task->ec = NULL; */
                 gpu_task = progress_task;
-                progress_task = NULL;
+                /* progress_task = NULL; */
                 goto remove_gpu_task;
             }
             gpu_task = NULL;
@@ -2074,6 +2074,7 @@ complete_task:
     parsec_device_load[gpu_device->super.device_index] -= parsec_device_sweight[gpu_device->super.device_index];
     gpu_device->super.executed_tasks++;
 remove_gpu_task:
+    parsec_device_load[gpu_device->super.device_index] -= parsec_device_sweight[gpu_device->super.device_index];
     free( gpu_task );
     rc = parsec_atomic_dec_32b( &(gpu_device->mutex) );
     if( 0 == rc ) {  /* I was the last one */
