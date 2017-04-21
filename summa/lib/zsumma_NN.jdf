@@ -45,6 +45,10 @@ descB   [type = "const irregular_tiled_matrix_desc_t *"]
 descC   [type = "irregular_tiled_matrix_desc_t *"]
 Cdist   [type = "const two_dim_block_cyclic_t *"]
 
+bigtile [type = "int" hidden=on default="-1"]
+opttile [type = "int" hidden=on default="descA->max_mb"]
+
+/* And from now on everything is different */
 P       [type = "int" hidden=on default="descC->grid.rows"]
 Q       [type = "int" hidden=on default="descC->grid.cols"]
 /* Look ahead on both dimensions */
@@ -52,8 +56,6 @@ lookP   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
 lookQ   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
 createC [type = "int"]
 
-bigtile [type = "int" hidden=on default="-1"]
-opttile [type = "int" hidden=on default="descA->max_mb"]
 
 /**************************************************
  *                       READ_A                   *
@@ -83,9 +85,15 @@ nextq = (q+1)%Q
 
 : Cdist(m, q)
 
-READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
-    -> A SUMMA(m, q .. descC->nt-1 .. Q, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
-       -> (nextq != (k%Q)) ? A RING_A(m, k, nextq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
+READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq) [ type = DEFAULT
+                                                                layout = parsec_datatype_double_complex_t
+                                                                count = %{ return get_tile_count(descA, m, k); %} ]
+       -> A SUMMA(m, q .. descC->nt-1 .. Q, k) [ type = DEFAULT
+                                                 layout = parsec_datatype_double_complex_t
+                                                 count = %{ return get_tile_count(descA, m, k); %} ]
+       -> (nextq != (k%Q)) ? A RING_A(m, k, nextq) [ type = DEFAULT
+                                                     layout = parsec_datatype_double_complex_t
+                                                     count = %{ return get_tile_count(descA, m, k); %} ]
 
 CTL ctla <- (k >= lookQ) ? ctla SUMMA(m, q .. descC->nt-1 .. Q, k-lookQ)
 
@@ -106,7 +114,9 @@ n = 0 .. descB->nt-1
 : descB(k, n)
 
 READ B <- descB(k, n)
-       -> B RING_B(k, n, k%P) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
+       -> B RING_B(k, n, k%P) [ type = DEFAULT
+                                layout = parsec_datatype_double_complex_t
+                                count = %{ return get_tile_count(descB, k, n); %} ]
 BODY
 {
      printlog("rank %u <- B(%d,%d)\n", ((parsec_ddesc_t*)descB)->myrank, k, n);
@@ -123,10 +133,18 @@ nextp = (p+1)%P
 
 : Cdist(p, n)
 
-    READ B <- ((k%P) == p) ? B READ_B(k, n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
-    <- ((k%P) != p) ? B RING_B(k, n, prevp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
-       -> B SUMMA(p .. descC->mt-1 .. P, n, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
-       -> (nextp != (k%P)) ? B RING_B(k, n, nextp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
+    READ B <- ((k%P) == p) ? B READ_B(k, n) [ type = DEFAULT
+                                              layout = parsec_datatype_double_complex_t
+                                              count = %{ return get_tile_count(descB, k, n); %} ]
+           <- ((k%P) != p) ? B RING_B(k, n, prevp) [ type = DEFAULT
+                                                     layout = parsec_datatype_double_complex_t
+                                                     count = %{ return get_tile_count(descB, k, n); %} ]
+           -> B SUMMA(p .. descC->mt-1 .. P, n, k) [ type = DEFAULT
+                                                     layout = parsec_datatype_double_complex_t
+                                                     count = %{ return get_tile_count(descB, k, n); %} ]
+           -> (nextp != (k%P)) ? B RING_B(k, n, nextp) [ type = DEFAULT
+                                                         layout = parsec_datatype_double_complex_t
+                                                         count = %{ return get_tile_count(descB, k, n); %} ]
 
 CTL ctlb <- (k >= lookP) ? ctlb SUMMA(p .. descC->mt-1 .. P, n, k-lookP)
 
@@ -153,12 +171,24 @@ iCn = %{ return descB->Ntiling[n]; %}
 : descC(m, n)
 
 // Parameters
-READ A <- A RING_A(m, k, n%Q) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
-READ B <- B RING_B(k, n, m%P) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
-RW   C <- ((k == 0) & (createC == 1)) ? NEW [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
-       <- ((k == 0) & (createC == 0)) ? descC(m,n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
-       <- (k > 0)                     ? C SUMMA(m,n,k-1) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
-       -> (k == (descA->nt-1))        ? descC(m, n) : C SUMMA( m, n, k+1 ) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+READ A <- A RING_A(m, k, n%Q) [ type = DEFAULT
+                                layout = parsec_datatype_double_complex_t
+                                count = %{ return get_tile_count(descA, m, k); %} ]
+READ B <- B RING_B(k, n, m%P) [ type = DEFAULT
+                                layout = parsec_datatype_double_complex_t
+                                count = %{ return get_tile_count(descB, k, n); %} ]
+RW   C <- ((k == 0) & (createC == 1)) ? NEW [ type = DEFAULT
+                                              layout = parsec_datatype_double_complex_t
+                                              count = %{ return get_tile_count(descC, m, n); %} ]
+       <- ((k == 0) & (createC == 0)) ? descC(m,n) [ type = DEFAULT
+                                                     layout = parsec_datatype_double_complex_t
+                                                     count = %{ return get_tile_count(descC, m, n); %} ]
+       <- (k > 0)                     ? C SUMMA(m,n,k-1) [ type = DEFAULT
+                                                           layout = parsec_datatype_double_complex_t
+                                                           count = %{ return get_tile_count(descC, m, n); %} ]
+       -> (k == (descA->nt-1))        ? descC(m, n) : C SUMMA( m, n, k+1 ) [ type = DEFAULT
+                                                                             layout = parsec_datatype_double_complex_t
+                                                                             count = %{ return get_tile_count(descC, m, n); %} ]
 
 CTL ctla -> (k < (descA->nt-lookQ)) ? ctla RING_A(m, k+lookQ, n%Q)
 CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb RING_B(k+lookP, n, m%P)

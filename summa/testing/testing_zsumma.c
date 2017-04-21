@@ -8,6 +8,7 @@
  */
 
 #include "common.h"
+#include "parsec/utils/mca_param.h"
 #include "irregular_tiled_matrix.h"
 #include "summa_z.h"
 #include "flops.h"

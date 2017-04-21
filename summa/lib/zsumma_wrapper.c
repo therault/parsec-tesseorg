@@ -527,7 +527,7 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
 
     Cdist = (two_dim_block_cyclic_t*)malloc(sizeof(two_dim_block_cyclic_t));
 
-        two_dim_block_cyclic_init(
+    two_dim_block_cyclic_init(
             Cdist, matrix_RealDouble, matrix_Tile,
             C->super.nodes, C->super.myrank,
             1, 1, /* Dimensions of the tiles              */
@@ -535,8 +535,9 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
             0, 0, /* Starting points (not important here) */
             m, n, /* Dimensions of the submatrix          */
             1, 1, P);
-        Cdist->super.super.data_of = NULL;
-        Cdist->super.super.data_of_key = NULL;
+    Cdist->super.data_map          = NULL;
+    Cdist->super.super.data_of     = NULL;
+    Cdist->super.super.data_of_key = NULL;
 
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
@@ -630,24 +631,21 @@ void
 summa_zsumma_Destruct( parsec_handle_t *handle )
 {
     parsec_zsumma_NN_handle_t *zsumma_handle = (parsec_zsumma_NN_handle_t *)handle;
-    if ( zsumma_handle->_g_Cdist != NULL ) {
-        /* DAMIEN rewrite this! */
-        tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
-        free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
-    }
 
     if( zsumma_handle->_g_summa_type == SUMMA_NN ||
         zsumma_handle->_g_summa_type == SUMMA_NT ||
         zsumma_handle->_g_summa_type == SUMMA_TN ||
         zsumma_handle->_g_summa_type == SUMMA_TT ) {
-        if ( zsumma_handle->_g_Cdist != NULL ) {
-            /* DAMIEN rewrite this! */
-            tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
-            free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
-        }
         parsec_arena_t *arena = ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
         if (arena)
             parsec_matrix_del2arena( ((parsec_zsumma_NN_handle_t *)handle)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+
+        /* We need to release the Cdist in case we allocate it (not applicable to the bcast version */
+        if ( zsumma_handle->_g_Cdist != NULL ) {
+            tiled_matrix_desc_destroy( (tiled_matrix_desc_t*)(zsumma_handle->_g_Cdist) );
+            free( (tiled_matrix_desc_t*)zsumma_handle->_g_Cdist );
+            zsumma_handle->_g_Cdist = NULL;
+        }
     }
     if( zsumma_handle->_g_summa_type == GEMM_BCAST_NN ) {
         parsec_arena_t *arena = ((parsec_zgemm_bcast_NN_handle_t *)handle)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];

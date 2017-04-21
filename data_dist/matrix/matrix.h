@@ -82,8 +82,8 @@ static inline int parsec_translate_matrix_type( enum matrix_type mt, parsec_data
 #define two_dim_tabular_type          0x08
 
 typedef struct tiled_matrix_desc_t {
-    parsec_ddesc_t super;
-    parsec_data_t**       data_map;   /**< map of the data */
+    parsec_ddesc_t       super;
+    parsec_data_t**      data_map;   /**< map of the data */
     enum matrix_type     mtype;      /**< precision of the matrix */
     enum matrix_storage  storage;    /**< storage of the matrix   */
     int dtype;          /**< Distribution type of descriptor      */

@@ -39,17 +39,19 @@ summa_type [type = int]
 
 transA [ type = int ]
 transB [ type = int ]
+
 alpha  [ type = parsec_complex64_t ]
 
 descA    [ type = "const irregular_tiled_matrix_desc_t *" ]
 descB    [ type = "const irregular_tiled_matrix_desc_t *" ]
 descC    [ type = "irregular_tiled_matrix_desc_t *" ]
-CompDist [ type = "parsec_ddesc_t *" ]
-
-plan     [ type = "gemm_plan_t *" ]
+Cdist    [ type = "const parsec_ddesc_t *" ]
 
 bigtile [type = "int" hidden=on default="-1"]
 opttile [type = "int" hidden=on default="descA->max_mb"]
+
+/* And from now on everything is different */
+plan     [ type = "gemm_plan_t *" ]
 
 /**************************************************
  *                       READ_A                   *
@@ -111,7 +113,7 @@ GEMM(m, n, k)
   knext = %{ return gemm_plan_next(plan, m, n, k); %}
   index = %{ if(knext==-1) return gemm_plan_red_index(plan, m, n, k); else return -1; %}
 
-: CompDist(k, n)
+: Cdist(k, n)
 
 READ A <- A READ_A(m ,k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
 READ B <- B READ_B(k, n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
