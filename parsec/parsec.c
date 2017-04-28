@@ -1764,6 +1764,8 @@ void parsec_handle_sync_ids( void )
  */
 void parsec_handle_unregister( parsec_handle_t* object )
 {
+    if( object_array[object->handle_id] == NOOBJECT )
+        return;
     parsec_atomic_lock( &object_array_lock );
     assert( object->handle_id < object_array_size );
     assert( object_array[object->handle_id] == object );
@@ -2231,8 +2233,9 @@ void parsec_debug_print_local_expecting_tasks_for_function( parsec_handle_t *han
     parsec_data_ref_t ref;
     int li, init;
 
-    PARSEC_LIST_ITEM_SINGLETON( &context.super );
-    context.mempool_owner = NULL;
+    memset(&context, 0, sizeof(parsec_execution_context_t));
+    PARSEC_LIST_ITEM_SINGLETON( &context.super.list_item );
+    context.super.mempool_owner = NULL;
     context.parsec_handle = handle;
     context.function = function;
     context.priority = -1;
