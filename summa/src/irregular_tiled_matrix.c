@@ -279,7 +279,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                                       unsigned int i, unsigned int j,
                                       unsigned int mt, unsigned int nt,
                                       unsigned int P,
-                                      void *(*future_resolve_fct)(void*))
+                                      void *(*future_resolve_fct)(void*, void *, void *))
 {
     unsigned int k;
     parsec_ddesc_t *d = (parsec_ddesc_t*)ddesc;
