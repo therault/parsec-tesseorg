@@ -577,26 +577,30 @@ static int __parsec_wait( parsec_execution_unit_t *eu_context, cond_function_t c
 
     parsec_rusage_per_eu(eu_context, true);
 
-    /* We're all done ? */
-    parsec_barrier_wait( &(parsec_context->barrier) );
+    /* We're all done ?
+     * (the computing threads only reach this point if the hard-coded
+     *  cond_stop_on_all_done is true; so check this is the case) */
+    if( cond_stop_on_all_done(parsec_context, NULL) ) {
+        parsec_barrier_wait( &(parsec_context->barrier) );
 
 #if defined(PARSEC_SIM)
-    if( PARSEC_THREAD_IS_MASTER(eu_context) ) {
-        parsec_vp_t *vp;
-        int32_t my_vpid, my_idx;
-        int largest_date = 0;
-        for(my_vpid = 0; my_vpid < parsec_context->nb_vp; my_vpid++) {
-            vp = parsec_context->virtual_processes[my_vpid];
-            for(my_idx = 0; my_idx < vp->nb_cores; my_idx++) {
-                if( vp->execution_units[my_idx]->largest_simulation_date > largest_date )
-                    largest_date = vp->execution_units[my_idx]->largest_simulation_date;
+        if( PARSEC_THREAD_IS_MASTER(eu_context) ) {
+            parsec_vp_t *vp;
+            int32_t my_vpid, my_idx;
+            int largest_date = 0;
+            for(my_vpid = 0; my_vpid < parsec_context->nb_vp; my_vpid++) {
+                vp = parsec_context->virtual_processes[my_vpid];
+                for(my_idx = 0; my_idx < vp->nb_cores; my_idx++) {
+                    if( vp->execution_units[my_idx]->largest_simulation_date > largest_date )
+                        largest_date = vp->execution_units[my_idx]->largest_simulation_date;
+                }
             }
+            parsec_context->largest_simulation_date = largest_date;
         }
-        parsec_context->largest_simulation_date = largest_date;
-    }
-    parsec_barrier_wait( &(parsec_context->barrier) );
-    eu_context->largest_simulation_date = 0;
+        parsec_barrier_wait( &(parsec_context->barrier) );
+        eu_context->largest_simulation_date = 0;
 #endif
+    }
 
     if( !PARSEC_THREAD_IS_MASTER(eu_context) ) {
         my_barrier_counter++;
