@@ -117,7 +117,7 @@ typedef struct irregular_tiled_matrix_desc_s {
     int                          nb_local_tiles;  /**< number of tile handled locally */
     unsigned int                 max_mb;          /**< maximum value of mb */
     unsigned int                 max_tile;        /**< size of the biggest tile */
-    void *(*future_resolve_fct)(void*);           /**< Function to use to resolve future if this is needed */
+    void *(*future_resolve_fct)(void*,void*,void*); /**< Function to use to resolve future if this is needed */
 } irregular_tiled_matrix_desc_t;
 
 /* Workaround : irregular_tile_data_copy_t* irregular_tile_data_copy_create( irregular_tile_data_copy_t **holder, */
@@ -151,7 +151,7 @@ void irregular_tiled_matrix_desc_init(
 	/* number of tiles of the submatrix */
 	unsigned int mt, unsigned int nt,
 	unsigned int P,
-	void *(*future_resolve_fct)(void*));
+	void *(*future_resolve_fct)(void*,void*,void*));
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */
