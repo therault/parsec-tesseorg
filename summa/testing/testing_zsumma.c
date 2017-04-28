@@ -404,7 +404,7 @@ int main(int argc, char ** argv)
 			   1, 1, 1, 3., &A, 1, &B, 1, 1., &C, 1);
 
     /* Create Parsec handle */
-    for(int run = 0; run < 20; run++) {
+    for(int run = 0; run < 2; run++) {
     SYNC_TIME_START();
     parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
                                                     (irregular_tiled_matrix_desc_t*)&ddescA,
@@ -422,6 +422,7 @@ int main(int argc, char ** argv)
     /* lets rock! */
     SYNC_TIME_START();
     TIME_START();
+    parsec_context_start(parsec);
     parsec_context_wait(parsec);
     SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
                            P, Q, NB, N,
