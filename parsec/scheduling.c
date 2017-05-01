@@ -168,6 +168,7 @@ int __parsec_execute( parsec_execution_unit_t* eu_context,
         parsec_hook_t *hook = function->incarnations[exec_context->chore_id].hook;
 
         rc = hook( eu_context, exec_context );
+
         if( PARSEC_HOOK_RETURN_NEXT != rc ) {
             PINS(eu_context, EXEC_END, exec_context);
             if( PARSEC_HOOK_RETURN_ASYNC != rc ) {

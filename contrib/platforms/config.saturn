@@ -23,8 +23,9 @@ elif [ "x$USER" = "xdgenet" ]; then
     USER_OPTIONS+=" -DDPLASMA_PRECISIONS=d"
     HWLOC_DIR="/opt/hwloc/current"
 
+
     while [ $# -ge 1 ]; do
-		# MPI is detected after loading a module
+        # MPI is detected after loading a module
         if [ "x$1" = "xICC" ]; then
             CC=icc
             CXX=icpc
@@ -34,7 +35,7 @@ elif [ "x$USER" = "xdgenet" ]; then
             CC=gcc
             CXX=g++
             FC=gfortran
-			PLASMA_DIR="/opt/plasma-gcc"
+            PLASMA_DIR="/opt/plasma-gcc"
         else
             USER_OPTIONS+=" -D$1"
         fi

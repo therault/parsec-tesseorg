@@ -1,11 +1,15 @@
 /*
- * Copyright (c) 2009-2016 The University of Tennessee and The University
+ * Copyright (c) 2009-2017 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  *
  * @precisions normal z -> s d c
  *
  */
+
+#include "parsec/mca/pins/pins.h"
+#include "parsec/profiling.h"
+#include "parsec/utils/mca_param.h"
 
 #include "common.h"
 #include "irregular_tiled_matrix.h"
@@ -19,43 +23,40 @@
 #define RndD_Mul 5.4210108624275222e-20
 #define EPSILON  0.000001L
 
-static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M)
+static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M, int mca_random_tiling)
 {
-	int t;
-	(void)seed;
+    int t;
+    (void)seed;
 
-	for (t = 0; t < MT; ++t) T[t] = MB;
-	if (M%MB != 0) T[MT-1] = M%MB;
-	/* good old regular tiling with smaller last tile */
+    for (t = 0; t < MT; ++t) T[t] = MB;
+    if (M%MB != 0 && MT > 0) T[MT-1] = M%MB;
+    /* good old regular tiling with smaller last tile */
 
-	if (MT > 1) {
-		/* unsigned int share = (MB/10 > 0) ? MB/10 : 1; */
-		/* T[0] += share*(MT-1); */
-		/* for (t = 1; t < MT; ++t) T[t] -= share; */
-	}
 #if defined(SUMMA_WITH_RANDOM_TILING)
-	int p;
-	unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
-	unsigned int upper_bound = MB*2;
-	unsigned long long int ran = *seed;
-	unsigned int share = (MB/10 > 0) ? MB/10 : 1;
+    if (mca_random_tiling) {
+        int p;
+        unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
+        unsigned int upper_bound = MB*2;
+        unsigned long long int ran = *seed;
+        unsigned int share = (MB/10 > 0) ? MB/10 : 1;
+        
+        for (p = 0; p < MT*MT/2; ++p) {
+            int t1 = ran%MT;
+            ran = Rnd64_A * ran + Rnd64_C;
+            int t2 = t1;
+            while (t2 == t1) {
+                t2 = ran%MT;
+                ran = Rnd64_A * ran + Rnd64_C -1;
+            }
 
-	for (p = 0; p < MT*MT/2; ++p) {
-		int t1 = ran%MT;
-		ran = Rnd64_A * ran + Rnd64_C;
-		int t2 = t1;
-		while (t2 == t1) {
-			t2 = ran%MT;
-			ran = Rnd64_A * ran + Rnd64_C -1;
-		}
-
-		/* steal 1 from t1, give it to t2 if the boundaries are respected */
-		if (T[t1] > lower_bound && T[t2] < upper_bound) {
-			T[t1] -= share;
-			T[t2] += share;
-		}
-	}
-    *seed = ran;
+            /* steal 1 from t1, give it to t2 if the boundaries are respected */
+            if (T[t1] > lower_bound && T[t2] < upper_bound) {
+                T[t1] -= share;
+                T[t2] += share;
+            }
+        }
+        *seed = ran;
+    }
 #endif
 }
 
@@ -64,12 +65,12 @@ static void* init_tile(int mb, int nb, unsigned long long int *seed)
     unsigned long long int ran = *seed;
     int i, j;
 
-	/* fprintf(stdout, "Allocating %dx%d*sizeof(%d)\n", mb, nb, sizeof(parsec_complex64_t)); */
-	parsec_complex64_t *array = (parsec_complex64_t*)malloc(sizeof(parsec_complex64_t)*mb*nb);
+    /* fprintf(stdout, "Allocating %dx%d*sizeof(%d)\n", mb, nb, sizeof(parsec_complex64_t)); */
+    parsec_complex64_t *array = (parsec_complex64_t*)malloc(sizeof(parsec_complex64_t)*mb*nb);
 
     for (j = 0; j < nb; ++j)
-	    for (i = 0; i < mb; ++i) {
-		    array[i+j*mb] = ran%10;
+        for (i = 0; i < mb; ++i) {
+            array[i+j*mb] = ran%10;
             ran = Rnd64_A * ran + Rnd64_C;
 #if defined(PRECISION_z) || defined(PRECISION_c)
             array[i+j*mb] += I*(ran%10);
@@ -80,82 +81,72 @@ static void* init_tile(int mb, int nb, unsigned long long int *seed)
     return array;
 }
 
-static void init_random_matrix(irregular_tiled_matrix_desc_t *M, unsigned long long int seed, parsec_complex64_t **storage_map)
+static void init_random_matrix(irregular_tiled_matrix_desc_t *M, unsigned long long int seed, parsec_complex64_t **storage_map, uint32_t *distribution)
 {
-	void *ptr;
-	int i, j, k, l, u = 0;
-	for (i = 0; i < M->mt; i+=M->grid.strows)
-		for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
-			for (j = 0; j < M->nt; j+=M->grid.stcols)
-				for (l = 0; l < M->grid.stcols && (j+l)<M->nt; ++l) {
-					unsigned int rank = tile_owner(i+k,j+l,&M->grid);
-					ptr = (rank == ((parsec_ddesc_t*)M)->myrank) ? init_tile(M->max_mb, M->max_tile/M->max_mb, &seed) : NULL;
-
-					if (ptr) u++;
-					uint32_t idx = ((parsec_ddesc_t*)M)->data_key((parsec_ddesc_t*)M, i+k, j+l);
-					irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
-					storage_map[idx] = ptr;
-				}
-
-
-	fprintf(stdout, "Allocated %d blocks of size %dx%d\n", u, M->max_mb, M->max_tile/M->max_mb);
+    void *ptr;
+    int i, j, k, l;
+    for (i = 0; i < M->mt; i+=M->grid.strows)
+        for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
+            for (j = 0; j < M->nt; j+=M->grid.stcols)
+                for (l = 0; l < M->grid.stcols && (j+l)<M->nt; ++l) {
+                    uint32_t idx = ((parsec_ddesc_t*)M)->data_key((parsec_ddesc_t*)M, i+k, j+l);
+                    unsigned int rank = (!distribution) ? tile_owner(i+k,j+l,&M->grid) : distribution[idx];
+                    ptr = (rank == ((parsec_ddesc_t*)M)->myrank) ? init_tile(M->Mtiling[i+k], M->Ntiling[j+l], &seed) : NULL;
+                    irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
+                    storage_map[idx] = ptr;
+                }
 }
 
-static void init_empty_matrix(irregular_tiled_matrix_desc_t *M, parsec_complex64_t **storage_map)
+static void init_empty_matrix(irregular_tiled_matrix_desc_t *M, parsec_complex64_t **storage_map, uint32_t *distribution)
 {
-	int i, j, k, l, u = 0;
-	void *ptr;
-	/* i progresses by strows steps, while k progresses one by one from 0 to strows-1 */
-	for (i = 0; i < M->mt; i+=M->grid.strows)
-		for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
-			/* j progresses by stcols steps, while l progresses one by one from 0 to stcols-1 */
-			for (j = 0; j < M->nt; j+=M->grid.stcols)
-				for (l = 0; l < M->grid.stcols && (j+l) < M->nt; ++l) {
-					unsigned int rank = tile_owner(i+k,j+l,&M->grid);
-					/* Workaround void *ptr = calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(parsec_complex64_t)); */
-					ptr = (rank == ((parsec_ddesc_t*)M)->myrank) ? calloc(M->max_tile, sizeof(parsec_complex64_t)) : NULL;
-					if (ptr) u++;
-					uint32_t idx = ((parsec_ddesc_t*)M)->data_key((parsec_ddesc_t*)M, i+k, j+l);
-					irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
-					storage_map[idx] = ptr;
-				}
-
-
-	fprintf(stdout, "Allocated %d blocks of size %d\n", u, M->max_tile);
+    int i, j, k, l;
+    void *ptr;
+    /* i progresses by strows steps, while k progresses one by one from 0 to strows-1 */
+    for (i = 0; i < M->mt; i+=M->grid.strows)
+        for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
+            /* j progresses by stcols steps, while l progresses one by one from 0 to stcols-1 */
+            for (j = 0; j < M->nt; j+=M->grid.stcols)
+                for (l = 0; l < M->grid.stcols && (j+l) < M->nt; ++l) {
+                    uint32_t idx = ((parsec_ddesc_t*)M)->data_key((parsec_ddesc_t*)M, i+k, j+l);
+                    unsigned int rank = (!distribution) ? tile_owner(i+k,j+l,&M->grid) : distribution[idx];
+                    ptr = (rank == ((parsec_ddesc_t*)M)->myrank) ? calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(parsec_complex64_t)) : NULL;
+                    irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
+                    storage_map[idx] = ptr;
+                }
 }
 
 static void fini_matrix(parsec_complex64_t **Mstorage, int nb)
 {
-	int i;
-	for (i = 0; i < nb; ++i)
-		free(Mstorage[i]);
+    int i;
+    for (i = 0; i < nb; ++i)
+        free(Mstorage[i]);
 }
 
 static void copy_tile_in_matrix(parsec_ddesc_t* M, parsec_complex64_t *check)
 {
-	irregular_tiled_matrix_desc_t *descM = (irregular_tiled_matrix_desc_t*)M;
-	int i, j, k, ipos, jpos;
-	ipos = 0;
-	for (i = 0; i < descM->mt; ++i) {
-		jpos = 0;
-		for (j = 0; j < descM->nt; ++j) {
-			parsec_data_t *t_ij = M->data_of(M, i, j);
-			irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
-			parsec_complex64_t *ptr = ((parsec_data_copy_t*)ct_ij)->device_private;
-			int ct_ij_nb = descM->Ntiling[j];
-			int ct_ij_mb = descM->Mtiling[i];
-			for (k = 0; k < ct_ij_nb; ++k) {
-				/* copy each column of tile ij at the right position in M */
-				memcpy(check+(ipos+(jpos+k)*descM->lm),
-				       ptr+k*ct_ij_mb,
-				       ct_ij_mb*sizeof(parsec_complex64_t));
-			}
-			/* move the column cursor to the next tile */
-			jpos += descM->Ntiling[j];
-		}
-		/* move the row cursor to the next tile */
-		ipos += descM->Mtiling[i];
-	}
+    irregular_tiled_matrix_desc_t *descM = (irregular_tiled_matrix_desc_t*)M;
+    int i, j, k, ipos, jpos;
+    ipos = 0;
+    for (i = 0; i < descM->mt; ++i) {
+        jpos = 0;
+        for (j = 0; j < descM->nt; ++j) {
+            parsec_data_t *t_ij = M->data_of(M, i, j);
+            irregular_tile_data_copy_t *ct_ij = (irregular_tile_data_copy_t*)t_ij->device_copies[0];
+            parsec_complex64_t *ptr = ((parsec_data_copy_t*)ct_ij)->device_private;
+            int ct_ij_nb = descM->Ntiling[j];
+            int ct_ij_mb = descM->Mtiling[i];
+            for (k = 0; k < ct_ij_nb; ++k) {
+                /* copy each column of tile ij at the right position in M */
+                memcpy(check+(ipos+(jpos+k)*descM->lm),
+                       ptr+k*ct_ij_mb,
+                       ct_ij_mb*sizeof(parsec_complex64_t));
+            }
+            /* move the column cursor to the next tile */
+            jpos += descM->Ntiling[j];
+        }
+        /* move the row cursor to the next tile */
+        ipos += descM->Mtiling[i];
+    }
 }
 
 #if defined(PARSEC_DEBUG_PARANOID)
@@ -177,13 +168,13 @@ static void print_matrix_data(irregular_tiled_matrix_desc_t* A, const char *Aid,
 #define cmplx_print(z) (z)
 #endif
 
-	/* print the matrix in scilab-friendly-ready-to-c/c format */
-	int i, j;
-	fprintf(stdout, "Matrix_%s = [\n", Aid);
-	for (i = 0; i < A->m; i++)
-		for (j = 0; j < A->n; ++j)
-			fprintf(stdout, FORMAT, cmplx_print(checkA[i+A->m*j]),
-			        (j!=A->n-1)?",":(i!=A->m-1)?";\n":"];\n");
+    /* print the matrix in scilab-friendly-ready-to-c/c format */
+    int i, j;
+    fprintf(stdout, "Matrix_%s = [\n", Aid);
+    for (i = 0; i < A->m; i++)
+        for (j = 0; j < A->n; ++j)
+            fprintf(stdout, FORMAT, cmplx_print(checkA[i+A->m*j]),
+                    (j!=A->n-1)?",":(i!=A->m-1)?";\n":"];\n");
 }
 #endif
 
@@ -210,47 +201,47 @@ static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, parsec
                            irregular_tiled_matrix_desc_t *ddescC,
                            int M, int N, int K)
 {
-	int tempmm = M, tempnn = N, tempkk = K;
-	int lda = M, ldb = K, ldc = M;
-	int i, b = 1;
-	parsec_complex64_t *checkA, *checkB, *checkC;
-	parsec_complex64_t beta = (parsec_complex64_t)-1.0;
+    int tempmm = M, tempnn = N, tempkk = K;
+    int lda = M, ldb = K, ldc = M;
+    int i, b = 1;
+    parsec_complex64_t *checkA, *checkB, *checkC;
+    parsec_complex64_t beta = (parsec_complex64_t)-1.0;
 
-	checkA = (parsec_complex64_t*)calloc(M*K,sizeof(parsec_complex64_t));
-	checkB = (parsec_complex64_t*)calloc(K*N,sizeof(parsec_complex64_t));
-	checkC = (parsec_complex64_t*)calloc(M*N,sizeof(parsec_complex64_t));
+    checkA = (parsec_complex64_t*)calloc(M*K,sizeof(parsec_complex64_t));
+    checkB = (parsec_complex64_t*)calloc(K*N,sizeof(parsec_complex64_t));
+    checkC = (parsec_complex64_t*)calloc(M*N,sizeof(parsec_complex64_t));
 
-	fprintf(stdout, "+++ Checking solution .");
-	copy_tile_in_matrix((parsec_ddesc_t*)ddescA, checkA);
-	copy_tile_in_matrix((parsec_ddesc_t*)ddescB, checkB);
-	copy_tile_in_matrix((parsec_ddesc_t*)ddescC, checkC);
-	fprintf(stdout, ".");
+    fprintf(stdout, "+++ Checking solution .");
+    copy_tile_in_matrix((parsec_ddesc_t*)ddescA, checkA);
+    copy_tile_in_matrix((parsec_ddesc_t*)ddescB, checkB);
+    copy_tile_in_matrix((parsec_ddesc_t*)ddescC, checkC);
+    fprintf(stdout, ".");
 #if defined(PARSEC_DEBUG_PARANOID)
-	print_matrix_data(ddescA, "A", checkA);
-	print_matrix_data(ddescB, "B", checkB);
-	print_matrix_data(ddescC, "C", checkC);
+    print_matrix_data(ddescA, "A", checkA);
+    print_matrix_data(ddescB, "B", checkB);
+    print_matrix_data(ddescC, "C", checkC);
 #endif
 
-	CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
-	fprintf(stdout, ".");
+    CORE_zgemm(tA, tB, tempmm, tempnn, tempkk, alpha, checkA, lda, checkB, ldb, beta, checkC, ldc);
+    fprintf(stdout, ".");
 
 #if defined(PARSEC_DEBUG_PARANOID)
-	fprintf(stdout, "D = A * B - C (D should be null)\n");
-	print_matrix_data(ddescC, "D", checkC);
+    fprintf(stdout, "D = A * B - C (D should be null)\n");
+    print_matrix_data(ddescC, "D", checkC);
 #endif
 
-	for (i = 0; i < M*N; ++i)
-		if (cabs(checkC[i]) > EPSILON) {
-			b = 0;
-			break;
-		}
+    for (i = 0; i < M*N; ++i)
+        if (cabs(checkC[i]) > EPSILON) {
+            b = 0;
+            break;
+        }
 
-	if (!b) fprintf(stdout, " test FAILED: C is not null enough!\n");
-	else    fprintf(stdout, " test SUCCEED: C is null!\n");
+    if (!b) fprintf(stdout, " test FAILED: C is not null enough!\n");
+    else    fprintf(stdout, " test SUCCEED: C is null!\n");
 
-	free(checkA);
-	free(checkB);
-	free(checkC);
+    free(checkA);
+    free(checkB);
+    free(checkC);
 }
 
 
@@ -277,7 +268,7 @@ int main(int argc, char ** argv)
 #if defined(PARSEC_HAVE_CUDA) && 1
     iparam[IPARAM_NGPUS] = 0;
 #endif
-    /* Initialize Parsec */
+    /* Initialize PaRSEC */
     parsec = setup_parsec(argc, argv, iparam);
 
     int rank  = iparam[IPARAM_RANK];
@@ -322,30 +313,111 @@ int main(int argc, char ** argv)
     LDB = max(LDB, max(K, N));
     LDC = max(LDC, M);
 
-    unsigned int *Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
-    unsigned int *Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-    unsigned int *Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+    unsigned int *Mtiling = NULL;
+    unsigned int *Ktiling = NULL;
+    unsigned int *Ntiling = NULL;
 
-    int KB = 1+(K-1)/KT;
+    uint32_t* Adistribution = NULL;
+    uint32_t* Bdistribution = NULL;
+    uint32_t* Cdistribution = NULL;
 
-    init_tiling(Mtiling, &Tseed, MT, MB, M);
-    init_tiling(Ntiling, &Tseed, NT, NB, N);
-    init_tiling(Ktiling, &Tseed, KT, KB, K);
+    int KB = -1;
 
-	if (rank == 0) {
-		int i;
-		fprintf(stdout, "(MT = %d, mean(MB) = %d) x (KT = %d, mean(KB) = %d) x (NT = %d, mean(NB) = %d)\n",
-				MT, MB, KT, KB, NT, NB);
-		fprintf(stdout, "M tiling:");
-		for (i = 0; i < MT; ++i) fprintf(stdout, " %d", Mtiling[i]);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "K tiling:");
-		for (i = 0; i < KT; ++i) fprintf(stdout, " %d", Ktiling[i]);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "N tiling:");
-		for (i = 0; i < NT; ++i) fprintf(stdout, " %d", Ntiling[i]);
-		fprintf(stdout, "\n");
-	}
+    int tiledarraycase;
+
+    parsec_mca_param_reg_int_name("summa", "import_tiledarray", "Boolean for importing TiledArray testcase.", false, false, 0, &tiledarraycase);
+
+    if ( 0 < tiledarraycase ) { /* Read from file */
+        FILE* ptr;
+        char* mca_testcase_string;
+
+        parsec_mca_param_reg_string_name("summa", "tiledarray_file",
+                                         "File describing TiledArray data shape and distribution.\n",
+                                         false, false,
+                                         "", &mca_testcase_string);
+
+        if (NULL == (ptr = fopen(mca_testcase_string, "r"))) {
+            tiledarraycase = 0;
+            parsec_warning("Unknown file <%s>. Provide a correct file path for <summa_tiledarray_file>.\nFalling back to random test.\n", mca_testcase_string);
+        }
+        else {
+            /* Read TiledArray test case */
+            fscanf(ptr, "%d %d %d", &MT, &KT, &NT);
+            M = N = K = 0;
+            int i, j;
+            Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
+            Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+            Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+            for (i = 0; i < MT; ++i) { fscanf(ptr, "%d", Mtiling+i); M+=Mtiling[i]; }
+            for (i = 0; i < KT; ++i) { fscanf(ptr, "%d", Ktiling+i); K+=Ktiling[i]; }
+            for (i = 0; i < NT; ++i) { fscanf(ptr, "%d", Ntiling+i); N+=Ntiling[i]; }
+            if (0 == rank) fprintf(stdout, "M:%d, K:%d, N:%d\n", M, K, N);
+
+            MB = M/MT;
+            NB = N/NT;
+            KB = K/KT;
+
+            Adistribution = (uint32_t*)calloc(MT*KT, sizeof(uint32_t));
+            Bdistribution = (uint32_t*)calloc(KT*NT, sizeof(uint32_t));
+            Cdistribution = (uint32_t*)calloc(MT*NT, sizeof(uint32_t));
+
+            int Ashare = (MT*KT)/nodes;
+            int Bshare = (KT*NT)/nodes;
+            int Cshare = (MT*NT)/nodes;
+
+            for (i = 0; i < MT; ++i)
+                for (j = 0; j < KT; ++j) {
+                    uint32_t idx = (i * KT) + j;
+                    Adistribution[idx] = (j*MT+i)/Ashare;
+                }
+
+            for (i = 0; i < KT; ++i)
+                for (j = 0; j < NT; ++j) {
+                    uint32_t idx = (i * NT) + j;
+                    Bdistribution[idx] = (j*KT+i)/Bshare;
+                }
+
+            for (i = 0; i < MT; ++i)
+                for (j = 0; j < NT; ++j) {
+                    uint32_t idx = (i * NT) + j;
+                    Cdistribution[idx] = (j*MT+i)/Cshare;
+                }
+        }
+    }
+
+    if ( !tiledarraycase ) {
+        LDA = max(LDA, max(M, K));
+        LDB = max(LDB, max(K, N));
+        LDC = max(LDC, M);
+
+        Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
+        Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
+        Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+
+        KB = 1+(K-1)/KT;
+
+        int mca_random_tiling;
+        parsec_mca_param_reg_int_name("summa", "random_tiling",
+                                      "Summa test will generate a random tiling based on MB, NB, KB",
+                                      false, false,
+                                      0, &mca_random_tiling);
+
+        init_tiling(Mtiling, &Tseed, MT, MB, M, mca_random_tiling);
+        init_tiling(Ntiling, &Tseed, NT, NB, N, mca_random_tiling);
+        init_tiling(Ktiling, &Tseed, KT, KB, K, mca_random_tiling);
+    }
+
+    if (rank == 0) {
+        int i;
+        fprintf(stdout, "(MT = %d, mean({MB}) = %d) x (KT = %d, mean({KB}) = %d) x (NT = %d, mean({NB}) = %d)\n",
+                MT, MB, KT, KB, NT, NB);
+        for (i = 0; i < MT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"M tiling: ":" ", Mtiling[i], (i == MT-1)?"\n":"");
+        for (i = 0; i < KT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"K tiling: ":" ", Ktiling[i], (i == KT-1)?"\n":"");
+        for (i = 0; i < NT; ++i)
+            fprintf(stdout, "%s%d%s", (i == 0)?"N tiling: ":" ", Ntiling[i], (i == NT-1)?"\n":"");
+    }
 
     /* initializing matrix structure */
     irregular_tiled_matrix_desc_t ddescA;
@@ -369,24 +441,18 @@ int main(int argc, char ** argv)
     ddescA.max_tile = ddescB.max_tile = ddescC.max_tile = max_tile;
     ddescA.max_mb = ddescB.max_mb = ddescC.max_mb = max_mb;
 
-	fprintf(stdout, "max_tile=%d, max_mb=%d\n", max_tile, max_mb);
-	parsec_complex64_t **Astorage = (parsec_complex64_t**)calloc(MT*KT, sizeof(parsec_complex64_t*));
-	parsec_complex64_t **Bstorage = (parsec_complex64_t**)calloc(KT*NT, sizeof(parsec_complex64_t*));
-	parsec_complex64_t **Cstorage = (parsec_complex64_t**)calloc(MT*NT, sizeof(parsec_complex64_t*));
+    parsec_complex64_t **Astorage = (parsec_complex64_t**)calloc(MT*KT, sizeof(parsec_complex64_t*));
+    parsec_complex64_t **Bstorage = (parsec_complex64_t**)calloc(KT*NT, sizeof(parsec_complex64_t*));
+    parsec_complex64_t **Cstorage = (parsec_complex64_t**)calloc(MT*NT, sizeof(parsec_complex64_t*));
 
-	/* matrix generation */
-	if (loud > 2) printf("+++ Generate matrices ... ");
-	init_random_matrix(&ddescA, Aseed, Astorage);
-	init_random_matrix(&ddescB, Bseed, Bstorage);
-	init_empty_matrix(&ddescC, Cstorage);
-	if(loud > 2) printf("Done\n");
+    /* matrix generation */
+    if (loud > 2) printf("+++ Generate matrices ... ");
+    init_random_matrix(&ddescA, Aseed, Astorage, Adistribution);
+    init_random_matrix(&ddescB, Bseed, Bstorage, Bdistribution);
+    init_empty_matrix(&ddescC, Cstorage, Cdistribution);
+    if(loud > 2) printf("Done\n");
 
-#if 0
-	if (rank == 0)
-		export_pythons(&ddescA, &ddescB, &ddescC, P, Q, N, NB, MB, nodes);
-#endif
-
-	free(Mtiling);
+    free(Mtiling);
     free(Ntiling);
     free(Ktiling);
 
@@ -399,50 +465,49 @@ int main(int argc, char ** argv)
     print_matrix_meta(&ddescC);
 #endif
 
-	double A = 1, B = 2, C = 0;
-	CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,
-			   1, 1, 1, 3., &A, 1, &B, 1, 1., &C, 1);
-
+    PASTE_MKL_WARMUP();
+    
     /* Create Parsec handle */
     for(int run = 0; run < 2; run++) {
-    SYNC_TIME_START();
-    parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
-                                                    (irregular_tiled_matrix_desc_t*)&ddescA,
-                                                    (irregular_tiled_matrix_desc_t*)&ddescB,
-                                                    (irregular_tiled_matrix_desc_t*)&ddescC);
+        SYNC_TIME_START();
+        parsec_context_start(parsec);
+        parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
+                                                          (irregular_tiled_matrix_desc_t*)&ddescA,
+                                                          (irregular_tiled_matrix_desc_t*)&ddescB,
+                                                          (irregular_tiled_matrix_desc_t*)&ddescC);
 
 #if defined(PARSEC_HAVE_RECURSIVE)
-    if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
-		summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
+        if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
+            summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
 #endif
-	
-    parsec_enqueue(parsec, PARSEC_zsumma);
-    if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
+        parsec_enqueue(parsec, PARSEC_zsumma);
+        if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
-    /* lets rock! */
-    SYNC_TIME_START();
-    TIME_START();
-    parsec_context_start(parsec);
-    parsec_context_wait(parsec);
-    SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
-                           P, Q, NB, N,
-                           gflops=(flops/1e9)/sync_time_elapsed));
+        /* lets rock! */
+        SYNC_TIME_START();
+        TIME_START();
+        parsec_context_start(parsec);
+        parsec_context_wait(parsec);
+        SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",
+                               P, Q, NB, N,
+                               gflops=(flops/1e9)/sync_time_elapsed));
 
-	summa_zsumma_Destruct( PARSEC_zsumma );
-}
-	if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
-		parsec_handle_sync_ids(); /* recursive DAGs are not synchronous on ids */
+        summa_zsumma_Destruct( PARSEC_zsumma );
+    }
 
-	if (check)
-	    check_solution(&ddescA, tA, alpha, &ddescB, tB, &ddescC, M, N, K);
+    if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
+        parsec_handle_sync_ids(); /* recursive DAGs are not synchronous on ids */
 
-	fini_matrix(Astorage, MT*KT);
-	fini_matrix(Bstorage, KT*NT);
-	fini_matrix(Cstorage, MT*NT);
+    if (check)
+        check_solution(&ddescA, tA, alpha, &ddescB, tB, &ddescC, M, N, K);
 
-	free(Astorage);
-	free(Bstorage);
-	free(Cstorage);
+    fini_matrix(Astorage, MT*KT);    free(Astorage);
+    fini_matrix(Bstorage, KT*NT);    free(Bstorage);
+    fini_matrix(Cstorage, MT*NT);    free(Cstorage);
+
+    if (Adistribution) free(Adistribution);
+    if (Bdistribution) free(Bdistribution);
+    if (Cdistribution) free(Cdistribution);
 
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescA);
     irregular_tiled_matrix_desc_destroy( (irregular_tiled_matrix_desc_t*)&ddescB);

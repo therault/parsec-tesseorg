@@ -13,7 +13,6 @@ extern "C" %{
 #include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "summa_z.h"
 #include "flops.h"
-	
 #include <math.h>
 
 #if defined(PARSEC_HAVE_CUDA)
@@ -29,7 +28,7 @@ extern "C" %{
 /*
  * Globals
  */
- 
+
 /* Keep this first, as in all jdf in this directory, to
  * enable switching between SUMMA implementations.
  * This is the JDF-like CRTP ;)
@@ -85,7 +84,7 @@ nextq = (q+1)%Q
 : Cdist(m, q)
 
 READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
-	-> A SUMMA(m, q .. descC->nt-1 .. Q, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
+    -> A SUMMA(m, q .. descC->nt-1 .. Q, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
        -> (nextq != (k%Q)) ? A RING_A(m, k, nextq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
 
 CTL ctla <- (k >= lookQ) ? ctla SUMMA(m, q .. descC->nt-1 .. Q, k-lookQ)
@@ -124,8 +123,8 @@ nextp = (p+1)%P
 
 : Cdist(p, n)
 
-	READ B <- ((k%P) == p) ? B READ_B(k, n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
-	<- ((k%P) != p) ? B RING_B(k, n, prevp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
+    READ B <- ((k%P) == p) ? B READ_B(k, n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
+    <- ((k%P) != p) ? B RING_B(k, n, prevp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
        -> B SUMMA(p .. descC->mt-1 .. P, n, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
        -> (nextp != (k%P)) ? B RING_B(k, n, nextp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
 
@@ -168,6 +167,8 @@ BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
       weight=(descA->nt-k)]
 {
+    /* fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n", m,n,k); */
+    return PARSEC_HOOK_RETURN_NEXT;
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
     cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
@@ -175,29 +176,21 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
-    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
-    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
-    /* int tempmm = cC->mb; */
-    /* int tempnn = cC->nb; */
-    /* int tempkk = cA->nb; */
-    /* int ldam = cA->mb; */
-    /* int ldbk = cB->mb; */
-    /* int ldcm = cC->mb; */
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_N_COLS(descB, n);
+    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbk = SUMMA_N_BLKLDD(descB, k);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBmb = descB->Mtiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
-    int ldam = cAmb;
-    int ldbk = cBmb;
-    int ldcm = cCmb;
+    double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
+    double miniflops = FLOPS_ZSUMMA(400., 400., 400.);
+    /* If we think the GEMM is too small, we fall back to the next hook, should be CPU */
+    /* Is it safe, can it be stuck in an infinite loop? */
+    if (flops < miniflops) {
+        /* fprintf(stdout, "  > SENDING TO RECURSIVE BODY: Task (%d;%d;%d)\n", m, n, k); */
+        return PARSEC_HOOK_RETURN_NEXT;
+    }
 
     /* fprintf(stdout, "CUDA: summa( %d, %d, %d )\n" */
     /*         "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n", */
@@ -229,73 +222,70 @@ END
 
 BODY [type=RECURSIVE]
 {
+    /* fprintf(stdout, "  > RECURSIVE BODY for task (%d;%d;%d)\n",m,n,k); */
+    return PARSEC_HOOK_RETURN_NEXT;
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
 
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBmb = descB->Mtiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
-    int ldam = SUMMA_BLKLDD(descA, m);
-    int ldbk = SUMMA_BLKLDD(descB, k);
-    int ldcm = SUMMA_BLKLDD(descC, m);
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_N_COLS(descB, n);
+    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbk = SUMMA_N_BLKLDD(descB, k);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
+    (void)ldam;
+    (void)ldbk;
+    (void)ldcm;
 
 #if defined(PARSEC_HAVE_RECURSIVE)
-	double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
-	double optiflops = FLOPS_ZSUMMA((double)opttile, (double)opttile, (double)opttile);
-	int factor = flops/optiflops;
+    (void)lbeta;
+    double flops = FLOPS_ZSUMMA((double)tempmm,(double)tempnn,(double)tempkk);
+    double optiflops = FLOPS_ZSUMMA((double)opttile, (double)opttile, (double)opttile);
+    int factor = flops/optiflops;
 
-	int mtile = 1, ntile = 1, ktile = 1;
-	while(factor >= 2) {
-		factor = factor >> 1;
-		mtile = mtile << 1;
-		if (factor >= 2) {
-			factor = factor >> 1;
-			ntile = ntile << 1;
-		}
-		if (factor >= 2) {
-			factor = factor >> 1;
-			ktile = ktile << 1;
-		}
-	}
-  
-	if (mtile > 1 || ntile > 1 || ktile > 1) {
-		/* fprintf(stdout, "TRIGGERED for (%d;%d;%d): bigtile=%d <=? tiling[m]=%d, tiling[n]=%d, tiling[k]=%d\n", */
-		/* 		m,n,k,bigtile, tempmm, tempnn, tempkk); */
+    int mtile = 1, ntile = 1, ktile = 1;
+    while(factor >= 2) {
+        factor = factor >> 1;
+        mtile = mtile << 1;
+        if (factor >= 2) {
+            factor = factor >> 1;
+            ntile = ntile << 1;
+        }
+    }
 
-		irregular_subtile_desc_t *small_descA;
-		irregular_subtile_desc_t *small_descB;
-		irregular_subtile_desc_t *small_descC;
+    if (mtile > 1 || ntile > 1 || ktile > 1) {
+        /* fprintf(stdout, "    > RECURSIVE CUTTING for T (%d;%d;%d) in %d/%d/%d\n", */
+        /*         m,n,k,mtile, ntile, ktile); */
+        irregular_subtile_desc_t *small_descA;
+        irregular_subtile_desc_t *small_descB;
+        irregular_subtile_desc_t *small_descC;
+
         parsec_zsumma_NN_handle_t *parsec_zsumma;
-		/* fprintf(stdout, "Subtiling A %d;%d ...", m, k); */
         small_descA = irregular_subtile_desc_create(descA, m, k, mtile, ktile);
-		/* fprintf(stdout, "Subtiling B %d;%d ...", k, n); */
-		small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
-		/* fprintf(stdout, "Subtiling C %d;%d ...", m, n); */
-		small_descC = irregular_subtile_desc_create(descC, m, n, ktile, ktile);
+        small_descB = irregular_subtile_desc_create(descB, k, n, ktile, ntile);
+        small_descC = irregular_subtile_desc_create(descC, m, n, mtile, ntile);
 
         /* parsec_object */
-        parsec_zsumma = parsec_zsumma_NN_new(PlasmaNoTrans, PlasmaNoTrans, alpha,
-											 (const irregular_tiled_matrix_desc_t*) small_descA,
-											 (const irregular_tiled_matrix_desc_t*) small_descB,
-											 (irregular_tiled_matrix_desc_t*) small_descC,
-											 recursive_fake_Cdist(Cdist), 0 /*createC*/);
+        parsec_zsumma = parsec_zsumma_NN_new(SUMMA_NN, PlasmaNoTrans, PlasmaNoTrans, alpha,
+                                             (const irregular_tiled_matrix_desc_t*) small_descA,
+                                             (const irregular_tiled_matrix_desc_t*) small_descB,
+                                             (irregular_tiled_matrix_desc_t*) small_descC,
+                                             recursive_fake_Cdist(Cdist), 0 /*createC*/);
+
+        /* Let's skip CUDA and recursive for this handle and directly execute it on CPU */
+        parsec_devices_handle_restrict((parsec_handle_t*)parsec_zsumma, PARSEC_DEV_CPU);
 
         /* recursive call */
         parsec_recursivecall(context, (parsec_execution_context_t*)this_task,
                              (parsec_handle_t*)parsec_zsumma, summa_zsumma_recursive_Destruct,
-							 summa_recursivecall_callback,
-							 3, small_descA, small_descB, small_descC);
+                             summa_recursivecall_callback,
+                             3, small_descA, small_descB, small_descC);
 
         return PARSEC_HOOK_RETURN_ASYNC;
     }
-    else
+    else {
+        /* fprintf(stdout, "  > SENDING TO CPU BODY: Task (%d;%d;%d)\n", m, n, k); */
         return PARSEC_HOOK_RETURN_NEXT;
+    }
 #else
 #  if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
@@ -320,29 +310,20 @@ END
 BODY
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
-    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
-    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
-    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
-    /* int tempmm = cC->mb; */
-    /* int tempnn = cC->nb; */
-    /* int tempkk = cA->nb; */
-    /* int ldam = cA->mb; */
-    /* int ldbk = cB->mb; */
-    /* int ldcm = cC->mb; */
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_N_COLS(descB, n);
+    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbk = SUMMA_N_BLKLDD(descB, k);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBmb = descB->Mtiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
-    int ldam = cAmb;
-    int ldbk = cBmb;
-    int ldcm = cCmb;
+    if (descA->storage == matrix_Lapack) {
+        /* irregular_subtile_desc_t *small_descA = (irregular_subtile_desc_t*)descA; */
+        /* irregular_subtile_desc_t *small_descB = (irregular_subtile_desc_t*)descB; */
+        /* irregular_subtile_desc_t *small_descC = (irregular_subtile_desc_t*)descC; */
+        /* fprintf(stdout, "    > CPU BODY for task (%d;%d;%d)",m,n,k); */
+        /* fprintf(stdout, " recursively cut from task (%d;%d;%d)\n", small_descA->i, small_descC->j, small_descB->i); */
+    }
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,

@@ -33,6 +33,14 @@ enum tile_coll_uplo {
 
 /* ColMajor, RowMajor, be careful */
 #define SUMMA_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+/* Could be the oposite... */
+#define SUMMA_N_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+#define SUMMA_T_BLKLDD( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+
+#define SUMMA_N_ROWS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
+#define SUMMA_N_COLS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+#define SUMMA_T_ROWS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Ntiling[_i_] : (_desc_)->lln )
+#define SUMMA_T_COLS( _desc_, _i_ ) ( (_desc_)->storage == matrix_Tile ? (_desc_)->Mtiling[_i_] : (_desc_)->llm )
 
 static inline int parsec_irregular_tiled_matrix_getsizeoftype(enum tile_coll_type type)
 {
@@ -102,11 +110,11 @@ typedef struct irregular_tiled_matrix_desc_s {
     enum matrix_storage          storage;    /**< storage of the matrix   */
     int                          dtype;           /**< Distribution type of descriptor */
     int                          bsiz;            /**< size in elements incl padding of a tile - derived parameter */
-    int                          lm;              /**< number of rows of the entire matrix */
-    int                          ln;              /**< number of columns of the entire matrix */
-	int                          llm;
-	int                          lln;
-	int                          lmt;             /**< number of tile rows of the entire matrix */
+    unsigned int                 lm;              /**< number of rows of the entire matrix */
+    unsigned int                 ln;              /**< number of columns of the entire matrix */
+    unsigned int                 llm;
+    unsigned int                 lln;
+    int                          lmt;             /**< number of tile rows of the entire matrix */
     int                          lnt;             /**< number of tile columns of the entire matrix */
     int                          i;               /**< row tile index to the beginning of the submatrix */
     int                          j;               /**< column tile index to the beginning of the submatrix */
@@ -132,26 +140,28 @@ parsec_data_t* irregular_tile_data_create(parsec_data_t **holder,
 int get_tile_count(const irregular_tiled_matrix_desc_t *desc, int m, int n);
 
 int tile_is_local(int i, int j, grid_2Dcyclic_t* g);
+
 unsigned int tile_owner(int i, int j, grid_2Dcyclic_t* g);
 
 void export_pythons(irregular_tiled_matrix_desc_t *A, irregular_tiled_matrix_desc_t *B, irregular_tiled_matrix_desc_t *C, int P, int Q, int N, int NB, int MB, int psize);
 
 void irregular_tiled_matrix_desc_init(
-	irregular_tiled_matrix_desc_t* ddesc,
-	enum tile_coll_type mtype,
-	unsigned int nodes, unsigned int myrank,
-	/* global number of rows/cols */
-	unsigned int lm, unsigned int ln,
-	/* global number of tiles */
-	unsigned int lmt, unsigned int lnt,
-	/* tiling of the submatrix */
-	unsigned int*Mtiling, unsigned int* Ntiling,
-	/* first tile of the submatrix */
-	unsigned int i, unsigned int j,
-	/* number of tiles of the submatrix */
-	unsigned int mt, unsigned int nt,
-	unsigned int P,
-	void *(*future_resolve_fct)(void*,void*,void*));
+    irregular_tiled_matrix_desc_t* ddesc,
+    enum tile_coll_type mtype,
+    unsigned int nodes, unsigned int myrank,
+    /* global number of rows/cols */
+    unsigned int lm, unsigned int ln,
+    /* global number of tiles */
+    unsigned int lmt, unsigned int lnt,
+    /* tiling of the submatrix */
+    unsigned int*Mtiling, unsigned int* Ntiling,
+    /* first tile of the submatrix */
+    unsigned int i, unsigned int j,
+    /* number of tiles of the submatrix */
+    unsigned int mt, unsigned int nt,
+    unsigned int P,
+    void *(*future_resolve_fct)(void*,void*,void*));
+
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */

@@ -16,6 +16,12 @@
 
 BEGIN_C_DECLS
 
+#define SUMMA_NN 1
+#define SUMMA_NT 2
+#define SUMMA_TN 3
+#define SUMMA_TT 4
+#define GEMM_BCAST_NN 5
+
 /***********************************************************
  *               Blocking interface
  */

@@ -1615,8 +1615,7 @@ parsec_gpu_kernel_push( gpu_device_t            *gpu_device,
     /**
      * First, let's reserve enough space on the device to transfer the data on the GPU.
      */
-    ret = parsec_gpu_data_reserve_device_space( gpu_device,
-                                               gpu_task );
+    ret = parsec_gpu_data_reserve_device_space(gpu_device, gpu_task);
     if( ret < 0 ) {
         return ret;
     }
@@ -2009,7 +2008,6 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
                 __parsec_reschedule(eu_context, progress_task->ec);
                 parsec_gpu_kernel_cleanout(gpu_device, progress_task);
                 gpu_task = progress_task;
-                progress_task = NULL;
                 goto remove_gpu_task;
             }
             gpu_task = NULL;
@@ -2050,7 +2048,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
     gpu_task = progress_task;
     out_task_pop = progress_task;
 
-  fetch_task_from_shared_queue:
+fetch_task_from_shared_queue:
     assert( NULL == gpu_task );
     if (out_task_submit == NULL && out_task_pop == NULL) {
         parsec_gpu_sort_pending_list(gpu_device);
@@ -2063,7 +2061,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
     }
     goto check_in_deps;
 
-  complete_task:
+complete_task:
     assert( NULL != gpu_task );
     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output,  "GPU[%1d]:\tComplete %s priority %d", gpu_device->cuda_index,
                         parsec_snprintf_execution_context(tmp, MAX_TASK_STRLEN, gpu_task->ec),
@@ -2078,7 +2076,8 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
     parsec_gpu_kernel_epilog( gpu_device, gpu_task );
     __parsec_complete_execution( eu_context, gpu_task->ec );
     gpu_device->super.executed_tasks++;
-  remove_gpu_task:
+
+remove_gpu_task:
     parsec_device_load[gpu_device->super.device_index] -= parsec_device_sweight[gpu_device->super.device_index];
     free( gpu_task );
     rc = parsec_atomic_dec_32b( &(gpu_device->mutex) );
@@ -2094,7 +2093,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_unit_t *eu_context,
     gpu_task = progress_task;
     goto fetch_task_from_shared_queue;
 
-  disable_gpu:
+disable_gpu:
     /* Something wrong happened. Push all the pending tasks back on the
      * cores, and disable the gpu.
      */

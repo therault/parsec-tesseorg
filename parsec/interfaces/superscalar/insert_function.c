@@ -46,7 +46,6 @@
 #include "parsec/interfaces/superscalar/insert_function_internal.h"
 #include "parsec/parsec_prof_grapher.h"
 #include "parsec/mca/pins/pins.h"
-#include "data_dist/matrix/matrix.h"
 
 int dtd_init                    = 0;      /**< Indicates init of dtd environment */
 int dtd_window_size             = 4000;   /**< Default window size */
