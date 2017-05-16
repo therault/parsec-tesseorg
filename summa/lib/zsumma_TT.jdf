@@ -169,24 +169,9 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
-    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
-    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
-    /* int tempmm = cC->mb; */
-    /* int tempnn = cC->nb; */
-    /* int tempkk = cA->mb; */
-    /* int ldam = cA->nb; */
-    /* int ldbn = cB->nb; */
-    /* int ldcm = cC->mb; */
-
-    int cAmb = descA->Mtiling[m];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAmb;
+    int tempmm = SUMMA_T_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
     int ldak = SUMMA_T_BLKLDD(descA, k);
     int ldbn = SUMMA_T_BLKLDD(descB, n);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
@@ -207,25 +192,9 @@ END
 BODY
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
-    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
-    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
-    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
-    /* int tempmm = cC->mb; */
-    /* int tempnn = cC->nb; */
-    /* int tempkk = cA->mb; */
-    /* int ldak = cA->nb; */
-    /* int ldbn = cB->nb; */
-    /* int ldcm = cC->mb; */
-
-    int cAmb = descA->Mtiling[m];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAmb;
-    /* The use of ldak may be wrong, check all the results (NN,TN,TT,NT) before removing this comment. */
+    int tempmm = SUMMA_T_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
     int ldak = SUMMA_T_BLKLDD(descA, k);
     int ldbn = SUMMA_T_BLKLDD(descB, n);
     int ldcm = SUMMA_N_BLKLDD(descC, m);

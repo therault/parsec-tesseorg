@@ -169,14 +169,9 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    int cAmb = descA->Mtiling[m];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAmb;
+    int tempmm = SUMMA_T_ROWS(descA, m);
+    int tempnn = SUMMA_N_COLS(descB, n);
+    int tempkk = SUMMA_N_ROWS(descB, k);
     int ldak = SUMMA_T_BLKLDD(descA, n);
     int ldbk = SUMMA_N_BLKLDD(descB, m);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
@@ -197,14 +192,9 @@ END
 BODY
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
-    int cAmb = descA->Mtiling[m];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAmb;
+    int tempmm = SUMMA_T_ROWS(descA, m);
+    int tempnn = SUMMA_N_COLS(descB, n);
+    int tempkk = SUMMA_N_ROWS(descB, k);
     int ldak = SUMMA_T_BLKLDD(descA, n);
     int ldbk = SUMMA_N_BLKLDD(descB, m);
     int ldcm = SUMMA_N_BLKLDD(descC, m);

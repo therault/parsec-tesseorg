@@ -168,7 +168,7 @@ BODY [type=CUDA
       weight=(descA->nt-k)]
 {
     /* fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n", m,n,k); */
-    return PARSEC_HOOK_RETURN_NEXT;
+    /* return PARSEC_HOOK_RETURN_NEXT; */
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
     cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
@@ -191,15 +191,6 @@ BODY [type=CUDA
         /* fprintf(stdout, "  > SENDING TO RECURSIVE BODY: Task (%d;%d;%d)\n", m, n, k); */
         return PARSEC_HOOK_RETURN_NEXT;
     }
-
-    /* fprintf(stdout, "CUDA: summa( %d, %d, %d )\n" */
-    /*         "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n", */
-    /*         m, n, k, */
-    /*         plasma_const( transA ), plasma_const( transB ), */
-    /*         tempmm, tempnn, tempkk, */
-    /*         lalpha, m, k, ldam, */
-    /*         k, n, ldbk, */
-    /*         lbeta, m, n, ldcm ); */
 
 #if defined(PARSEC_DEBUG_NOISIER)
     /* fprintf(stdout, */
@@ -312,10 +303,10 @@ BODY
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
     int tempmm = SUMMA_N_ROWS(descA, m);
     int tempnn = SUMMA_N_COLS(descB, n);
-    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int tempkk = SUMMA_N_ROWS(descB, k); 
     int ldam = SUMMA_N_BLKLDD(descA, m);
-    int ldbk = SUMMA_N_BLKLDD(descB, k);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
+    int ldbk = SUMMA_N_BLKLDD(descB, k);
 
     if (descA->storage == matrix_Lapack) {
         /* irregular_subtile_desc_t *small_descA = (irregular_subtile_desc_t*)descA; */
@@ -324,6 +315,10 @@ BODY
         /* fprintf(stdout, "    > CPU BODY for task (%d;%d;%d)",m,n,k); */
         /* fprintf(stdout, " recursively cut from task (%d;%d;%d)\n", small_descA->i, small_descC->j, small_descB->i); */
     }
+
+    fprintf(stdout, "summa(%d;%d;%d) (%d;%d)x(%d;%d)=(%d;%d), ldA=%d, ldB=%d, ldC=%d, A(%d;%d), B(%d;%d), C(%d;%d)\n",
+            m, n, k, tempmm, tempkk, tempkk, tempnn, tempmm, tempnn,
+            ldam, ldbk, ldcm, descA->Mtiling[m], descA->Ntiling[k], descB->Mtiling[k], descB->Ntiling[n], descC->Mtiling[m], descC->Ntiling[n]);
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
@@ -341,5 +336,8 @@ BODY
              creal(alpha), m, k, ldam,
                            k, n, ldbk,
              creal(lbeta), m, n, ldcm );
+
+    fprintf(stdout, "****************************************************************\n\n");
+    
 }
 END
