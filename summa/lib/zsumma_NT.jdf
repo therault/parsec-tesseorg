@@ -169,26 +169,20 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
     int ldam = SUMMA_N_BLKLDD(descA, m);
     int ldbn = SUMMA_T_BLKLDD(descB, n);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
 
     cublasStatus_t status;
     cublasSetKernelStream( parsec_body.stream );
-    parsec_body.dyld_fn( lapack_const(transA), lapack_const(transB),
-             tempmm, tempnn, tempkk,
-             lalpha, (cuDoubleComplex*)A, ldam,
-                     (cuDoubleComplex*)B, ldbn,
-             lbeta,  (cuDoubleComplex*)C, ldcm );
+    parsec_body.dyld_fn(lapack_const(transA), lapack_const(transB),
+                        tempmm, tempnn, tempkk,
+                        lalpha, (cuDoubleComplex*)A, ldam,
+                        (cuDoubleComplex*)B, ldbn,
+                        lbeta, (cuDoubleComplex*)C, ldcm);
     status = cublasGetError();
     PARSEC_CUDA_CHECK_ERROR( "cublasZsumma ", status,
                             {return -1;} );
@@ -198,15 +192,9 @@ END
 BODY
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
     int ldam = SUMMA_N_BLKLDD(descA, m);
     int ldbn = SUMMA_T_BLKLDD(descB, n);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
