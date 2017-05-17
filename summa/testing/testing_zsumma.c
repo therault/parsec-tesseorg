@@ -28,9 +28,9 @@ parsec_hook_return_t execute_on_gpu(parsec_execution_unit_t    *eu_context,
 {
     parsec_handle_t *handle = exec_context->parsec_handle;
 
-
+    fprintf(stdout, "Task will not execute on GPU\n");
     
-    return PARSEC_HOOK_RETURN_DONE;
+    return PARSEC_HOOK_RETURN_NEXT;
 }
 
 
@@ -339,84 +339,149 @@ int main(int argc, char ** argv)
     parsec_mca_param_reg_int_name("summa", "import_tiledarray", "Boolean for importing TiledArray testcase.", false, false, 0, &tiledarraycase);
 
     if ( 0 < tiledarraycase ) { /* Read from file */
-        FILE* ptr;
-        char* mca_testcase_string;
+        FILE* ptr, *Aptr, *Bptr, *Cptr;
+        char* ta_path;
 
-        parsec_mca_param_reg_string_name("summa", "tiledarray_file",
+        parsec_mca_param_reg_string_name("summa", "ta_path",
                                          "File describing TiledArray data shape and distribution.\n",
                                          false, false,
-                                         "", &mca_testcase_string);
+                                         "", &ta_path);
 
-        if (NULL == (ptr = fopen(mca_testcase_string, "r"))) {
-            tiledarraycase = 0;
-            parsec_warning("Unknown file <%s>. Provide a correct file path for <summa_tiledarray_file>.\nFalling back to random test.\n", mca_testcase_string);
-        }
+        char Afile[256], Bfile[256], Cfile[256];
+        sprintf(Afile, "%s/Adist.mat", ta_path);
+        sprintf(Bfile, "%s/Bdist.mat", ta_path);
+        sprintf(Cfile, "%s/Cdist.mat", ta_path);
+
+        tiledarraycase = 0;
+        if (NULL == (Aptr = fopen(Afile, "r")))
+            parsec_warning("File Adist.mat not found in %s. Provide a correct path.\nFalling back to random test.\n", ta_path);
+        else if (NULL == (Bptr = fopen(Bfile, "r")))
+            parsec_warning("File Bdist.mat not found in %s. Provide a correct path.\nFalling back to random test.\n", ta_path);
+        else if (NULL == (Cptr = fopen(Cfile, "r")))
+            parsec_warning("File Cdist.mat not found in %s. Provide a correct path.\nFalling back to random test.\n", ta_path);
         else {
+            tiledarraycase = 1;
             /* Read TiledArray test case */
-            fscanf(ptr, "%d %d %d", &MT, &KT, &NT);
-            M = N = K = 0;
-            int i, j;
-            Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
-            Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
-            Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-            for (i = 0; i < MT; ++i) { fscanf(ptr, "%d", Mtiling+i); M+=Mtiling[i]; }
-            for (i = 0; i < KT; ++i) { fscanf(ptr, "%d", Ktiling+i); K+=Ktiling[i]; }
-            for (i = 0; i < NT; ++i) { fscanf(ptr, "%d", Ntiling+i); N+=Ntiling[i]; }
-            if (0 == rank) fprintf(stdout, "M:%d, K:%d, N:%d\n", M, K, N);
+            unsigned int amt, ant, bmt, bnt, cmt, cnt, mb, nb, kb, i, j, k, p;
+            fscanf(Aptr, "%u %u", &amt, &ant);
+            fscanf(Bptr, "%u %u", &bmt, &bnt);
+            fscanf(Cptr, "%u %u", &cmt, &cnt);
+            MT = amt;
+            KT = ant;
+            NT = bnt;
 
-            MB = M/MT;
-            NB = N/NT;
-            KB = K/KT;
+            /* unsigned int *AMtiling, *ANtiling, *BMtiling, *BNtiling, *CMtiling, *CNtiling; */
+            /* AMtiling = (unsigned int*)calloc(MT*KT, sizeof(unsigned int)); */
+            /* ANtiling = (unsigned int*)calloc(KT*MT, sizeof(unsigned int)); */
+            /* BMtiling = (unsigned int*)calloc(KT*NT, sizeof(unsigned int)); */
+            /* BNtiling = (unsigned int*)calloc(NT*KT, sizeof(unsigned int)); */
+            /* CMtiling = (unsigned int*)calloc(MT*NT, sizeof(unsigned int)); */
+            /* CNtiling = (unsigned int*)calloc(NT*MT, sizeof(unsigned int)); */
 
             Adistribution = (uint32_t*)calloc(MT*KT, sizeof(uint32_t));
             Bdistribution = (uint32_t*)calloc(KT*NT, sizeof(uint32_t));
             Cdistribution = (uint32_t*)calloc(MT*NT, sizeof(uint32_t));
 
-            int Ashare = (MT*KT)/nodes;
-            int Bshare = (KT*NT)/nodes;
-            int Cshare = (MT*NT)/nodes;
+            Mtiling = (unsigned int*)calloc(MT, sizeof(unsigned int));
+            Ntiling = (unsigned int*)calloc(NT, sizeof(unsigned int));
+            Ktiling = (unsigned int*)calloc(KT, sizeof(unsigned int));
 
-            for (i = 0; i < MT; ++i)
-                for (j = 0; j < KT; ++j) {
-                    uint32_t idx = (i * KT) + j;
-                    Adistribution[idx] = (j*MT+i)/Ashare;
-                }
+            M = N = K = 0;
+            for (k = 0; k < 2*MT*KT; ++k) {
+                fscanf(Aptr, "%u %u %u %u %u", &i, &j, &mb, &kb, &p);
+                /* AMtiling[i*KT+j] = mb; */
+                /* ANtiling[i*KT+j] = kb; */
+                Mtiling[i] = mb;
+                Ktiling[j] = kb;
+                uint32_t idx = (i * KT) + j;
+                Adistribution[idx] = p%parsec->nb_nodes;
+            }
 
-            for (i = 0; i < KT; ++i)
-                for (j = 0; j < NT; ++j) {
-                    uint32_t idx = (i * NT) + j;
-                    Bdistribution[idx] = (j*KT+i)/Bshare;
-                }
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < KT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", AMtiling[i*KT+j]); */
+            /* fprintf(stdout, "\n"); */
 
-            for (i = 0; i < MT; ++i)
-                for (j = 0; j < NT; ++j) {
-                    uint32_t idx = (i * NT) + j;
-                    Cdistribution[idx] = (j*MT+i)/Cshare;
-                }
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < KT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", ANtiling[i*KT+j]); */
+            /* fprintf(stdout, "\n"); */
+
+            for (k = 0; k < 2*KT*NT; ++k) {
+                fscanf(Bptr, "%u %u %u %u %u", &i, &j, &kb, &nb, &p);
+                if (Ktiling[i] != kb) fprintf(stdout, "Bdist tile (%u;%u) has a mismatching kb = %u, previous value K[i] was %u\n", i, j, kb, Ktiling[i]);
+                /* BMtiling[i*NT+j] = kb; */
+                /* BNtiling[i*NT+j] = nb; */
+                Ktiling[i] = kb;
+                Ntiling[j] = nb;
+                uint32_t idx = (i * NT) + j;
+                Bdistribution[idx] = p%parsec->nb_nodes;
+            }
+
+            /* for (i = 0; i < KT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", BMtiling[i*NT+j]); */
+            /* fprintf(stdout, "\n"); */
+
+            /* for (i = 0; i < KT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", BNtiling[i*NT+j]); */
+            /* fprintf(stdout, "\n"); */
+
+            for (k = 0; k < 2*MT*NT; ++k) {
+                fscanf(Cptr, "%u %u %u %u %u", &i, &j, &mb, &nb, &p);
+                if (Mtiling[i] != mb) fprintf(stdout, "Cdist tile (%u;%u) has a mismatching mb = %u, previous value M[i] was %u\n", i, j, mb, Mtiling[i]);
+                if (Ntiling[j] != nb) fprintf(stdout, "Cdist tile (%u;%u) has a mismatching nb = %u, previous value N[j] was %u\n", i, j, nb, Ntiling[j]);
+                /* CMtiling[i*KT+j] = mb; */
+                /* CNtiling[i*KT+j] = nb; */
+                Mtiling[i] = mb;
+                Ntiling[j] = nb;
+                uint32_t idx = (i * NT) + j;
+                Cdistribution[idx] = p%parsec->nb_nodes;
+            }
+
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", CMtiling[i*NT+j]); */
+            /* fprintf(stdout, "\n"); */
+
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%3u", (j==0)?"\n":"  ", CNtiling[i*NT+j]); */
+            /* fprintf(stdout, "\n"); */
+            for (k = 0; k < MT; ++k) M += Mtiling[k];
+            for (k = 0; k < NT; ++k) N += Ntiling[k];
+            for (k = 0; k < KT; ++k) K += Ktiling[k];
+
+            if (0 == rank) fprintf(stdout, "M:%d, K:%d, N:%d\n", M, K, N);
+
+            MB = M/MT;
+            NB = N/NT;
+            KB = K/KT;
         }
     }
 
-    if ( !tiledarraycase ) {
-        LDA = max(LDA, max(M, K));
-        LDB = max(LDB, max(K, N));
-        LDC = max(LDC, M);
+    /* if ( !tiledarraycase ) { */
+    /*     LDA = max(LDA, max(M, K)); */
+    /*     LDB = max(LDB, max(K, N)); */
+    /*     LDC = max(LDC, M); */
 
-        Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int));
-        Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int));
-        Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int));
+    /*     Mtiling = (unsigned int*)malloc(MT*sizeof(unsigned int)); */
+    /*     Ktiling = (unsigned int*)malloc(KT*sizeof(unsigned int)); */
+    /*     Ntiling = (unsigned int*)malloc(NT*sizeof(unsigned int)); */
 
-        KB = 1+(K-1)/KT;
+    /*     KB = 1+(K-1)/KT; */
 
-        int mca_random_tiling;
-        parsec_mca_param_reg_int_name("summa", "random_tiling",
-                                      "Summa test will generate a random tiling based on MB, NB, KB",
-                                      false, false,
-                                      0, &mca_random_tiling);
+    /*     int mca_random_tiling; */
+    /*     parsec_mca_param_reg_int_name("summa", "random_tiling", */
+    /*                                   "Summa test will generate a random tiling based on MB, NB, KB", */
+    /*                                   false, false, */
+    /*                                   0, &mca_random_tiling); */
 
-        init_tiling(Mtiling, &Tseed, MT, MB, M, mca_random_tiling);
-        init_tiling(Ntiling, &Tseed, NT, NB, N, mca_random_tiling);
-        init_tiling(Ktiling, &Tseed, KT, KB, K, mca_random_tiling);
-    }
+    /*     init_tiling(Mtiling, &Tseed, MT, MB, M, mca_random_tiling); */
+    /*     init_tiling(Ntiling, &Tseed, NT, NB, N, mca_random_tiling); */
+    /*     init_tiling(Ktiling, &Tseed, KT, KB, K, mca_random_tiling); */
+    /* } */
 
     if (rank == 0) {
         int i;
@@ -429,6 +494,7 @@ int main(int argc, char ** argv)
         for (i = 0; i < NT; ++i)
             fprintf(stdout, "%s%d%s", (i == 0)?"N tiling: ":" ", Ntiling[i], (i == NT-1)?"\n":"");
     }
+
 
     /* initializing matrix structure */
     irregular_tiled_matrix_desc_t ddescA;
@@ -477,24 +543,25 @@ int main(int argc, char ** argv)
 #endif
 
     PASTE_MKL_WARMUP();
-    
+    fprintf(stdout, " > MKL warmed up!\n");
     /* Create Parsec handle */
     for(int run = 0; run < 2; run++) {
-        SYNC_TIME_START();
-        parsec_context_start(parsec);
         parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
                                                           (irregular_tiled_matrix_desc_t*)&ddescA,
                                                           (irregular_tiled_matrix_desc_t*)&ddescB,
                                                           (irregular_tiled_matrix_desc_t*)&ddescC);
 
         /* Intercept the handler, change */
-        PARSEC_zsumma->functions_array[4].incarnations[0].here = execute_on_gpu;
-        
+        ((__parsec_chore_t*)PARSEC_zsumma->functions_array[4]->incarnations)[0].here = execute_on_gpu;
+        fprintf(stdout, " > Handle created!\n");
+
 #if defined(PARSEC_HAVE_RECURSIVE)
         if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
             summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
 #endif
         parsec_enqueue(parsec, PARSEC_zsumma);
+        fprintf(stdout, " > Handle enqueued!\n");
+
         if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
         /* lets rock! */
