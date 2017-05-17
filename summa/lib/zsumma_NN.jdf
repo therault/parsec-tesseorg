@@ -178,7 +178,7 @@ BODY [type=CUDA
 #endif
     int tempmm = SUMMA_N_ROWS(descA, m);
     int tempnn = SUMMA_N_COLS(descB, n);
-    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int tempkk = SUMMA_N_ROWS(descB, k);
     int ldam = SUMMA_N_BLKLDD(descA, m);
     int ldbk = SUMMA_N_BLKLDD(descB, k);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
@@ -219,7 +219,7 @@ BODY [type=RECURSIVE]
 
     int tempmm = SUMMA_N_ROWS(descA, m);
     int tempnn = SUMMA_N_COLS(descB, n);
-    int tempkk = SUMMA_N_ROWS(descB, m); 
+    int tempkk = SUMMA_N_ROWS(descB, k);
     int ldam = SUMMA_N_BLKLDD(descA, m);
     int ldbk = SUMMA_N_BLKLDD(descB, k);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
@@ -307,14 +307,6 @@ BODY
     int ldam = SUMMA_N_BLKLDD(descA, m);
     int ldcm = SUMMA_N_BLKLDD(descC, m);
     int ldbk = SUMMA_N_BLKLDD(descB, k);
-
-    if (descA->storage == matrix_Lapack) {
-        /* irregular_subtile_desc_t *small_descA = (irregular_subtile_desc_t*)descA; */
-        /* irregular_subtile_desc_t *small_descB = (irregular_subtile_desc_t*)descB; */
-        /* irregular_subtile_desc_t *small_descC = (irregular_subtile_desc_t*)descC; */
-        /* fprintf(stdout, "    > CPU BODY for task (%d;%d;%d)",m,n,k); */
-        /* fprintf(stdout, " recursively cut from task (%d;%d;%d)\n", small_descA->i, small_descC->j, small_descB->i); */
-    }
 
     fprintf(stdout, "summa(%d;%d;%d) (%d;%d)x(%d;%d)=(%d;%d), ldA=%d, ldB=%d, ldC=%d, A(%d;%d), B(%d;%d), C(%d;%d)\n",
             m, n, k, tempmm, tempkk, tempkk, tempnn, tempmm, tempnn,
