@@ -151,7 +151,7 @@ int __parsec_execute( parsec_execution_unit_t* eu_context,
         char tmp[MAX_TASK_STRLEN];
         parsec_snprintf_execution_context(tmp, MAX_TASK_STRLEN, exec_context);
 #endif
-        parsec_warning("Task %s[%d] run out of valid incarnations. Consider it complete",
+        parsec_warning("Task %s[%d] run out of valid incarnations. This is an illegal behaviour, aborting.",
                        tmp, function->incarnations[exec_context->chore_id].type);
         return PARSEC_HOOK_RETURN_ERROR;
     }
@@ -521,36 +521,48 @@ static int __parsec_wait( parsec_execution_unit_t *eu_context, cond_function_t c
             }
             switch(rc) {
             case PARSEC_HOOK_RETURN_DONE: {
-                if(exec_context->status <= PARSEC_TASK_STATUS_HOOK) {
-                    rc = __parsec_execute( eu_context, exec_context );
+                if(exec_context->status <= PARSEC_TASK_STATUS_HERE) {
+                    parsec_execution_context_t *task = exec_context;
+                    do {
+                        rc = PARSEC_HOOK_RETURN_DONE;
+                        if (task->function->incarnations[task->chore_id].here)
+                            rc = task->function->incarnations[task->chore_id].here(eu_context, exec_context);
+                        if (rc == PARSEC_HOOK_RETURN_NEXT)   /* Task moves to next chore_id */
+                            task->chore_id++;
+                    } while (rc == PARSEC_HOOK_RETURN_NEXT);
+                    exec_context->status = PARSEC_TASK_STATUS_HERE; /* Proceed to hook */
+
+                    if(exec_context->status <= PARSEC_TASK_STATUS_HOOK) {
+                        rc = __parsec_execute( eu_context, exec_context );
+                    }
+                    /* We're good to go ... */
+                    switch(rc) {
+                    case PARSEC_HOOK_RETURN_DONE:    /* This execution succeeded */
+                        exec_context->status = PARSEC_TASK_STATUS_COMPLETE;
+                        __parsec_complete_execution( eu_context, exec_context );
+                        break;
+                    case PARSEC_HOOK_RETURN_AGAIN:   /* Reschedule later */
+                        exec_context->status = PARSEC_TASK_STATUS_HOOK;
+                        if(0 == exec_context->priority) {
+                            SET_LOWEST_PRIORITY(exec_context, parsec_execution_context_priority_comparator);
+                        } else
+                            exec_context->priority /= 10;  /* demote the task */
+                        PARSEC_LIST_ITEM_SINGLETON(exec_context);
+                        __parsec_schedule(eu_context, exec_context, distance + 1);
+                        exec_context = NULL;
+                        break;
+                    case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
+                                                      * even try to change it's state, the completion
+                                                      * will be triggered asynchronously. */
+                        break;
+                    case PARSEC_HOOK_RETURN_NEXT:    /* Try next variant [if any] */
+                    case PARSEC_HOOK_RETURN_DISABLE: /* Disable the device, something went wrong */
+                    case PARSEC_HOOK_RETURN_ERROR:   /* Some other major error happened */
+                        assert( 0 ); /* Internal error: invalid return value */
+                    }
+                    nbiterations++;
+                    break;
                 }
-                /* We're good to go ... */
-                switch(rc) {
-                case PARSEC_HOOK_RETURN_DONE:    /* This execution succeeded */
-                    exec_context->status = PARSEC_TASK_STATUS_COMPLETE;
-                    __parsec_complete_execution( eu_context, exec_context );
-                    break;
-                case PARSEC_HOOK_RETURN_AGAIN:   /* Reschedule later */
-                    exec_context->status = PARSEC_TASK_STATUS_HOOK;
-                    if(0 == exec_context->priority) {
-                        SET_LOWEST_PRIORITY(exec_context, parsec_execution_context_priority_comparator);
-                    } else
-                        exec_context->priority /= 10;  /* demote the task */
-                    PARSEC_LIST_ITEM_SINGLETON(exec_context);
-                    __parsec_schedule(eu_context, exec_context, distance + 1);
-                    exec_context = NULL;
-                    break;
-                case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
-                                                 * even try to change it's state, the completion
-                                                 * will be triggered asynchronously. */
-                    break;
-                case PARSEC_HOOK_RETURN_NEXT:    /* Try next variant [if any] */
-                case PARSEC_HOOK_RETURN_DISABLE: /* Disable the device, something went wrong */
-                case PARSEC_HOOK_RETURN_ERROR:   /* Some other major error happened */
-                    assert( 0 ); /* Internal error: invalid return value */
-                }
-                nbiterations++;
-                break;
             }
             case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
                                              * even try to change it's state, the completion

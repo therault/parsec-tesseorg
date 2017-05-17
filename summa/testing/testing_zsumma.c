@@ -23,6 +23,17 @@
 #define RndD_Mul 5.4210108624275222e-20
 #define EPSILON  0.000001L
 
+parsec_hook_return_t execute_on_gpu(parsec_execution_unit_t    *eu_context,
+                                    parsec_execution_context_t *exec_context)
+{
+    parsec_handle_t *handle = exec_context->parsec_handle;
+
+
+    
+    return PARSEC_HOOK_RETURN_DONE;
+}
+
+
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M, int mca_random_tiling)
 {
     int t;
@@ -33,15 +44,14 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
     /* good old regular tiling with smaller last tile */
 
 #if defined(SUMMA_WITH_RANDOM_TILING)
-    fprintf(stdout, "random_tiling: %d\n", mca_random_tiling);
     if (mca_random_tiling) {
         int p;
         unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
         unsigned int upper_bound = MB*2;
         unsigned long long int ran = *seed;
         unsigned int share = (MB/10 > 0) ? MB/10 : 1;
-
-        for (p = 0; p < MT*MT/3; ++p) {
+        
+        for (p = 0; p < MT*MT/2; ++p) {
             int t1 = ran%MT;
             ran = Rnd64_A * ran + Rnd64_C;
             int t2 = t1;
@@ -50,7 +60,6 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
                 ran = Rnd64_A * ran + Rnd64_C -1;
             }
 
-            fprintf(stdout, "Stealing %u from %d, giving them to %d\n", share, t1, t2);
             /* steal 1 from t1, give it to t2 if the boundaries are respected */
             if (T[t1] > lower_bound && T[t2] < upper_bound) {
                 T[t1] -= share;
@@ -470,7 +479,7 @@ int main(int argc, char ** argv)
     PASTE_MKL_WARMUP();
     
     /* Create Parsec handle */
-    for(int run = 0; run < 1; run++) {
+    for(int run = 0; run < 2; run++) {
         SYNC_TIME_START();
         parsec_context_start(parsec);
         parsec_handle_t* PARSEC_zsumma = summa_zsumma_New(tA, tB, alpha,
@@ -478,6 +487,9 @@ int main(int argc, char ** argv)
                                                           (irregular_tiled_matrix_desc_t*)&ddescB,
                                                           (irregular_tiled_matrix_desc_t*)&ddescC);
 
+        /* Intercept the handler, change */
+        PARSEC_zsumma->functions_array[4].incarnations[0].here = execute_on_gpu;
+        
 #if defined(PARSEC_HAVE_RECURSIVE)
         if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
             summa_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
