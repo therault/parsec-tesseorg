@@ -551,7 +551,8 @@ summa_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     Csize = C->m * C->n;
 
     if( (transA == PlasmaNoTrans) && (transB == PlasmaNoTrans) &&
-        ((10 * (Asize + Csize) < Bsize)) ) {
+        1 || ((10 * (Asize + Csize) < Bsize)) ) {
+        fprintf(stdout, "calling zgemm_bcast\n");
         return summa_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
 
