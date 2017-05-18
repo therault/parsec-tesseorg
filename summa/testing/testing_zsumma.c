@@ -255,8 +255,6 @@ static void check_solution(irregular_tiled_matrix_desc_t *ddescA, int tA, parsec
     free(checkC);
 }
 
-
-
 int main(int argc, char ** argv)
 {
     parsec_context_t* parsec;
@@ -318,7 +316,6 @@ int main(int argc, char ** argv)
     (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async;
     (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;
 
-    double gflops = -1.0, flops = FLOPS_ZSUMMA((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K);
 
     LDA = max(LDA, max(M, K));
     LDB = max(LDB, max(K, N));
@@ -394,7 +391,7 @@ int main(int argc, char ** argv)
                 Mtiling[i] = mb;
                 Ktiling[j] = kb;
                 uint32_t idx = (i * KT) + j;
-                Adistribution[idx] = p%parsec->nb_nodes;
+                Adistribution[idx] = p;
             }
 
             /* for (i = 0; i < MT; ++i) */
@@ -415,7 +412,7 @@ int main(int argc, char ** argv)
                 Ktiling[i] = kb;
                 Ntiling[j] = nb;
                 uint32_t idx = (i * NT) + j;
-                Bdistribution[idx] = p%parsec->nb_nodes;
+                Bdistribution[idx] = p;
             }
 
             /* for (i = 0; i < KT; ++i) */
@@ -437,8 +434,23 @@ int main(int argc, char ** argv)
                 Mtiling[i] = mb;
                 Ntiling[j] = nb;
                 uint32_t idx = (i * NT) + j;
-                Cdistribution[idx] = p%parsec->nb_nodes;
+                Cdistribution[idx] = p;
             }
+
+            fprintf(stdout, "distribution of A:");
+            for (i = 0; i < MT; ++i)
+                for (j = 0; j < KT; ++j)
+                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Adistribution[(i * KT) + j]);
+
+            fprintf(stdout, "\ndistribution of B:");
+            for (i = 0; i < KT; ++i)
+                for (j = 0; j < NT; ++j)
+                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Bdistribution[(i * NT) + j]);
+
+            fprintf(stdout, "\ndistribution of C:");
+            for (i = 0; i < MT; ++i)
+                for (j = 0; j < NT; ++j)
+                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Cdistribution[(i * NT) + j]);
 
             /* for (i = 0; i < MT; ++i) */
             /*     for (j = 0; j < NT; ++j) */
@@ -524,9 +536,9 @@ int main(int argc, char ** argv)
 
     /* matrix generation */
     if (loud > 2) printf("+++ Generate matrices ... ");
-    init_random_matrix(&ddescA, Aseed, Astorage, Adistribution);
-    init_random_matrix(&ddescB, Bseed, Bstorage, Bdistribution);
-    init_empty_matrix(&ddescC, Cstorage, Cdistribution);
+    init_random_matrix(&ddescA, Aseed, Astorage, NULL);//Adistribution);
+    init_random_matrix(&ddescB, Bseed, Bstorage, NULL);//Bdistribution);
+    init_empty_matrix(&ddescC, Cstorage, NULL);//Cdistribution);
     if(loud > 2) printf("Done\n");
 
     free(Mtiling);
@@ -541,6 +553,8 @@ int main(int argc, char ** argv)
     fprintf(stdout, "Matrix C:\n");
     print_matrix_meta(&ddescC);
 #endif
+
+    double gflops = -1.0, flops = FLOPS_ZSUMMA((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K);
 
     PASTE_MKL_WARMUP();
     fprintf(stdout, " > MKL warmed up!\n");
@@ -566,7 +580,6 @@ int main(int argc, char ** argv)
 
         /* lets rock! */
         SYNC_TIME_START();
-        TIME_START();
         parsec_context_start(parsec);
         parsec_context_wait(parsec);
         SYNC_TIME_PRINT(rank, ("ZSUMMA\tPxQ= %3d %-3d NB= %4d N= %7d : %14f gflops\n",

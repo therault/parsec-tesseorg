@@ -521,16 +521,16 @@ static int __parsec_wait( parsec_execution_unit_t *eu_context, cond_function_t c
             }
             switch(rc) {
             case PARSEC_HOOK_RETURN_DONE: {
-                if(exec_context->status <= PARSEC_TASK_STATUS_HERE) {
-                    parsec_execution_context_t *task = exec_context;
-                    do {
-                        rc = PARSEC_HOOK_RETURN_DONE;
-                        if (task->function->incarnations[task->chore_id].here)
-                            rc = task->function->incarnations[task->chore_id].here(eu_context, exec_context);
-                        if (rc == PARSEC_HOOK_RETURN_NEXT)   /* Task moves to next chore_id */
-                            task->chore_id++;
-                    } while (rc == PARSEC_HOOK_RETURN_NEXT);
-                    exec_context->status = PARSEC_TASK_STATUS_HERE; /* Proceed to hook */
+                /* if(exec_context->status <= PARSEC_TASK_STATUS_HERE) { */
+                /*     parsec_execution_context_t *task = exec_context; */
+                /*     do { */
+                /*         rc = PARSEC_HOOK_RETURN_DONE; */
+                /*         if (task->function->incarnations[task->chore_id].here) */
+                /*             rc = task->function->incarnations[task->chore_id].here(eu_context, exec_context); */
+                /*         if (rc == PARSEC_HOOK_RETURN_NEXT)   /\* Task moves to next chore_id *\/ */
+                /*             task->chore_id++; */
+                /*     } while (rc == PARSEC_HOOK_RETURN_NEXT); */
+                /*     exec_context->status = PARSEC_TASK_STATUS_HERE; /\* Proceed to hook *\/ */
 
                     if(exec_context->status <= PARSEC_TASK_STATUS_HOOK) {
                         rc = __parsec_execute( eu_context, exec_context );
@@ -563,7 +563,7 @@ static int __parsec_wait( parsec_execution_unit_t *eu_context, cond_function_t c
                     nbiterations++;
                     break;
                 }
-            }
+            /* } */
             case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
                                              * even try to change it's state, the completion
                                              * will be triggered asynchronously. */

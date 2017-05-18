@@ -308,9 +308,9 @@ BODY
     int ldcm = SUMMA_N_BLKLDD(descC, m);
     int ldbk = SUMMA_N_BLKLDD(descB, k);
 
-    fprintf(stdout, "summa(%d;%d;%d) (%d;%d)x(%d;%d)=(%d;%d), ldA=%d, ldB=%d, ldC=%d, A(%d;%d), B(%d;%d), C(%d;%d)\n",
-            m, n, k, tempmm, tempkk, tempkk, tempnn, tempmm, tempnn,
-            ldam, ldbk, ldcm, descA->Mtiling[m], descA->Ntiling[k], descB->Mtiling[k], descB->Ntiling[n], descC->Mtiling[m], descC->Ntiling[n]);
+    /* fprintf(stdout, "summa(%d;%d;%d) (%d;%d)x(%d;%d)=(%d;%d), ldA=%d, ldB=%d, ldC=%d, A(%d;%d), B(%d;%d), C(%d;%d)\n", */
+    /*         m, n, k, tempmm, tempkk, tempkk, tempnn, tempmm, tempnn, */
+    /*         ldam, ldbk, ldcm, descA->Mtiling[m], descA->Ntiling[k], descB->Mtiling[k], descB->Ntiling[n], descC->Mtiling[m], descC->Ntiling[n]); */
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
@@ -329,7 +329,7 @@ BODY
                            k, n, ldbk,
              creal(lbeta), m, n, ldcm );
 
-    fprintf(stdout, "****************************************************************\n\n");
+    /* fprintf(stdout, "****************************************************************\n\n"); */
     
 }
 END
