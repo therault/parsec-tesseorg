@@ -391,7 +391,7 @@ int main(int argc, char ** argv)
                 Mtiling[i] = mb;
                 Ktiling[j] = kb;
                 uint32_t idx = (i * KT) + j;
-                Adistribution[idx] = p;
+                Adistribution[idx] = p%parsec->nb_nodes;
             }
 
             /* for (i = 0; i < MT; ++i) */
@@ -412,7 +412,7 @@ int main(int argc, char ** argv)
                 Ktiling[i] = kb;
                 Ntiling[j] = nb;
                 uint32_t idx = (i * NT) + j;
-                Bdistribution[idx] = p;
+                Bdistribution[idx] = p%parsec->nb_nodes;
             }
 
             /* for (i = 0; i < KT; ++i) */
@@ -434,23 +434,23 @@ int main(int argc, char ** argv)
                 Mtiling[i] = mb;
                 Ntiling[j] = nb;
                 uint32_t idx = (i * NT) + j;
-                Cdistribution[idx] = p;
+                Cdistribution[idx] = p%parsec->nb_nodes;
             }
 
-            fprintf(stdout, "distribution of A:");
-            for (i = 0; i < MT; ++i)
-                for (j = 0; j < KT; ++j)
-                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Adistribution[(i * KT) + j]);
+            /* fprintf(stdout, "distribution of A:"); */
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < KT; ++j) */
+            /*         fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Adistribution[(i * KT) + j]); */
 
-            fprintf(stdout, "\ndistribution of B:");
-            for (i = 0; i < KT; ++i)
-                for (j = 0; j < NT; ++j)
-                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Bdistribution[(i * NT) + j]);
+            /* fprintf(stdout, "\ndistribution of B:"); */
+            /* for (i = 0; i < KT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Bdistribution[(i * NT) + j]); */
 
-            fprintf(stdout, "\ndistribution of C:");
-            for (i = 0; i < MT; ++i)
-                for (j = 0; j < NT; ++j)
-                    fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Cdistribution[(i * NT) + j]);
+            /* fprintf(stdout, "\ndistribution of C:"); */
+            /* for (i = 0; i < MT; ++i) */
+            /*     for (j = 0; j < NT; ++j) */
+            /*         fprintf(stdout, "%s%u", (j == 0)?"\n ":" ", Cdistribution[(i * NT) + j]); */
 
             /* for (i = 0; i < MT; ++i) */
             /*     for (j = 0; j < NT; ++j) */
@@ -536,9 +536,9 @@ int main(int argc, char ** argv)
 
     /* matrix generation */
     if (loud > 2) printf("+++ Generate matrices ... ");
-    init_random_matrix(&ddescA, Aseed, Astorage, NULL);//Adistribution);
-    init_random_matrix(&ddescB, Bseed, Bstorage, NULL);//Bdistribution);
-    init_empty_matrix(&ddescC, Cstorage, NULL);//Cdistribution);
+    init_random_matrix(&ddescA, Aseed, Astorage, Adistribution);
+    init_random_matrix(&ddescB, Bseed, Bstorage, Bdistribution);
+    init_empty_matrix(&ddescC, Cstorage, Cdistribution);
     if(loud > 2) printf("Done\n");
 
     free(Mtiling);
@@ -578,6 +578,7 @@ int main(int argc, char ** argv)
 
         if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
 
+        
         /* lets rock! */
         SYNC_TIME_START();
         parsec_context_start(parsec);
