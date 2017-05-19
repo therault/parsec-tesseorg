@@ -7,6 +7,8 @@
  *
  */
 
+#include "parsec.h"
+#include "parsec/execution_unit.h"
 #include "parsec/mca/pins/pins.h"
 #include "parsec/profiling.h"
 #include "parsec/utils/mca_param.h"
