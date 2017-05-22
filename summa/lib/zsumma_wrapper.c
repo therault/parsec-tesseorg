@@ -99,17 +99,21 @@ static int future_input_for_accumulate_c_task(parsec_execution_unit_t * context,
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
     const int n = this_task->locals.n.value;
-    /** Lookup the input data, and store them in the context if any */
-    assert(NULL == this_task->data._f_C.data_in);
-    copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descC)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descC), m, n), 0);
-    f = PARSEC_DATA_COPY_GET_PTR(copy);
-    tile = vf->resolve_future_function(f, context, this_task);
-    if( NULL != tile ) {
-        copy->device_private = tile;
-        return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
-    } else {
-        return PARSEC_HOOK_RETURN_ASYNC;
+    const int i = this_task->locals.i.value;
+    if( i == 0 ) {
+        /** Lookup the input data, and store them in the context if any */
+        assert(NULL == this_task->data._f_C.data_in);
+        copy = parsec_data_get_copy(((parsec_ddesc_t*)__parsec_handle->_g_descC)->data_of(((parsec_ddesc_t*)__parsec_handle->_g_descC), m, n), 0);
+        f = PARSEC_DATA_COPY_GET_PTR(copy);
+        tile = vf->resolve_future_function(f, context, this_task);
+        if( NULL != tile ) {
+            copy->device_private = tile;
+            return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
+        } else {
+            return PARSEC_HOOK_RETURN_ASYNC;
+        }
     }
+    return vf->saved_prepare_input(context, (parsec_execution_context_t *)this_task);
 }
 
 static void attach_futures_prepare_input(parsec_handle_t *handle, const char *task_name, void*(*resolve_future_function)(void*, void*, void*))
