@@ -2251,8 +2251,8 @@ void parsec_debug_print_local_expecting_tasks_for_function( parsec_handle_t *han
     int li, init;
 
     memset(&context, 0, sizeof(parsec_execution_context_t));
-    PARSEC_LIST_ITEM_SINGLETON( &context.super.list_item );
-    context.super.mempool_owner = NULL;
+    PARSEC_LIST_ITEM_SINGLETON( &context.super );
+    context.mempool_owner = NULL;
     context.parsec_handle = handle;
     context.function = function;
     context.priority = -1;
