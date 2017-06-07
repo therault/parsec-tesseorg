@@ -57,15 +57,24 @@ __data_repo_lookup_entry_and_create(parsec_execution_unit_t *eu, data_repo_t *re
         if( e->key == key ) {
             e->retained++; /* Until we update the usage limit */
             parsec_atomic_unlock(&repo->heads[h].lock);
+            { 
+              uint32_t i;
+              for(i = 0; i < repo->nbdata; i++)
+                e->data[i] = NULL;
+            }
+            e->ttg_task = NULL;
             return e;
         }
     }
     parsec_atomic_unlock(&repo->heads[h].lock);
 
     e = (data_repo_entry_t*)parsec_thread_mempool_allocate( eu->datarepo_mempools[repo->nbdata] );
-#if defined(PARSEC_DEBUG_PARANOID)
-    { uint32_t i; for(i = 0; i < repo->nbdata; e->data[i] = NULL, i++);}
-#endif  /* defined(PARSEC_DEBUG_PARANOID) */
+    { 
+      uint32_t i; 
+      for(i = 0; i < repo->nbdata; i++) 
+        e->data[i] = NULL;
+    }
+    e->ttg_task = NULL;
     e->data_repo_mempool_owner = eu->datarepo_mempools[repo->nbdata];
     e->key = key;
 #if defined(PARSEC_SIM)
