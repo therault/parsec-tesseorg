@@ -80,7 +80,7 @@ endif( NOT MPI_C_FOUND )
 list(APPEND SOURCES parsec_hwloc.c)
 
 if (CUDA_FOUND)
-  list(APPEND SOURCES devices/cuda/dev_cuda.c)
+  list(APPEND SOURCES devices/cuda/dev_cuda.c devices/cuda/tranfer.c)
 endif (CUDA_FOUND)
 
 if( PARSEC_PROF_GRAPHER )
