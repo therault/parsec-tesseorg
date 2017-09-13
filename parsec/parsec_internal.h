@@ -392,7 +392,7 @@ PARSEC_DECLSPEC extern int parsec_want_rusage;
  * not the data pairs. We need this in order to be able to only copy the minimal
  * amount of information when a new task is constructed.
  */
-#define PARSEC_MINIMAL_EXECUTION_CONTEXT             \
+#define PARSEC_MINIMAL_TASK			     \
     parsec_list_item_t             super;            \
     parsec_thread_mempool_t       *mempool_owner;    \
     parsec_taskpool_t             *taskpool;         \
@@ -402,8 +402,8 @@ PARSEC_DECLSPEC extern int parsec_want_rusage;
     uint8_t                        chore_id;         \
     uint8_t                        unused[2];
 
-struct parsec_minimal_execution_context_s {
-    PARSEC_MINIMAL_EXECUTION_CONTEXT
+struct parsec_minimal_task_s {
+    PARSEC_MINIMAL_TASK
 #if defined(PARSEC_PROF_TRACE)
     parsec_profile_data_collection_info_t prof_info;
 #endif /* defined(PARSEC_PROF_TRACE) */
@@ -412,8 +412,8 @@ struct parsec_minimal_execution_context_s {
     assignment_t               locals[MAX_LOCAL_COUNT];
 };
 
-struct parsec_task_s{
-    PARSEC_MINIMAL_EXECUTION_CONTEXT
+struct parsec_task_s {
+    PARSEC_MINIMAL_TASK
 #if defined(PARSEC_PROF_TRACE)
     parsec_profile_data_collection_info_t prof_info;
 #endif /* defined(PARSEC_PROF_TRACE) */
@@ -440,7 +440,7 @@ PARSEC_DECLSPEC OBJ_CLASS_DECLARATION(parsec_task_t);
          */                                                             \
         memcpy( ((char*)(dest)) + sizeof(parsec_list_item_t),           \
                 ((char*)(src)) + sizeof(parsec_list_item_t),            \
-                sizeof(struct parsec_minimal_execution_context_s) - sizeof(parsec_list_item_t) ); \
+                sizeof(struct parsec_minimal_task_s) - sizeof(parsec_list_item_t) ); \
         (dest)->mempool_owner = _mpool;                                 \
     } while (0)
 

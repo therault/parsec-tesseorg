@@ -1078,7 +1078,7 @@ static inline char* jdf_generate_task_typedef(void **elt, void* arg)
                             nb_flows,
                             parsec_get_name(NULL, f, "data_t"));
     string_arena_add_string(sa, "typedef struct %s {\n"
-                            "    PARSEC_MINIMAL_EXECUTION_CONTEXT\n"
+                            "    PARSEC_MINIMAL_TASK\n"
                             "#if defined(PARSEC_PROF_TRACE)\n"
                             "    parsec_profile_data_collection_info_t prof_info;\n"
                             "#endif /* defined(PARSEC_PROF_TRACE) */\n"
@@ -4792,7 +4792,6 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
             "  if( dev_index < 2 ) {\n"
             "    return PARSEC_HOOK_RETURN_NEXT;  /* Fall back */\n"
             "  }\n"
-            "  parsec_device_load[dev_index] += ratio * parsec_device_sweight[dev_index];\n"
             "\n"
             "  gpu_task = (parsec_gpu_context_t*)calloc(1, sizeof(parsec_gpu_context_t));\n"
             "  OBJ_CONSTRUCT(gpu_task, parsec_list_item_t);\n"

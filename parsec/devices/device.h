@@ -64,7 +64,7 @@ extern parsec_atomic_lock_t parsec_devices_mutex;
 /**
  * Temporary variables used for load-balancing purposes.
  */
-extern float *parsec_device_load;
+extern volatile float *parsec_device_load;
 extern float *parsec_device_sweight;
 extern float *parsec_device_dweight;
 

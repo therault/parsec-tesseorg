@@ -33,7 +33,7 @@ static parsec_device_t* parsec_device_recursive = NULL;
  * call to parsec_devices_freeze(). This is just a first step, a smarter approach
  * should take this spot.
  */
-float *parsec_device_load = NULL;
+volatile float *parsec_device_load = NULL;
 float *parsec_device_sweight = NULL;
 float *parsec_device_dweight = NULL;
 
@@ -187,7 +187,7 @@ int parsec_devices_fini(parsec_context_t* parsec_context)
     }
 
     /* Free the local memory */
-    if(NULL != parsec_device_load) free(parsec_device_load);
+    if(NULL != parsec_device_load) free((void*)parsec_device_load);
     parsec_device_load = NULL;
     if(NULL != parsec_device_sweight) free(parsec_device_sweight);
     parsec_device_sweight = NULL;
@@ -223,8 +223,8 @@ int parsec_devices_freeze(parsec_context_t* context)
     if(parsec_devices_are_freezed)
         return -1;
 
-    if(NULL != parsec_device_load) free(parsec_device_load);
-    parsec_device_load = (float*)calloc(parsec_nb_devices, sizeof(float));
+    if(NULL != parsec_device_load) free((void*)parsec_device_load);
+    posix_memalign((void**)&parsec_device_load, 64, parsec_nb_devices * sizeof(float));
     if(NULL != parsec_device_sweight) free(parsec_device_sweight);
     parsec_device_sweight = (float*)calloc(parsec_nb_devices, sizeof(float));
     if(NULL != parsec_device_dweight) free(parsec_device_dweight);
@@ -236,6 +236,7 @@ int parsec_devices_freeze(parsec_context_t* context)
         total_sperf += device->device_sweight;
         parsec_device_dweight[i] = device->device_dweight;
         total_dperf += device->device_dweight;
+	parsec_device_load[i] = 0.;
     }
 
     /* Compute the weight of each device including the cores */

@@ -1232,24 +1232,74 @@ int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
     /* 0 is CPU, and 1 is recursive device */
     if( dev_index <= 1 ) {  /* This is the first time we see this data for a GPU.
                              * Let's decide which GPU will work on it. */
-        int best_index = 0;  /* default value: first CPU device */
-        float weight, best_weight = parsec_device_load[0] + ratio * parsec_device_sweight[0];
+
+      int second_best, best_index; /* default value: first CPU device */
+      float *initial = (float*)malloc(parsec_nb_devices * sizeof(float));
+      float *projected = (float*)malloc(parsec_nb_devices * sizeof(float));
+
+      for( dev_index = 0; dev_index < parsec_devices_enabled(); dev_index++ ) {
+	if (dev_index == 1) continue;
+	initial[dev_index] = parsec_device_load[dev_index];
+      }
+
+      for( dev_index = 0; dev_index < parsec_devices_enabled(); dev_index++ ) {
+	if (dev_index == 1) continue;
+	projected[dev_index] = initial[dev_index] + ratio * parsec_device_sweight[dev_index];
+	if (projected[dev_index] < projected[best_index])
+	  best_index = dev_index;
+      } /* Build the projected gantt on each device for this task and identify the best candidate */
+
+      fprintf(stderr, "GEMM(%2d,%2d,%2d) => CAS for dev %d load goes from %f -> %f. Adding ratio %lf, sweight %f\n",
+	      this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value,
+	      best_index, initial[best_index], projected[best_index], ratio, parsec_device_sweight[best_index]);
+
+      while (!parsec_atomic_cas_32b(parsec_device_load+best_index, initial[best_index], projected[best_index])) {
+	/* CAS failed, best_index load changed, we update best_index info. */
+	initial[best_index] = parsec_device_load[best_index];
+	projected[best_index] = initial[best_index] + ratio * parsec_device_sweight[best_index];
+	/* Look for the new best index */
+	for( dev_index = 0; dev_index < parsec_devices_enabled(); dev_index++ ) {
+	  if (dev_index == 1) continue;
+	  if (projected[dev_index] < projected[best_index])
+	    best_index = dev_index;
+	}
+      }
+      free(initial);
+      free(projected);
+      assert( best_index != 1 );
+      dev_index = best_index;
+    }
+
+#if 0
+      do { /* ratio is homogeneous to a time to completion for this task */
+	best_index = 0;
+        weight[best_index] = parsec_device_load[best_index] + ratio * parsec_device_sweight[best_index];
 
         /* Start at 2, to skip the recursive body */
         for( dev_index = 2; dev_index < parsec_devices_enabled(); dev_index++ ) {
             /* Skip the device if it is not configured */
             if(!(tp->devices_mask & (1 << dev_index))) continue;
-            weight = parsec_device_load[dev_index] + ratio * parsec_device_sweight[dev_index];
-            if( best_weight > weight ) {
-                best_index = dev_index;
-                best_weight = weight;
-            }
-        }
-        parsec_device_load[best_index] += ratio * parsec_device_sweight[best_index];
-        assert( best_index != 1 );
-        dev_index = best_index;
-    }
+            weight[dev_index] = parsec_device_load[dev_index] + ratio * parsec_device_sweight[dev_index];
 
+	    /* fprintf(stderr, "GEMM(%2d,%2d,%2d) => best_weight[%3d]: %5.1f\t= %5.1f  \t+ %3.1lf\t* %2.1f;\t dev_weight[%d]: %5.1f\t= %5.1f  \t+ %3.1lf\t* %2.1f\n", */
+	    /* 	    this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value, */
+	    /* 	    best_index, weight[best_index], parsec_device_load[best_index], ratio, parsec_device_sweight[best_index], */
+	    /* 	    dev_index,  weight[dev_index],  parsec_device_load[dev_index],  ratio, parsec_device_sweight[dev_index]); */
+
+            if( weight[best_index] > weight[dev_index] )
+                best_index = dev_index;
+        }
+
+	fprintf(stderr, "GEMM(%2d,%2d,%2d) => CAS for dev %d load goes from %f -> %f. Adding ratio %lf, sweight %f\n",
+		this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value,
+		best_index, parsec_device_load[best_index], weight[best_index], ratio, parsec_device_sweight[best_index]);
+
+      } while(!parsec_atomic_cas_32b(parsec_device_load+best_index, parsec_device_load[best_index], weight[best_index]));
+      //parsec_device_load[best_index] += ratio * parsec_device_sweight[best_index];
+      assert( best_index != 1 );
+      dev_index = best_index;
+    }
+#endif
     return dev_index;
 }
 
