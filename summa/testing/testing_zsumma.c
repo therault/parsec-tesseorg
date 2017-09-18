@@ -36,6 +36,11 @@ parsec_hook_return_t execute_on_gpu(parsec_execution_stream_t    *es,
 }
 
 
+static unsigned int weird_tiling(int MB, int p)
+{
+  return MB + (((p%2) == 0) ? +1 : -1) * (1 + 2 *(p/2));
+}
+
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M, int mca_random_tiling)
 {
     int t;
@@ -48,6 +53,34 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
 #if defined(SUMMA_WITH_RANDOM_TILING)
     if (mca_random_tiling) {
         int p;
+
+	/*
+	  std::vector<unsigned int> result(ntiles+1);
+	  result[0] = 0;
+	  for(long t=0; t!=ntiles-1; ++t) {
+	    result[t+1] = result[t] + average_tile_size + ((t%2==0)?(t+1):(-t));
+	  }
+	  result[ntiles] = range_size;
+	*/
+	if (MT >= MB) fprintf(stderr, "Warning, MT should not be greater than MB, aborting.\n" );
+
+	int p1, p2, b1, b2, t_root = sqrt(MT);
+	b1 = sqrt(MB);
+	b2 = sqrt(MB);
+
+	fprintf(stderr, "Tiling:");
+	for (p1 = 0; p1 < t_root; ++p1)
+	  fprintf(stderr, " %d", weird_tiling(b1, p1));
+	fprintf(stderr, "\n");
+
+	for (p1 = 0; p1 < t_root; ++p1) {
+	  for (p2 = 0; p2 < t_root; ++p2) {
+	    T[p2 + p1 * t_root] = weird_tiling(b1, p1) * weird_tiling(b2, p2);
+
+	  }
+	}
+
+#if 0
         unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
         unsigned int upper_bound = MB*2;
         unsigned long long int ran = *seed;
@@ -69,6 +102,7 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
             }
         }
         *seed = ran;
+#endif
     }
 #endif
 }
