@@ -79,16 +79,19 @@ jdf_rules(generated_files "${generated_jdf}")
 
 add_documented_files( PARSEC_ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}" ${generated_wrappers} )
 
-Add_Subdirectory(include)
+link_directories(${COREBLAS_LIBRARY_DIRS})
+add_subdirectory(include)
 
+#in case of weird hidden symbol in cudart_static, change to cuda_add_library
 add_library(summa
   ${generated_files}
   ${generated_wrappers}
   ${EXTRA_SOURCES})
 add_dependencies(summa dplasma summa_includes)
+set_target_properties(summa PROPERTIES POSITION_INDEPENDENT_CODE True)
+target_link_libraries(summa ${DPLASMA_LIBRARIES} dplasma_cores ${COREBLAS_LIBRARIES} parsec parsec-base parsec_distribution_matrix)
 
-target_link_libraries(summa ${DPLASMA_LIBRARIES})
-
+set_target_properties(summa PROPERTIES LINK_FLAGS "${COREBLAS_LDFLAGS}")
 if (MPI_C_FOUND)
   set_target_properties(summa PROPERTIES COMPILE_FLAGS "${MPI_C_COMPILE_FLAGS}")
 endif (MPI_C_FOUND)
