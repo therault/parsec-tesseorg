@@ -70,11 +70,12 @@ static void parsec_data_destruct(parsec_data_t* obj )
     for( uint32_t i = 0; i < parsec_nb_devices; i++ ) {
         parsec_data_copy_t *copy = NULL;
         parsec_device_t *device = parsec_devices_get(i);
-        assert(NULL != device);
         while( (copy = obj->device_copies[i]) != NULL )
         {
             assert(obj->super.obj_reference_count > 1);
             parsec_data_copy_detach( obj, copy, i );
+            /* The device needs to exist only if we have a copy */
+            assert(NULL != device);
             if ( !(device->type & PARSEC_DEV_CUDA) ){
                 /**
                  * GPU copies are normally stored in LRU lists, and must be

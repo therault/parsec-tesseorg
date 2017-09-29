@@ -1374,7 +1374,7 @@ progress_stream( gpu_device_t* gpu_device,
             PARSEC_DEBUG_VERBOSE(19, parsec_cuda_output_stream,
                                  "GPU[%d]: Completed %s(task %p) priority %d on stream %s{%p}",
                                  gpu_device->cuda_index,
-                                 task->ec->function->name, (void*)task->ec, task->ec->priority,
+                                 task->ec->task_class->name, (void*)task->ec, task->ec->priority,
                                  stream->name, (void*)stream);
             stream->tasks[stream->end] = NULL;
             stream->end = (stream->end + 1) % stream->max_events;
@@ -1414,7 +1414,7 @@ progress_stream( gpu_device_t* gpu_device,
         /* Grab the submit function */
         progress_fct = task->submit;
 #if defined(PARSEC_DEBUG_PARANOID)
-        for( i = 0; i < task->ec->function->nb_flows; i++ ) {
+        for( i = 0; i < task->ec->task_class->nb_flows; i++ ) {
             flow = task->flow[i];
             if(!flow->flow_flags) continue;
             assert(task->ec->data[i].data_out->data_transfer_status == DATA_STATUS_COMPLETE_TRANSFER);
@@ -1431,7 +1431,7 @@ progress_stream( gpu_device_t* gpu_device,
         PARSEC_FIFO_PUSH(stream->fifo_pending, (parsec_list_item_t*)task);
         PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream,
                              "GPU[%d]: Reschedule %s(task %p) priority %d: no room available on the GPU for data",
-                             gpu_device->cuda_index, task->ec->function->name, (void*)task->ec, task->ec->priority);
+                             gpu_device->cuda_index, task->ec->task_class->name, (void*)task->ec, task->ec->priority);
     } else {
         /**
          * Do not skip the cuda event generation. The problem is that some of the inputs
@@ -1446,7 +1446,7 @@ progress_stream( gpu_device_t* gpu_device,
         PARSEC_DEBUG_VERBOSE(20, parsec_cuda_output_stream,
                              "GPU[%d]: Submitted %s(task %p) priority %d on stream %s{%p}",
                              gpu_device->cuda_index,
-                             task->ec->function->name, (void*)task->ec, task->ec->priority,
+                             task->ec->task_class->name, (void*)task->ec, task->ec->priority,
                              stream->name, (void*)stream);
     }
     task = NULL;
