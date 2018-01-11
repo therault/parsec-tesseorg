@@ -880,8 +880,8 @@ parsec_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
                 char tmp[MAX_TASK_STRLEN];
                 parsec_output_verbose(1, parsec_cuda_output_stream,
                                       "GPU:\tRequest space on GPU failed for flow index %d/%d for task %s",
-                                      i, this_task->function->nb_flows,
-                                      parsec_snprintf_execution_context(tmp, MAX_TASK_STRLEN, this_task));
+                                      i, this_task->task_class->nb_flows,
+                                      parsec_task_snprintf(tmp, MAX_TASK_STRLEN, this_task));
                 for( j = 0; j < i; j++ ) {
                     if( NULL != temp_loc[j] ) {
                         parsec_list_nolock_lifo_push(&gpu_device->gpu_mem_lru, (parsec_list_item_t*)temp_loc[j]);
@@ -923,7 +923,7 @@ parsec_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
             /* The data is not used, and it's not one of ours: we can free it or reuse it */
             PARSEC_DEBUG_VERBOSE(20, parsec_cuda_output_stream,
                                  "GPU[%d]:\ttask %s:%d repurpose copy %p to data %p instead of %p",
-                                 gpu_device->cuda_index, this_task->function->name, i, lru_gpu_elem, master, oldmaster);
+                                 gpu_device->cuda_index, this_task->task_class->name, i, lru_gpu_elem, master, oldmaster);
 
 #if !defined(PARSEC_GPU_CUDA_ALLOC_PER_TILE)
             /* Let's free this space, and try again to malloc some space */
@@ -1336,8 +1336,8 @@ progress_stream( gpu_device_t* gpu_device,
             if( stream->prof_event_track_enable ) {
                 PARSEC_TASK_PROF_TRACE(stream->profiling,
                                        (-1 == stream->prof_event_key_end ?
-                                        PARSEC_PROF_FUNC_KEY_END(task->ec->parsec_handle,
-                                                                 task->ec->function->function_id) :
+                                        PARSEC_PROF_FUNC_KEY_END(task->ec->taskpool,
+                                                                 task->ec->taskpool->taskpool_id) :
                                         stream->prof_event_key_end),
                                        task->ec);
             }
@@ -1419,7 +1419,7 @@ void dump_exec_stream(parsec_gpu_exec_stream_t* exec_stream)
     for( i = 0; i < exec_stream->max_events; i++ ) {
         if( NULL == exec_stream->tasks[i] ) continue;
         parsec_debug_verbose(0, parsec_cuda_output_stream,
-                             "    %d: %s", i, parsec_snprintf_execution_context(task_str, 128, exec_stream->tasks[i]->ec));
+                             "    %d: %s", i, parsec_task_snprintf(task_str, 128, exec_stream->tasks[i]->ec));
     }
     /* Don't yet dump the fifo_pending queue */
 }
@@ -1872,7 +1872,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_stream_t *es,
             progress_task = NULL;
         }
         /* If we can extract data go for it, otherwise try to drain the pending tasks */
-        gpu_task = parsec_gpu_create_W2R_task(gpu_device, eu_context);
+        gpu_task = parsec_gpu_create_W2R_task(gpu_device, es);
         if( NULL != gpu_task )
             goto get_data_out_of_device;
     }

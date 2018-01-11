@@ -260,7 +260,6 @@ void
 dplasma_zgemm_Destruct( parsec_taskpool_t *tp )
 {
     parsec_zgemm_NN_taskpool_t *zgemm_tp = (parsec_zgemm_NN_taskpool_t *)tp;
-    two_dim_block_cyclic_t* Cdist = (tiled_matrix_desc_t*)zgemm_tp->_g_Cdist;
 
     if ( zgemm_tp->_g_Cdist != NULL ) {
         parsec_tiled_matrix_dc_destroy( (parsec_tiled_matrix_dc_t*)(zgemm_tp->_g_Cdist) );
@@ -269,11 +268,6 @@ dplasma_zgemm_Destruct( parsec_taskpool_t *tp )
 
     parsec_matrix_del2arena( ((parsec_zgemm_NN_taskpool_t *)tp)->arenas[PARSEC_zgemm_NN_DEFAULT_ARENA] );
     parsec_taskpool_free(tp);
-
-    if ( NULL != Cdist ) {
-        tiled_matrix_desc_destroy( Cdist );
-        free( Cdist );
-    }
 }
 
 /**

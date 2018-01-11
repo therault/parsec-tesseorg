@@ -261,8 +261,9 @@ unsigned int tile_owner(int i, int j, grid_2Dcyclic_t* g)
 int get_tile_count(const irregular_tiled_matrix_desc_t *desc, int m, int n)
 {
     assert(0 <= m && m < desc->mt && 0 <= n && n < desc->nt);
-    int res = desc->Mtiling[m] * desc->Ntiling[n];
-    assert(0 < res && res <= desc->m * desc->n);
+    uint64_t res = desc->Mtiling[m] * desc->Ntiling[n];
+    uint64_t max = desc->m * desc->n;
+    assert(0 < res && res <= max);
     return res;
 }
 

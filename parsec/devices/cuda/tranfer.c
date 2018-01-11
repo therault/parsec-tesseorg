@@ -13,7 +13,7 @@
 #include "parsec/data_internal.h"
 #include "parsec/devices/cuda/dev_cuda.h"
 #include "parsec/profiling.h"
-#include "parsec/execution_unit.h"
+#include "parsec/execution_stream.h"
 #include "parsec/arena.h"
 #include "parsec/utils/output.h"
 #include "parsec/scheduling.h"
@@ -31,15 +31,15 @@
  * one of the data from the GPU.
  */
 typedef struct parsec_CUDA_d2h_task_s {
-    parsec_execution_context_t super;
+    parsec_task_t super;
     int nb_data;
 } parsec_CUDA_d2h_task_t;
 
 static int
-hook_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+hook_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                        parsec_CUDA_d2h_task_t* this_task )
 {
-    (void)eu; (void)this_task;
+    (void)es; (void)this_task;
     return PARSEC_SUCCESS;
 }
 
@@ -52,71 +52,71 @@ affinity_of_CUDA_d2h_task( parsec_CUDA_d2h_task_t* this_task,
 }
 
 static void
-iterate_successors_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+iterate_successors_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                                      const parsec_CUDA_d2h_task_t* this_task,
                                      uint32_t action_mask,
                                      parsec_ontask_function_t * ontask, void *ontask_arg )
 {
-    (void)eu; (void)this_task; (void)action_mask; (void)ontask; (void)ontask_arg;
+    (void)es; (void)this_task; (void)action_mask; (void)ontask; (void)ontask_arg;
 }
 
 static void
-iterate_predecessors_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+iterate_predecessors_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                                        const parsec_CUDA_d2h_task_t* this_task,
                                        uint32_t action_mask,
                                        parsec_ontask_function_t * ontask, void *ontask_arg )
 {
-    (void)eu; (void)this_task; (void)action_mask; (void)ontask; (void)ontask_arg;
+    (void)es; (void)this_task; (void)action_mask; (void)ontask; (void)ontask_arg;
 }
 
 static int
-release_deps_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+release_deps_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                                parsec_CUDA_d2h_task_t* this_task,
                                uint32_t action_mask,
                                parsec_remote_deps_t* deps )
 {
-    (void)eu; (void)this_task; (void)action_mask; (void)deps;
+    (void)es; (void)this_task; (void)action_mask; (void)deps;
     return PARSEC_SUCCESS;
 }
 
 static int
-data_lookup_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+data_lookup_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                               parsec_CUDA_d2h_task_t* this_task )
 {
-    (void)eu; (void)this_task;
+    (void)es; (void)this_task;
     return PARSEC_SUCCESS;
 }
 
 static int
-complete_hook_of_CUDA_d2h_task( parsec_execution_unit_t* eu,
+complete_hook_of_CUDA_d2h_task( parsec_execution_stream_t* es,
                                 parsec_CUDA_d2h_task_t* this_task )
 {
-    (void)eu; (void)this_task;
+    (void)es; (void)this_task;
     return PARSEC_SUCCESS;
 }
 
 static parsec_hook_return_t
-release_task_of_CUDA_d2h_task(parsec_execution_unit_t* eu,
+release_task_of_CUDA_d2h_task(parsec_execution_stream_t* es,
                               parsec_CUDA_d2h_task_t* this_task )
 {
-    (void)eu; (void)this_task;
+    (void)es; (void)this_task;
     return PARSEC_HOOK_RETURN_DONE;
 }
 
 static int
-datatype_lookup_of_CUDA_d2h_task( parsec_execution_unit_t * eu,
+datatype_lookup_of_CUDA_d2h_task( parsec_execution_stream_t * es,
                                   const parsec_CUDA_d2h_task_t* this_task,
                                   uint32_t * flow_mask, parsec_dep_data_description_t * data)
 {
-    (void)eu; (void)this_task; (void)flow_mask; (void)data;
+    (void)es; (void)this_task; (void)flow_mask; (void)data;
     return PARSEC_SUCCESS;
 }
 
 static int32_t parsec_CUDA_d2h_counter = 0;
-static uint64_t key_of_CUDA_d2h_task(const parsec_handle_t *parsec_handle,
+static uint64_t key_of_CUDA_d2h_task(const parsec_taskpool_t *tp,
                                      const assignment_t *assignments)
 {
-    (void)parsec_handle; (void)assignments;
+    (void)tp; (void)assignments;
     return (uint64_t)parsec_atomic_add_32b((volatile int32_t*)&parsec_CUDA_d2h_counter, 1);
 }
 
@@ -141,7 +141,7 @@ static const parsec_flow_t flow_of_CUDA_d2h_task;
 static const dep_t flow_of_CUDA_d2h_task_dep = {
     .cond = NULL,
     .ctl_gather_nb = NULL,
-    .function_id = -1,
+    .task_class_id = -1,
     .direct_data = (direct_data_lookup_func_t)flow_of_CUDA_d2h_task_direct_access,
     .dep_index = 1,
     .dep_datatype_index = 0,
@@ -168,9 +168,9 @@ static const symbol_t symb_CUDA_d2h_task_param = {
     .flags = 0x0
 };
 
-static const parsec_function_t parsec_CUDA_d2h_function = {
+static const parsec_task_class_t parsec_CUDA_d2h_task_class = {
     .name = "CUDA D2H data tranfer",
-    .function_id = 0,
+    .task_class_id = 0,
     .nb_flows = 5,
     .nb_parameters = 1,
     .nb_locals = 0,
@@ -209,7 +209,7 @@ static const parsec_function_t parsec_CUDA_d2h_function = {
  */
 parsec_gpu_context_t*
 parsec_gpu_create_W2R_task(gpu_device_t *gpu_device,
-                           parsec_execution_unit_t *eu_context)
+                           parsec_execution_stream_t *es)
 {
     parsec_gpu_context_t *w2r_task = NULL;
     parsec_CUDA_d2h_task_t *d2h_task = NULL;
@@ -229,7 +229,7 @@ parsec_gpu_create_W2R_task(gpu_device_t *gpu_device,
         item = (parsec_list_item_t*)item->list_next;  /* conversion needed for volatile */
         if( 0 == gpu_copy->readers ) {
             if( PARSEC_UNLIKELY(NULL == d2h_task) ) {  /* allocate on-demand */
-                d2h_task = (parsec_CUDA_d2h_task_t*)parsec_thread_mempool_allocate(eu_context->context_mempool);
+                d2h_task = (parsec_CUDA_d2h_task_t*)parsec_thread_mempool_allocate(es->context_mempool);
                 if( PARSEC_UNLIKELY(NULL == d2h_task) )  /* we're running out of memory. Bail out. */
                     break;
             }
@@ -250,11 +250,11 @@ parsec_gpu_create_W2R_task(gpu_device_t *gpu_device,
     w2r_task = (parsec_gpu_context_t *)malloc(sizeof(parsec_gpu_context_t));
     OBJ_CONSTRUCT(w2r_task, parsec_list_item_t);
     d2h_task->super.priority = INT32_MAX;
-    d2h_task->super.function = &parsec_CUDA_d2h_function;
+    d2h_task->super.task_class = &parsec_CUDA_d2h_task_class;
     d2h_task->super.status = PARSEC_TASK_STATUS_NONE;
-    d2h_task->super.parsec_handle = NULL;
+    d2h_task->super.taskpool = NULL;
     d2h_task->nb_data = nb_cleaned;
-    w2r_task->ec = (parsec_execution_context_t*)d2h_task;
+    w2r_task->ec = (parsec_task_t*)d2h_task;
     w2r_task->task_type = GPU_TASK_TYPE_D2HTRANSFER;
     return w2r_task;
 }
@@ -264,7 +264,7 @@ parsec_gpu_create_W2R_task(gpu_device_t *gpu_device,
  */
 int parsec_gpu_W2R_task_fini(gpu_device_t *gpu_device,
                              parsec_gpu_context_t *gpu_task,
-                             parsec_execution_unit_t *eu_context)
+                             parsec_execution_stream_t *es)
 {
     parsec_gpu_data_copy_t *gpu_copy, *cpu_copy;
     parsec_CUDA_d2h_task_t* task = (parsec_CUDA_d2h_task_t*)gpu_task->ec;
@@ -288,7 +288,7 @@ int parsec_gpu_W2R_task_fini(gpu_device_t *gpu_device,
         assert(gpu_copy->readers >= 0);
         parsec_list_nolock_fifo_push(&gpu_device->gpu_mem_lru, (parsec_list_item_t*)gpu_copy);
     }
-    parsec_thread_mempool_free(eu_context->context_mempool, gpu_task->ec);
+    parsec_thread_mempool_free(es->context_mempool, gpu_task->ec);
     free(gpu_task);
     return 0;
 }
