@@ -33,9 +33,9 @@ static parsec_device_t* parsec_device_recursive = NULL;
  * call to parsec_devices_freeze(). This is just a first step, a smarter approach
  * should take this spot.
  */
-volatile float *parsec_device_load = NULL;
-float *parsec_device_sweight = NULL;
-float *parsec_device_dweight = NULL;
+volatile int64_t *parsec_device_load = NULL;
+int64_t *parsec_device_sweight = NULL;
+int64_t *parsec_device_dweight = NULL;
 
 int parsec_devices_init(parsec_context_t* parsec_context)
 {
@@ -217,18 +217,18 @@ int parsec_devices_fini(parsec_context_t* parsec_context)
 
 int parsec_devices_freeze(parsec_context_t* context)
 {
-    float total_sperf = 0.0, total_dperf = 0.0;
+    int64_t total_sperf = 0, total_dperf = 0;
     (void)context;
 
     if(parsec_devices_are_freezed)
         return -1;
 
     if(NULL != parsec_device_load) free((void*)parsec_device_load);
-    posix_memalign((void**)&parsec_device_load, 64, parsec_nb_devices * sizeof(float));
+    posix_memalign((void**)&parsec_device_load, 64, parsec_nb_devices * sizeof(int64_t));
     if(NULL != parsec_device_sweight) free(parsec_device_sweight);
-    parsec_device_sweight = (float*)calloc(parsec_nb_devices, sizeof(float));
+    parsec_device_sweight = (int64_t*)calloc(parsec_nb_devices, sizeof(int64_t));
     if(NULL != parsec_device_dweight) free(parsec_device_dweight);
-    parsec_device_dweight = (float*)calloc(parsec_nb_devices, sizeof(float));
+    parsec_device_dweight = (int64_t*)calloc(parsec_nb_devices, sizeof(int64_t));
     for( uint32_t i = 0; i < parsec_nb_devices; i++ ) {
         parsec_device_t* device = parsec_devices[i];
         if( NULL == device ) continue;
@@ -236,19 +236,19 @@ int parsec_devices_freeze(parsec_context_t* context)
         total_sperf += device->device_sweight;
         parsec_device_dweight[i] = device->device_dweight;
         total_dperf += device->device_dweight;
-	parsec_device_load[i] = 0.;
+	parsec_device_load[i] = 0ULL;
     }
 
     /* Compute the weight of each device including the cores */
-    parsec_debug_verbose(4, parsec_debug_output, "Global Theoretical performance: single %2.4f double %2.4f", total_sperf, total_dperf);
+    parsec_debug_verbose(4, parsec_debug_output, "Global Theoretical performance: single %"PRIu64" double %"PRIu64"", total_sperf, total_dperf);
     for( uint32_t i = 0; i < parsec_nb_devices; i++ ) {
-        parsec_debug_verbose(4, parsec_debug_output, "  Dev[%d]             ->ratio single %2.4e double %2.4e",
+        parsec_debug_verbose(4, parsec_debug_output, "  Dev[%d]             ->ratio single %"PRIu64" double %"PRIu64"",
                              i, parsec_device_sweight[i], parsec_device_dweight[i]);
 
-        parsec_device_sweight[i] = (total_sperf / parsec_device_sweight[i]);
-        parsec_device_dweight[i] = (total_dperf / parsec_device_dweight[i]);
+        parsec_device_sweight[i] = 100.*(total_sperf * 1. / parsec_device_sweight[i]);
+        parsec_device_dweight[i] = 100.*(total_dperf * 1. / parsec_device_dweight[i]);
         /* after the weighting */
-        parsec_debug_verbose(4, parsec_debug_output, "  Dev[%d]             ->ratio single %2.4e double %2.4e",
+        parsec_debug_verbose(4, parsec_debug_output, "  Dev[%d]             ->ratio single %"PRIu64" double %"PRIu64"",
                              i, parsec_device_sweight[i], parsec_device_dweight[i]);
     }
 
@@ -277,8 +277,8 @@ int parsec_devices_select(parsec_context_t* context)
         parsec_device_cpus->type = PARSEC_DEV_CPU;
         parsec_devices_add(context, parsec_device_cpus);
         /* TODO: This is plain WRONG, but should work by now */
-        parsec_device_cpus->device_sweight = nb_total_comp_threads * 8 * (float)2.27;
-        parsec_device_cpus->device_dweight = nb_total_comp_threads * 4 * 2.27;
+        parsec_device_cpus->device_sweight = (int64_t)(nb_total_comp_threads * 8 * 2.27);
+        parsec_device_cpus->device_dweight = (int64_t)(nb_total_comp_threads * 4 * 2.27);
     }
 
     /* By now let's add one device for the recursive kernels */
@@ -288,8 +288,8 @@ int parsec_devices_select(parsec_context_t* context)
         parsec_device_recursive->type = PARSEC_DEV_RECURSIVE;
         parsec_devices_add(context, parsec_device_recursive);
         /* TODO: This is plain WRONG, but should work by now */
-        parsec_device_recursive->device_sweight = nb_total_comp_threads * 8 * (float)2.27;
-        parsec_device_recursive->device_dweight = nb_total_comp_threads * 4 * 2.27;
+        parsec_device_recursive->device_sweight = (int64_t)(nb_total_comp_threads * 8 * 2.27);
+	parsec_device_recursive->device_dweight = (int64_t)(nb_total_comp_threads * 4 * 2.27);
     }
 #if defined(PARSEC_HAVE_CUDA)
     return parsec_gpu_init(context);

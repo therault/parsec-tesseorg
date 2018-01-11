@@ -50,8 +50,8 @@ struct parsec_device_s {
     uint64_t required_data_in;
     uint64_t required_data_out;
     uint64_t executed_tasks;
-    float device_sweight;  /**< Number of single precision operations per second */
-    float device_dweight;  /**< Number of double precision operations per second */
+    uint64_t device_sweight;  /**< Number of single precision operations per second */
+    uint64_t device_dweight;  /**< Number of double precision operations per second */
 #if defined(PARSEC_PROF_TRACE)
     parsec_thread_profiling_t *profiling;
 #endif  /* defined(PROFILING) */
@@ -64,9 +64,9 @@ extern parsec_atomic_lock_t parsec_devices_mutex;
 /**
  * Temporary variables used for load-balancing purposes.
  */
-extern volatile float *parsec_device_load;
-extern float *parsec_device_sweight;
-extern float *parsec_device_dweight;
+extern volatile int64_t *parsec_device_load;
+extern int64_t *parsec_device_sweight;
+extern int64_t *parsec_device_dweight;
 
 /**
  * Initialize the internal structures for managing external devices such as

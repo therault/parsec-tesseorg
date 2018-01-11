@@ -68,12 +68,12 @@ typedef int (*advance_task_function_t)(gpu_device_t            *gpu_device,
                                        parsec_gpu_exec_stream_t *gpu_stream);
 
 struct __parsec_gpu_context {
-    parsec_list_item_t          list_item;
-    parsec_task_t *ec;
+    parsec_list_item_t         list_item;
+    parsec_task_t             *ec;
     advance_task_function_t    submit;
     int                        task_type;
     int                        pushout[MAX_PARAM_COUNT];
-    const parsec_flow_t        *flow[MAX_PARAM_COUNT];
+    const parsec_flow_t       *flow[MAX_PARAM_COUNT];
 };
 
 struct __parsec_gpu_exec_stream {

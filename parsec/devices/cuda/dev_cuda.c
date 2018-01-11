@@ -541,8 +541,8 @@ int parsec_gpu_init(parsec_context_t *parsec_context)
         if (parsec_cuda_device_lookup_cudamp_floprate(major, minor, &srate, &drate) == PARSEC_ERROR ) {
             return -1;
         }
-        gpu_device->super.device_sweight = (float)streaming_multiprocessor * (float)srate * (float)clockRate * 2e-3f;
-        gpu_device->super.device_dweight = (float)streaming_multiprocessor * (float)drate * (float)clockRate * 2e-3f;
+        gpu_device->super.device_sweight = (int64_t)(streaming_multiprocessor * srate * clockRate * 2e-3f);
+	gpu_device->super.device_dweight = (int64_t)(streaming_multiprocessor * drate * clockRate * 2e-3f);
 
         if( show_caps ) {
             parsec_inform("GPU Device %d (capability %d.%d): %s\n"
@@ -550,7 +550,7 @@ int parsec_gpu_init(parsec_context_t *parsec_context)
                           "\tclockRate (MHz)    : %2.4f\n"
                           "\tconcurrency        : %s\n"
                           "\tcomputeMode        : %d\n"
-                          "\tpeak Gflops        : single %2.4f, double %2.4f",
+                          "\tpeak Gflops        : single %"PRId64", double %"PRId64"",
                           i, major, minor,szName,
                           streaming_multiprocessor,
                           clockRate,
@@ -1214,8 +1214,6 @@ int parsec_gpu_sort_pending_list(gpu_device_t *gpu_device)
 int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
 {
     int i, dev_index = -1, data_index = 0;
-    parsec_taskpool_t* tp = this_task->taskpool;
-
     /* Step one: Find the first data in WRITE mode stored on a GPU */
     for( i = 0; i < this_task->task_class->nb_flows; i++ ) {
         if( (NULL != this_task->task_class->out[i]) &&
@@ -1223,7 +1221,13 @@ int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
             data_index = this_task->task_class->out[i]->flow_index;
             dev_index  = this_task->data[data_index].data_in->original->owner_device;
             if (dev_index > 1) {
-                break;
+	      /* Increase load on Device */
+	      int64_t initial, load;
+	      do {
+		initial = parsec_device_load[dev_index];
+		load = ratio * parsec_device_sweight[dev_index];
+	      } while(!parsec_atomic_cas_64b(&(parsec_device_load[dev_index]), initial, initial+load));
+	      break;
             }
         }
     }
@@ -1233,15 +1237,20 @@ int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
     if( dev_index <= 1 ) {  /* This is the first time we see this data for a GPU.
                              * Let's decide which GPU will work on it. */
 
-      int second_best, best_index; /* default value: first CPU device */
-      float *initial = (float*)malloc(parsec_nb_devices * sizeof(float));
-      float *projected = (float*)malloc(parsec_nb_devices * sizeof(float));
+      int best_index; /* default value: first CPU device */
+      int64_t *initial = (int64_t*)malloc(parsec_nb_devices * sizeof(int64_t));
+      int64_t *projected = (int64_t*)malloc(parsec_nb_devices * sizeof(int64_t));
 
+      char tttt[1024]; tttt[0] = '\0';
+      sprintf(tttt, "GEMM(%2d,%2d,%2d) => initial[] = {", this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value);
       for( dev_index = 0; dev_index < parsec_devices_enabled(); dev_index++ ) {
 	if (dev_index == 1) continue;
 	initial[dev_index] = parsec_device_load[dev_index];
+	sprintf(tttt+strlen(tttt), " %"PRId64"", parsec_device_load[dev_index]);
       }
+      fprintf(stderr, "%s }\n", tttt); 
 
+      best_index = 0;
       for( dev_index = 0; dev_index < parsec_devices_enabled(); dev_index++ ) {
 	if (dev_index == 1) continue;
 	projected[dev_index] = initial[dev_index] + ratio * parsec_device_sweight[dev_index];
@@ -1249,11 +1258,7 @@ int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
 	  best_index = dev_index;
       } /* Build the projected gantt on each device for this task and identify the best candidate */
 
-      fprintf(stderr, "GEMM(%2d,%2d,%2d) => CAS for dev %d load goes from %f -> %f. Adding ratio %lf, sweight %f\n",
-	      this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value,
-	      best_index, initial[best_index], projected[best_index], ratio, parsec_device_sweight[best_index]);
-
-      while (!parsec_atomic_cas_32b(parsec_device_load+best_index, initial[best_index], projected[best_index])) {
+      while (!parsec_atomic_cas_64b(&(parsec_device_load[best_index]), initial[best_index], projected[best_index])) {
 	/* CAS failed, best_index load changed, we update best_index info. */
 	initial[best_index] = parsec_device_load[best_index];
 	projected[best_index] = initial[best_index] + ratio * parsec_device_sweight[best_index];
@@ -1264,42 +1269,17 @@ int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio )
 	    best_index = dev_index;
 	}
       }
+
+      assert( best_index != 1 );
+      dev_index = best_index;
+
+      fprintf(stderr, "GEMM(%2d,%2d,%2d) => CAS for dev %d load goes from %"PRId64" -> %"PRId64". Adding ratio %lf, sweight %"PRId64", load %"PRId64"\n",
+	      this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value,
+	      best_index, initial[best_index], projected[best_index], ratio, parsec_device_sweight[best_index], parsec_device_load[best_index]);
+
       free(initial);
       free(projected);
-      assert( best_index != 1 );
-      dev_index = best_index;
     }
-
-#if 0
-      do { /* ratio is homogeneous to a time to completion for this task */
-	best_index = 0;
-        weight[best_index] = parsec_device_load[best_index] + ratio * parsec_device_sweight[best_index];
-
-        /* Start at 2, to skip the recursive body */
-        for( dev_index = 2; dev_index < parsec_devices_enabled(); dev_index++ ) {
-            /* Skip the device if it is not configured */
-            if(!(tp->devices_mask & (1 << dev_index))) continue;
-            weight[dev_index] = parsec_device_load[dev_index] + ratio * parsec_device_sweight[dev_index];
-
-	    /* fprintf(stderr, "GEMM(%2d,%2d,%2d) => best_weight[%3d]: %5.1f\t= %5.1f  \t+ %3.1lf\t* %2.1f;\t dev_weight[%d]: %5.1f\t= %5.1f  \t+ %3.1lf\t* %2.1f\n", */
-	    /* 	    this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value, */
-	    /* 	    best_index, weight[best_index], parsec_device_load[best_index], ratio, parsec_device_sweight[best_index], */
-	    /* 	    dev_index,  weight[dev_index],  parsec_device_load[dev_index],  ratio, parsec_device_sweight[dev_index]); */
-
-            if( weight[best_index] > weight[dev_index] )
-                best_index = dev_index;
-        }
-
-	fprintf(stderr, "GEMM(%2d,%2d,%2d) => CAS for dev %d load goes from %f -> %f. Adding ratio %lf, sweight %f\n",
-		this_task->locals[0].value, this_task->locals[1].value, this_task->locals[2].value,
-		best_index, parsec_device_load[best_index], weight[best_index], ratio, parsec_device_sweight[best_index]);
-
-      } while(!parsec_atomic_cas_32b(parsec_device_load+best_index, parsec_device_load[best_index], weight[best_index]));
-      //parsec_device_load[best_index] += ratio * parsec_device_sweight[best_index];
-      assert( best_index != 1 );
-      dev_index = best_index;
-    }
-#endif
     return dev_index;
 }
 
@@ -1866,6 +1846,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_stream_t *es,
     cudaError_t status;
     int rc, exec_stream = 0;
     parsec_gpu_context_t *progress_task, *out_task_submit = NULL, *out_task_pop = NULL;
+    int64_t initial = -1, load = -1;
 #if defined(PARSEC_DEBUG_NOISIER)
     char tmp[MAX_TASK_STRLEN];
 #endif
@@ -2016,7 +1997,12 @@ parsec_gpu_kernel_scheduler( parsec_execution_stream_t *es,
     __parsec_complete_execution( es, gpu_task->ec );
     gpu_device->super.executed_tasks++;
  remove_gpu_task:
-    parsec_device_load[gpu_device->super.device_index] -= parsec_device_sweight[gpu_device->super.device_index];
+    do {
+      double ratio = 1.;/* gpu_task->ec->task_class->incarnations[gpu_task->ec->chore_id]->weight(gpu_task->ec); */
+      initial = parsec_device_load[gpu_device->super.device_index];
+      load = ratio * parsec_device_sweight[gpu_device->super.device_index];
+    } while (!parsec_atomic_cas_64b(&(parsec_device_load[gpu_device->super.device_index]), initial, initial - load));
+
     free( gpu_task );
     rc = parsec_atomic_dec_32b( &(gpu_device->mutex) );
     if( 0 == rc ) {  /* I was the last one */
