@@ -9,6 +9,13 @@ tools/profiling/python/utilities/bash.env
 tools/profiling/python/utilities/csh.env
 tools/profiling/python/utilities/fish.env
 
+# Plasma to parsec examples
+tools/q2j/plasma2parsec/*.c
+tools/q2j/plasma2parsec/*.jdf
+
+# Build directories
+build*
+
 # Cmake internal files
 CMakeFiles/
 cmake_install.cmake

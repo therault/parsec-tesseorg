@@ -1,0 +1,231 @@
+extern "C" %{
+/*
+ * Copyright (c) 2010-2016 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation. All rights
+ *                         reserved.
+ *
+ * @precisions normal z -> s d c
+ * $COPYRIGHT
+ *
+ */
+#include "summa/lib/dplasmajdf.h"
+#include "summa/lib/dplasmaaux.h"
+#include "irregular_tiled_matrix.h"
+#include <math.h>
+
+#if defined(PARSEC_HAVE_CUDA)
+#include <cublas.h>
+#endif  /* defined(PARSEC_HAVE_CUDA) */
+
+%}
+
+/*
+ * Globals
+ */
+transA  [type = int]
+transB  [type = int]
+
+alpha   [type = parsec_complex64_t]
+
+descA   [type = "const irregular_tiled_matrix_desc_t *"]
+descB   [type = "const irregular_tiled_matrix_desc_t *"]
+descC   [type = "irregular_tiled_matrix_desc_t *"]
+Cdist   [type = "parsec_ddesc_t *"]
+
+P       [type = "int" hidden=on default="descC->grid.rows"]
+Q       [type = "int" hidden=on default="descC->grid.cols"]
+/* Look ahead on both dimensions */
+lookP   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
+lookQ   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
+createC [type = "int"]
+
+/**************************************************
+ *                       READ_A                   *
+ **************************************************/
+READ_A(m, k)  [profile = off]
+
+m = 0 .. descA->mt-1
+k = 0 .. descA->nt-1
+
+: descA(m, k)
+
+READ A <- descA(m, k)
+       -> A RING_A(m, k, k%Q)
+BODY
+{
+    printlog("rank %u <- A(%d,%d)\n", ((parsec_ddesc_t*)descA)->myrank, m, k);
+}
+END
+
+RING_A(m, k, q)  [profile = off]
+
+m = 0 .. descA->mt-1
+k = 0 .. descA->nt-1
+q = 0 .. Q-1
+prevq = (q-1+Q)%Q
+nextq = (q+1)%Q
+
+: Cdist(m, q)
+
+READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq)
+       -> A SUMMA(m, q .. descC->nt-1 .. Q, k)
+       -> (nextq != (k%Q)) ? A RING_A(m, k, nextq)
+
+CTL ctla <- (k >= lookQ) ? ctla SUMMA(m, q .. descC->nt-1 .. Q, k-lookQ)
+
+BODY
+{
+    printlog("rank %u <- A(%d,%d)\n", ((parsec_ddesc_t*)descA)->myrank, m, k);
+}
+END
+
+/**************************************************
+ *                       READ_B                   *
+ **************************************************/
+READ_B(n, k) [profile = off]
+
+n = 0 .. descB->mt-1
+k = 0 .. descB->nt-1
+
+: descB(n, k)
+
+READ B <- descB(n, k)
+       -> B RING_B(n, k, k%P)
+BODY
+{
+     printlog("rank %u <- B(%d,%d)\n", ((parsec_ddesc_t*)descB)->myrank, n, k);
+}
+END
+
+RING_B(n, k, p)  [profile = off]
+
+n = 0 .. descB->mt-1
+k = 0 .. descB->nt-1
+p = 0 .. P-1
+prevp = (p-1+P)%P
+nextp = (p+1)%P
+
+: Cdist(p, n)
+
+READ B <- (k%P == p) ? B READ_B(n, k) : B RING_B(n, k, prevp)
+       -> B SUMMA(p .. descC->mt-1 .. P, n, k)
+       -> (nextp != (k%P)) ? B RING_B(n, k, nextp)
+
+CTL ctlb <- (k >= lookP) ? ctlb SUMMA(p .. descC->mt-1 .. P, n, k-lookP)
+
+BODY
+{
+     printlog("rank %u <- B(%d,%d)\n", ((parsec_ddesc_t*)descB)->myrank, n, k);
+}
+END
+
+/**************************************************
+ *                       SUMMA                     *
+ **************************************************/
+SUMMA(m, n, k)
+
+// Execution space
+m = 0 .. descC->mt-1
+n = 0 .. descC->nt-1
+k = 0 .. descA->nt-1
+
+// Parallel partitioning
+: descC(m, n)
+
+// Parameters
+READ A <- A RING_A(m, k, n%Q)
+READ B <- B RING_B(n, k, m%P)
+RW   C <- ((k == 0) & (createC == 1)) ? NEW
+       <- ((k == 0) & (createC == 0)) ? descC(m,n)
+       <- (k > 0)                     ? C SUMMA(m,n,k-1)
+       -> (k == (descA->nt-1))         ? descC(m, n) : C SUMMA( m, n, k+1 )
+
+CTL ctla -> (k < (descA->nt-lookQ)) ? ctla RING_A(m, k+lookQ, n%Q)
+CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb RING_B(n, k+lookP, m%P)
+
+BODY [type=CUDA
+      dyld=cublasZgemm dyldtype=cublas_zgemm_t
+      weight=(descA->nt-k)]
+{
+#if defined(PRECISION_z) || defined(PRECISION_c)
+    cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
+    cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
+#else
+    double lalpha = alpha;
+    double lbeta  = (k==0) ? 0.0:1.0;
+#endif
+    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
+    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
+    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
+    /* int tempmm = cC->mb; */
+    /* int tempnn = cC->nb; */
+    /* int tempkk = cA->nb; */
+    /* int ldam = cA->mb; */
+    /* int ldbn = cB->nb; */
+    /* int ldcm = cC->mb; */
+
+    int cAmb = descA->Mtiling[m];
+    int cAnb = descA->Ntiling[k];
+    int cBnb = descB->Ntiling[n];
+    int cCmb = cAmb;
+    int cCnb = cBnb;
+
+    int tempmm = cCmb;
+    int tempnn = cCnb;
+    int tempkk = cAnb;
+    int ldam = cAmb;
+    int ldbn = cBnb;
+    int ldcm = cCmb;
+
+    cublasStatus_t status;
+    cublasSetKernelStream( parsec_body.stream );
+    parsec_body.dyld_fn( lapack_const(transA), lapack_const(transB),
+             tempmm, tempnn, tempkk,
+             lalpha, (cuDoubleComplex*)A, ldam,
+                     (cuDoubleComplex*)B, ldbn,
+             lbeta,  (cuDoubleComplex*)C, ldcm );
+    status = cublasGetError();
+    PARSEC_CUDA_CHECK_ERROR( "cublasZsumma ", status,
+                            {return -1;} );
+}
+END
+
+BODY
+{
+    parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
+    irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A;
+    irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B;
+    irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C;
+    int tempmm = cC->mb;
+    int tempnn = cC->nb;
+    int tempkk = cA->nb;
+    int ldam = cA->mb;
+    int ldbn = cB->nb;
+    int ldcm = cC->mb;
+
+    fprintf(stdout, "summa( %d, %d, %d )\n"
+             "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",
+             m, n, k,
+             plasma_const( transA ), plasma_const( transB ),
+             tempmm, tempnn, tempkk,
+             creal(alpha), m, k, ldam,
+                           n, k, ldbn,
+             creal(lbeta), m, n, ldcm);
+#if !defined(PARSEC_DRY_RUN)
+    CORE_zgemm(transA, transB,
+               tempmm, tempnn, tempkk,
+               alpha, A /*A(m, k)*/, ldam,
+                      B /*B(n, k)*/, ldbn,
+               lbeta, C /*C(m, n)*/, ldcm);
+#endif  /* !defined(PARSEC_DRY_RUN) */
+
+    printlog("summa( %d, %d, %d )\n"
+             "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",
+             m, n, k,
+             plasma_const( transA ), plasma_const( transB ),
+             tempmm, tempnn, tempkk,
+             creal(alpha), m, k, ldam,
+                           n, k, ldbn,
+             creal(lbeta), m, n, ldcm);
+}
+END

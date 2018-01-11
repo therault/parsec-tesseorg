@@ -134,6 +134,11 @@ option(PARSEC_DEBUG_HISTORY
   "Keep a summarized history of critical events in memory that can be dumped in gdb when deadlock occur." OFF)
 option(PARSEC_CALL_TRACE
   "Enable the output of the kernels call trace during execution" OFF)
+option(PARSEC_WITH_DEBUGGER_THREAD
+  "Activate the debugger thread. Can attached itself in gdb in a screen tab." OFF)
+if (PARSEC_WITH_DEBUGGER_THREAD)
+  add_definitions(-DDEBUGGER_THREAD)
+endif()
 
 ### Simulating Options
 option(PARSEC_SIM
@@ -712,9 +717,10 @@ mark_as_advanced(PARSEC_C_INCLUDES)
 #
 set(parsec_ptgpp_EXE "NOT-DEFINED")
 add_subdirectory(tools)
-IF(CMAKE_CROSSCOMPILING)
+
+IF(CMAKE_CROSSCOMPILING OR WITH_SCOREP_PROFILING)
   SET(IMPORT_EXECUTABLES "IMPORTFILE-NOTFOUND" CACHE FILEPATH "Point it to the export file from a native build")
-  MESSAGE(STATUS "Prepare cross-compiling using ${IMPORT_EXECUTABLES}")
+  MESSAGE(STATUS "Preparing compiling with Score-P using ${IMPORT_EXECUTABLES}")
   INCLUDE(${IMPORT_EXECUTABLES})
   SET(parsec_ptgpp_EXE native-parsec_ptgpp)
 ELSE(CMAKE_CROSSCOMPILING)
@@ -775,6 +781,7 @@ install(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/constants.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_config_bottom.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/data_distribution.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/parsec/include/parsec/parsec_description_structures.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/datatype.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/profiling.h
   ${CMAKE_CURRENT_SOURCE_DIR}/parsec/data.h
