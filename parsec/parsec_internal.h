@@ -308,6 +308,7 @@ parsec_dependency_t *parsec_hash_find_deps(const parsec_taskpool_t *tp,
 
 typedef struct __parsec_internal_incarnation_s {
     int32_t                     type;
+    parsec_hook_t              *here;
     parsec_evaluate_function_t *evaluate;
     parsec_hook_t              *hook;
     char                       *dyld;
@@ -378,10 +379,11 @@ PARSEC_DECLSPEC extern int parsec_want_rusage;
  */
 #define PARSEC_TASK_STATUS_NONE           (uint8_t)0x00
 #define PARSEC_TASK_STATUS_PREPARE_INPUT  (uint8_t)0x01
-#define PARSEC_TASK_STATUS_EVAL           (uint8_t)0x02
-#define PARSEC_TASK_STATUS_HOOK           (uint8_t)0x03
-#define PARSEC_TASK_STATUS_PREPARE_OUTPUT (uint8_t)0x04
-#define PARSEC_TASK_STATUS_COMPLETE       (uint8_t)0x05
+#define PARSEC_TASK_STATUS_HERE           (uint8_t)0x02
+#define PARSEC_TASK_STATUS_EVAL           (uint8_t)0x03
+#define PARSEC_TASK_STATUS_HOOK           (uint8_t)0x04
+#define PARSEC_TASK_STATUS_PREPARE_OUTPUT (uint8_t)0x05
+#define PARSEC_TASK_STATUS_COMPLETE       (uint8_t)0x06
 
 /**
  * The minimal execution context contains only the smallest amount of information

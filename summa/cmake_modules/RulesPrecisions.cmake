@@ -2,9 +2,9 @@
 # PaRSEC Internal: generation of various floating point precision files from a template.
 #
 
-set(GENDEPENDENCIES  ${PARSEC_SOURCE_DIR}/tools/precision_generator/genDependencies.py)
-set(PRECISIONPP      ${PARSEC_SOURCE_DIR}/tools/precision_generator/codegen.py)
-set(PRECISIONPP_subs ${PARSEC_SOURCE_DIR}/tools/precision_generator/subs.py)
+set(GENDEPENDENCIES  ${PARSEC_SOURCE_DIR}/dplasma/tools/PrecisionGenerator/PrecisionDeps.py)
+set(PRECISIONPP      ${PARSEC_SOURCE_DIR}/dplasma/tools/PrecisionGenerator/PrecisionGenerator.py)
+set(PRECISIONPP_subs ${PARSEC_SOURCE_DIR}/dplasma/tools/PrecisionGenerator/subs.py)
 
 include(ParseArguments)
 FIND_PACKAGE(PythonInterp REQUIRED)

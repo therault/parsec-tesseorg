@@ -95,8 +95,8 @@ dplasma_zgemm_New( PLASMA_enum transA, PLASMA_enum transB,
                    parsec_complex64_t beta,  parsec_tiled_matrix_dc_t* C)
 {
     parsec_taskpool_t* zgemm_tp;
-    parsec_arena_t* arena;
     two_dim_block_cyclic_t *Cdist;
+    parsec_arena_t* arena;
     int P, Q, m, n;
 
     /* Check input arguments */

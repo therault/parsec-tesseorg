@@ -11,6 +11,11 @@ if(SUMMA_WITH_RANDOM_TILING)
   add_definitions(-DSUMMA_WITH_RANDOM_TILING)
 endif()
 
+if(DPLASMA_WITH_RECURSIVE)
+  # TODO: This will need to be added to the futur dplasma_config.h.in
+  add_definitions(-DPARSEC_HAVE_RECURSIVE)
+endif()
+
 LIST(APPEND CMAKE_MODULE_PATH "${PARSEC_SOURCE_DIR}/dplasma/cmake_modules/")
  find_package(COREBLAS REQUIRED)
 if(NOT COREBLAS_FOUND)
@@ -19,6 +24,7 @@ endif(NOT COREBLAS_FOUND)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testing/")
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/PrecisionGenerator/")
 
 set(DPLASMA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../dplasma)
 set(DPLASMA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/../dplasma)
@@ -33,16 +39,9 @@ include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/include )
 include_directories( ${PARSEC_SOURCE_DIR}/data_dist/matrix )
 include_directories( ${COREBLAS_INCLUDE_DIRS} )
 
-option(SUMMA_WITH_RECURSIVE
-  "Enable recursive kernels to be called when available" OFF)
-if(DPLASMA_WITH_RECURSIVE)
-  # TODO: This will need to be added to the futur dplasma_config.h.in
-  add_definitions(-DPARSEC_HAVE_RECURSIVE)
-endif()
-
-
 set(EXTRA_SOURCES
   src/irregular_tiled_matrix.c
+  src/irregular_subtile.c
   )
 
 include(RulesPrecisions)
@@ -61,6 +60,7 @@ set(SUMMA_JDF
   lib/zsumma_TN.jdf
   lib/zsumma_NN.jdf
   lib/zsumma_NT.jdf
+  lib/zgemm_bcast_NN.jdf
   )
 
 set(SUMMA_WRAPPER_SRC
@@ -85,7 +85,7 @@ add_library(summa
   ${generated_files}
   ${generated_wrappers}
   ${EXTRA_SOURCES})
-add_dependencies(summa summa_includes)
+add_dependencies(summa dplasma summa_includes)
 
 target_link_libraries(summa ${DPLASMA_LIBRARIES})
 
@@ -101,12 +101,19 @@ install(TARGETS summa
 
 install(FILES
   ${CMAKE_SOURCE_DIR}/summa/include/irregular_tiled_matrix.h
+  ${CMAKE_SOURCE_DIR}/summa/include/irregular_subtile.h
   DESTINATION include)
 
 
 set(TESTING_SUMMA_SRC
   testing/testing_zsumma.c
   )
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/parsec-summa.pc.in"
+    "${PROJECT_INCLUDE_DIR}/parsec-summa.pc" @ONLY)
+
+install(FILES "${PROJECT_INCLUDE_DIR}/parsec-summa.pc"   DESTINATION lib/pkgconfig)
 
 
 link_directories(${COREBLAS_LIBRARY_DIRS})

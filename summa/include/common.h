@@ -8,7 +8,7 @@
 #define _TESTSCOMMON_H
 
 /* includes used by the testing_*.c */
-#include "parsec_config.h"
+#include "parsec/parsec_config.h"
 
 /* system and io */
 #include <stdlib.h>
@@ -180,7 +180,7 @@ static inline int min(int a, int b) { return a < b ? a : b; }
         DDESC.mat = parsec_data_allocate((size_t)DDESC.super.nb_local_tiles * \
                                         (size_t)DDESC.super.bsiz *      \
                                         (size_t)parsec_datadist_getsizeoftype(DDESC.super.mtype)); \
-        parsec_ddesc_set_key((parsec_ddesc_t*)&DDESC, #DDESC);            \
+        parsec_ddesc_set_key((parsec_data_collection_t*)&DDESC, #DDESC);            \
     }
 
 #define PASTE_CODE_ENQUEUE_KERNEL(PARSEC, KERNEL, PARAMS)                \
@@ -238,5 +238,9 @@ static inline int min(int a, int b) { return a < b ? a : b; }
     }                                                                   \
     (void)gflops;
 
+#define PASTE_MKL_WARMUP()                              \
+    parsec_complex64_t A = 1, B = 2, C = 0;             \
+    CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,            \
+               1, 1, 1, 3., &A, 1, &B, 1, 1., &C, 1);
 
 #endif /* _TESTSCOMMON_H */

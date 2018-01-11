@@ -76,6 +76,7 @@ struct data_repo_entry_s {
     parsec_thread_mempool_t   *data_repo_mempool_owner;
     void*                      generator;
     uint64_t                   key;
+    parsec_execution_stream_t *ttg_task; /* weird, I'd expect a parsec_task */
     volatile uint32_t          usagecnt;
     volatile uint32_t          usagelmt;
     volatile uint32_t          retained;

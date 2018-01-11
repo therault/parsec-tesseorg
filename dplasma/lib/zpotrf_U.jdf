@@ -81,6 +81,7 @@ BODY [type=RECURSIVE]
 
         parsec_recursivecall(es, (parsec_task_t*)this_task,
                              parsec_zpotrf, dplasma_zpotrf_Destruct,
+							  parsec_recursivecall_callback,
                              1, small_descT);
 
         return PARSEC_HOOK_RETURN_ASYNC;
@@ -160,6 +161,7 @@ BODY [type=RECURSIVE]
 
         parsec_recursivecall(es, (parsec_task_t*)this_task,
                              parsec_ztrsm, dplasma_ztrsm_Destruct,
+							  parsec_recursivecall_callback,
                              2, small_descT, small_descC );
 
         return PARSEC_HOOK_RETURN_ASYNC;
@@ -237,6 +239,7 @@ BODY [type=RECURSIVE]
 
         parsec_recursivecall(es, (parsec_task_t*)this_task,
                              parsec_zherk, dplasma_zherk_Destruct,
+							  parsec_recursivecall_callback,
                              2, small_descA, small_descT);
         return PARSEC_HOOK_RETURN_ASYNC;
     }
@@ -362,6 +365,7 @@ BODY [type=RECURSIVE]
 
         parsec_recursivecall(es, (parsec_task_t*)this_task,
                              parsec_zgemm, dplasma_zgemm_Destruct,
+							  parsec_recursivecall_callback,
                              3, small_descA, small_descB, small_descC );
 
         return PARSEC_HOOK_RETURN_ASYNC;

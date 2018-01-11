@@ -58,6 +58,12 @@ __data_repo_lookup_entry_and_create(parsec_execution_stream_t *es, data_repo_t *
         if( e->key == key ) {
             e->retained++; /* Until we update the usage limit */
             parsec_atomic_unlock(&repo->heads[h].lock);
+            { 
+              uint32_t i;
+              for(i = 0; i < repo->nbdata; i++)
+                e->data[i] = NULL;
+            }
+            e->ttg_task = NULL;
             return e;
         }
     }

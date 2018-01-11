@@ -430,7 +430,22 @@ int __parsec_complete_execution( parsec_execution_stream_t *es,
     return rc;
 }
 
-int __parsec_context_wait( parsec_execution_stream_t* es )
+typedef int (*cond_function_t)(parsec_context_t*, void *);
+
+static int cond_stop_on_all_done(parsec_context_t *parsec_context, void *cond_function_data)
+{
+  (void)cond_function_data;
+  return all_tasks_done(parsec_context);
+}
+
+static int cond_stop_on_taskpool_done(parsec_context_t *parsec_context, void *cond_function_data )
+{
+    parsec_taskpool_t *tp = (parsec_taskpool_t*)cond_function_data;
+    (void)parsec_context;
+    return (tp->nb_tasks == PARSEC_RUNTIME_RESERVED_NB_TASKS) && (tp->nb_pending_actions == 0);
+}
+
+int __parsec_wait( parsec_execution_stream_t* es, cond_function_t cond_function_stop, void *cond_function_data )
 {
     uint64_t misses_in_a_row;
     parsec_context_t* parsec_context = es->virtual_process->parsec_context;
@@ -481,7 +496,7 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
     }
 
   skip_first_barrier:
-    while( !all_tasks_done(parsec_context) ) {
+    while( !cond_function_stop(parsec_context, cond_function_data)) {
 #if defined(DISTRIBUTED)
         if( (1 == parsec_communication_engine_up) &&
             (es->virtual_process[0].parsec_context->nb_nodes == 1) &&
@@ -518,89 +533,91 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
 
             rc = PARSEC_HOOK_RETURN_DONE;
             if(task->status <= PARSEC_TASK_STATUS_PREPARE_INPUT) {
-                PINS(es, PREPARE_INPUT_BEGIN, task);
-                rc = task->task_class->prepare_input(es, task);
-                PINS(es, PREPARE_INPUT_END, task);
+	      PINS(es, PREPARE_INPUT_BEGIN, task);
+	      rc = task->task_class->prepare_input(es, task);
+	      PINS(es, PREPARE_INPUT_END, task);
             }
             switch(rc) {
             case PARSEC_HOOK_RETURN_DONE: {
-                if(task->status <= PARSEC_TASK_STATUS_HOOK) {
-                    rc = __parsec_execute( es, task );
-                }
-                /* We're good to go ... */
-                switch(rc) {
-                case PARSEC_HOOK_RETURN_DONE:    /* This execution succeeded */
-                    task->status = PARSEC_TASK_STATUS_COMPLETE;
-                    __parsec_complete_execution( es, task );
-                    break;
-                case PARSEC_HOOK_RETURN_AGAIN:   /* Reschedule later */
-                    task->status = PARSEC_TASK_STATUS_HOOK;
-                    if(0 == task->priority) {
-                        SET_LOWEST_PRIORITY(task, parsec_execution_context_priority_comparator);
-                    } else
-                        task->priority /= 10;  /* demote the task */
-                    PARSEC_LIST_ITEM_SINGLETON(task);
-                    __parsec_schedule(es, task, distance + 1);
-                    task = NULL;
-                    break;
-                case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
-                                                 * even try to change it's state, the completion
-                                                 * will be triggered asynchronously. */
-                    break;
-                case PARSEC_HOOK_RETURN_NEXT:    /* Try next variant [if any] */
-                case PARSEC_HOOK_RETURN_DISABLE: /* Disable the device, something went wrong */
-                case PARSEC_HOOK_RETURN_ERROR:   /* Some other major error happened */
-                    assert( 0 ); /* Internal error: invalid return value */
-                }
-                nbiterations++;
-                break;
+	      if(task->status <= PARSEC_TASK_STATUS_HOOK) {
+		rc = __parsec_execute( es, task );
+	      }
+	      /* We're good to go ... */
+	      switch(rc) {
+	      case PARSEC_HOOK_RETURN_DONE:    /* This execution succeeded */
+		task->status = PARSEC_TASK_STATUS_COMPLETE;
+		__parsec_complete_execution( es, task );
+		break;
+	      case PARSEC_HOOK_RETURN_AGAIN:   /* Reschedule later */
+		task->status = PARSEC_TASK_STATUS_HOOK;
+		if(0 == task->priority) {
+		  SET_LOWEST_PRIORITY(task, parsec_execution_context_priority_comparator);
+		} else
+		  task->priority /= 10;  /* demote the task */
+		PARSEC_LIST_ITEM_SINGLETON(task);
+		__parsec_schedule(es, task, distance + 1);
+		task = NULL;
+		break;
+	      case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
+						* even try to change it's state, the completion
+						* will be triggered asynchronously. */
+		break;
+	      case PARSEC_HOOK_RETURN_NEXT:    /* Try next variant [if any] */
+	      case PARSEC_HOOK_RETURN_DISABLE: /* Disable the device, something went wrong */
+	      case PARSEC_HOOK_RETURN_ERROR:   /* Some other major error happened */
+		assert( 0 ); /* Internal error: invalid return value */
+	      }
+	      nbiterations++;
+	      break;
             }
             case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
-                                             * even try to change it's state, the completion
-                                             * will be triggered asynchronously. */
-                break;
+					      * even try to change it's state, the completion
+					      * will be triggered asynchronously. */
+	      break;
             case PARSEC_HOOK_RETURN_AGAIN:   /* Reschedule later */
-                if(0 == task->priority) {
-                    SET_LOWEST_PRIORITY(task, parsec_execution_context_priority_comparator);
-                } else
-                    task->priority /= 10;  /* demote the task */
-                PARSEC_LIST_ITEM_SINGLETON(task);
-                __parsec_schedule(es, task, distance + 1);
-                task = NULL;
-                break;
+	      if(0 == task->priority) {
+		SET_LOWEST_PRIORITY(task, parsec_execution_context_priority_comparator);
+	      } else
+		task->priority /= 10;  /* demote the task */
+	      PARSEC_LIST_ITEM_SINGLETON(task);
+	      __parsec_schedule(es, task, distance + 1);
+	      task = NULL;
+	      break;
             default:
-                assert( 0 ); /* Internal error: invalid return value for data_lookup function */
+	      assert( 0 ); /* Internal error: invalid return value for data_lookup function */
             }
 
             // subsequent select begins
             PINS(es, SELECT_BEGIN, NULL);
         } else {
-            misses_in_a_row++;
+	  misses_in_a_row++;
         }
     }
 
     parsec_rusage_per_eu(es, true);
 
-    /* We're all done ? */
-    parsec_barrier_wait( &(parsec_context->barrier) );
-
+    /* We're all done? */
+    if( cond_stop_on_all_done(parsec_context, NULL) ) {
+        parsec_barrier_wait( &(parsec_context->barrier) );
 #if defined(PARSEC_SIM)
-    if( PARSEC_THREAD_IS_MASTER(es) ) {
-        parsec_vp_t *vp;
-        int32_t my_vpid, my_idx;
-        int largest_date = 0;
-        for(my_vpid = 0; my_vpid < parsec_context->nb_vp; my_vpid++) {
-            vp = parsec_context->virtual_processes[my_vpid];
-            for(my_idx = 0; my_idx < vp->nb_cores; my_idx++) {
-                if( vp->execution_streams[my_idx]->largest_simulation_date > largest_date )
-                    largest_date = vp->execution_streams[my_idx]->largest_simulation_date;
-            }
-        }
-        parsec_context->largest_simulation_date = largest_date;
-    }
-    parsec_barrier_wait( &(parsec_context->barrier) );
-    es->largest_simulation_date = 0;
+	if( PARSEC_THREAD_IS_MASTER(es) ) {
+	    parsec_vp_t *vp;
+	    int32_t my_vpid, my_idx;
+	    int largest_date = 0;
+	    for(my_vpid = 0; my_vpid < parsec_context->nb_vp; my_vpid++) {
+	        vp = parsec_context->virtual_processes[my_vpid];
+		for(my_idx = 0; my_idx < vp->nb_cores; my_idx++) {
+                    if( vp->execution_streams[my_idx]->largest_simulation_date > largest_date )
+		        largest_date = vp->execution_streams[my_idx]->largest_simulation_date;
+		}
+		parsec_context->largest_simulation_date = largest_date;
+	    }
+	    parsec_context->largest_simulation_date = largest_date;
+	}
+	parsec_barrier_wait( &(parsec_context->barrier) );
+	es->largest_simulation_date = 0;
 #endif
+    }
 
     if( !PARSEC_THREAD_IS_MASTER(es) ) {
         my_barrier_counter++;
@@ -645,6 +662,17 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
         PINS_THREAD_FINI(es);
     }
     return nbiterations;
+}
+
+void parsec_ptg_taskpool_wait( parsec_context_t *parsec, parsec_taskpool_t *tp)
+{
+    parsec_execution_stream_t *es = parsec->virtual_processes[0]->execution_streams[0];
+    __parsec_wait(es, cond_stop_on_taskpool_done, tp);
+}
+
+int __parsec_context_wait( parsec_execution_stream_t* es )
+{
+    return __parsec_wait(es, cond_stop_on_all_done, NULL);
 }
 
 /*  *********** COMPOSITION OF PARSEC_OBJECTS ***************  */

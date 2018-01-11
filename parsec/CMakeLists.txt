@@ -108,6 +108,7 @@ if( BUILD_PARSEC )
   if (MPI_C_FOUND)
     set_target_properties(parsec PROPERTIES COMPILE_FLAGS "${MPI_C_COMPILE_FLAGS}")
   endif (MPI_C_FOUND)
+  SET(EXTRA_LIBS "${EXTRA_LIBS}" PARENT_SCOPE)
   target_link_libraries(parsec parsec-base ${EXTRA_LIBS})
 
   install(TARGETS parsec

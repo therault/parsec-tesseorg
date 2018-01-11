@@ -442,6 +442,14 @@ int parsec_taskpool_enable(parsec_taskpool_t* tp,
                            parsec_execution_stream_t* es,
                            int distributed);
 
+
+/**
+ * This function will block until all the tasks belonging to this handle
+ * complete, and the handle completion function is called.
+ * @todo Move into the PTG interface level.
+ */
+void parsec_ptg_taskpool_wait(parsec_context_t *parsec,
+			      parsec_taskpool_t  *tp);
 /**
  * @brief Print PaRSEC usage message.
  *

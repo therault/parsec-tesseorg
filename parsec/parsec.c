@@ -695,9 +695,24 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
     /* Initialize Performance Instrumentation (PINS) */
     PINS_INIT(context);
 
-    if(parsec_enable_dot) {
+    parsec_mca_param_reg_string_name("dot", "filename",
 #if defined(PARSEC_PROF_GRAPHER)
-        parsec_prof_grapher_init(parsec_enable_dot, nb_total_comp_threads);
+                                    "Path to the dot file (<none> to disable, <app> for app name, <*> otherwise)",
+                                    false, false,
+#else
+                                    "Path to the dot file (unused due to profiling being turned off during building)",
+                                    false, true,  /* dot disabled: read-only */
+#endif  /* defined(PARSEC_PROF_TRACE) */
+                                    "<none>", &parsec_enable_dot);
+
+    if( (0 != strncmp(parsec_enable_dot, "<none>", 6)) && parsec_enable_dot) {
+#if defined(PARSEC_PROF_GRAPHER)
+        char *cmdline_info = basename(parsec_app_name);
+        if( 0 == strncmp(parsec_enable_dot, "<app>", 5) ) {
+            parsec_prof_grapher_init(parsec_app_name, nb_total_comp_threads);
+        } else {
+            parsec_prof_grapher_init(parsec_enable_dot, nb_total_comp_threads );
+        }
         slow_option_warning = 1;
 #else
         parsec_warning("DOT generation requested, but PARSEC_PROF_GRAPHER was not selected during compilation: DOT generation ignored.");

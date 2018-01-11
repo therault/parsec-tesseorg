@@ -1,0 +1,12 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+source=@CMAKE_SOURCE_DIR@
+exec_prefix=${prefix}/bin
+libdir=${prefix}/lib
+
+Name: PaRSEC Summa Library
+Description: Parallel Runtime Scheduling and Execution Controller
+Version: @PARSEC_VERSION_MAJOR@.@PARSEC_VERSION_MINOR@
+Requires: @PARSEC_PKG_REQUIRE@ parsec
+Libs: -L${libdir} -lsumma -lparsec_distribution -lparsec_distribution_matrix
+Cflags: -I${prefix}/include -I${source} -I${source}/parsec/include @CMAKE_C_FLAGS@ -I@MPI_C_INCLUDE_PATH@
+

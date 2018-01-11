@@ -1,6 +1,6 @@
 extern "C" %{
 /*
- * Copyright (c) 2010-2016 The University of Tennessee and The University
+ * Copyright (c) 2010-2017 The University of Tennessee and The University
  *                         of Tennessee Research Foundation. All rights
  *                         reserved.
  *
@@ -10,6 +10,7 @@ extern "C" %{
  */
 #include "summa/lib/dplasmajdf.h"
 #include "summa/lib/dplasmaaux.h"
+#include "data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "irregular_tiled_matrix.h"
 #include <math.h>
 
@@ -17,11 +18,22 @@ extern "C" %{
 #include <cublas.h>
 #endif  /* defined(PARSEC_HAVE_CUDA) */
 
+#if defined(PARSEC_HAVE_RECURSIVE)
+#include "irregular_subtile.h"
+#include "parsec/recursive.h"
+#endif
 %}
 
 /*
  * Globals
  */
+
+/* Keep this first, as in all jdf in this directory, to
+ * enable switching between SUMMA implementations.
+ * This is the JDF-like CRTP ;)
+ */
+summa_type [type = int]
+
 transA  [type = int]
 transB  [type = int]
 
@@ -30,7 +42,7 @@ alpha   [type = parsec_complex64_t]
 descA   [type = "const irregular_tiled_matrix_desc_t *"]
 descB   [type = "const irregular_tiled_matrix_desc_t *"]
 descC   [type = "irregular_tiled_matrix_desc_t *"]
-Cdist   [type = "parsec_ddesc_t *"]
+Cdist   [type = "const two_dim_block_cyclic_t *"]
 
 P       [type = "int" hidden=on default="descC->grid.rows"]
 Q       [type = "int" hidden=on default="descC->grid.cols"]
@@ -38,6 +50,9 @@ Q       [type = "int" hidden=on default="descC->grid.cols"]
 lookP   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
 lookQ   [type = "int" hidden=on default="summa_aux_getSUMMALookahead(descC)"]
 createC [type = "int"]
+
+bigtile [type = "int" hidden=on default="descA->max_mb"]
+opttile [type = "int" hidden=on default="descA->max_mb"]
 
 /**************************************************
  *                       READ_A                   *
@@ -50,10 +65,10 @@ k = 0 .. descA->nt-1
 : descA(m, k)
 
 READ A <- descA(m, k)
-       -> A RING_A(m, k, k%Q)
+       -> A RING_A(m, k, k%Q)  [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
 BODY
 {
-    printlog("rank %u <- A(%d,%d)\n", ((parsec_ddesc_t*)descA)->myrank, m, k);
+    printlog("rank %u <- A(%d,%d)\n", ((parsec_data_collection_t*)descA)->myrank, m, k);
 }
 END
 
@@ -67,15 +82,15 @@ nextq = (q+1)%Q
 
 : Cdist(m, q)
 
-READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq)
-       -> A SUMMA(m, q .. descC->nt-1 .. Q, k)
-       -> (nextq != (k%Q)) ? A RING_A(m, k, nextq)
+READ A <- (k%Q == q) ? A READ_A(m, k) : A RING_A(m, k, prevq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
+       -> A SUMMA(m, q .. descC->nt-1 .. Q, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
+       -> (nextq != (k%Q)) ? A RING_A(m, k, nextq) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
 
 CTL ctla <- (k >= lookQ) ? ctla SUMMA(m, q .. descC->nt-1 .. Q, k-lookQ)
 
 BODY
 {
-    printlog("rank %u <- A(%d,%d)\n", ((parsec_ddesc_t*)descA)->myrank, m, k);
+    printlog("rank %u <- A(%d,%d)\n", ((parsec_data_collection_t*)descA)->myrank, m, k);
 }
 END
 
@@ -90,10 +105,10 @@ k = 0 .. descB->nt-1
 : descB(n, k)
 
 READ B <- descB(n, k)
-       -> B RING_B(n, k, k%P)
+       -> B RING_B(n, k, k%P) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, n, k); %} ]
 BODY
 {
-     printlog("rank %u <- B(%d,%d)\n", ((parsec_ddesc_t*)descB)->myrank, n, k);
+     printlog("rank %u <- B(%d,%d)\n", ((parsec_data_collection_t*)descB)->myrank, n, k);
 }
 END
 
@@ -107,15 +122,15 @@ nextp = (p+1)%P
 
 : Cdist(p, n)
 
-READ B <- (k%P == p) ? B READ_B(n, k) : B RING_B(n, k, prevp)
-       -> B SUMMA(p .. descC->mt-1 .. P, n, k)
-       -> (nextp != (k%P)) ? B RING_B(n, k, nextp)
+READ B <- (k%P == p) ? B READ_B(n, k) : B RING_B(n, k, prevp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, n, k); %} ]
+       -> B SUMMA(p .. descC->mt-1 .. P, n, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, n, k); %} ]
+       -> (nextp != (k%P)) ? B RING_B(n, k, nextp) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, n, k); %} ]
 
 CTL ctlb <- (k >= lookP) ? ctlb SUMMA(p .. descC->mt-1 .. P, n, k-lookP)
 
 BODY
 {
-     printlog("rank %u <- B(%d,%d)\n", ((parsec_ddesc_t*)descB)->myrank, n, k);
+     printlog("rank %u <- B(%d,%d)\n", ((parsec_data_collection_t*)descB)->myrank, n, k);
 }
 END
 
@@ -133,12 +148,12 @@ k = 0 .. descA->nt-1
 : descC(m, n)
 
 // Parameters
-READ A <- A RING_A(m, k, n%Q)
-READ B <- B RING_B(n, k, m%P)
-RW   C <- ((k == 0) & (createC == 1)) ? NEW
-       <- ((k == 0) & (createC == 0)) ? descC(m,n)
-       <- (k > 0)                     ? C SUMMA(m,n,k-1)
-       -> (k == (descA->nt-1))         ? descC(m, n) : C SUMMA( m, n, k+1 )
+READ A <- A RING_A(m, k, n%Q) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
+READ B <- B RING_B(n, k, m%P) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, n, k); %} ]
+RW   C <- ((k == 0) & (createC == 1)) ? NEW [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+       <- ((k == 0) & (createC == 0)) ? descC(m,n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+       <- (k > 0)                     ? C SUMMA(m,n,k-1) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+       -> (k == (descA->nt-1))        ? descC(m, n) : C SUMMA( m, n, k+1 ) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
 
 CTL ctla -> (k < (descA->nt-lookQ)) ? ctla RING_A(m, k+lookQ, n%Q)
 CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb RING_B(n, k+lookP, m%P)
@@ -154,36 +169,20 @@ BODY [type=CUDA
     double lalpha = alpha;
     double lbeta  = (k==0) ? 0.0:1.0;
 #endif
-    /* irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A; */
-    /* irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B; */
-    /* irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C; */
-    /* int tempmm = cC->mb; */
-    /* int tempnn = cC->nb; */
-    /* int tempkk = cA->nb; */
-    /* int ldam = cA->mb; */
-    /* int ldbn = cB->nb; */
-    /* int ldcm = cC->mb; */
-
-    int cAmb = descA->Mtiling[m];
-    int cAnb = descA->Ntiling[k];
-    int cBnb = descB->Ntiling[n];
-    int cCmb = cAmb;
-    int cCnb = cBnb;
-
-    int tempmm = cCmb;
-    int tempnn = cCnb;
-    int tempkk = cAnb;
-    int ldam = cAmb;
-    int ldbn = cBnb;
-    int ldcm = cCmb;
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbn = SUMMA_T_BLKLDD(descB, n);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
     cublasStatus_t status;
     cublasSetKernelStream( parsec_body.stream );
-    parsec_body.dyld_fn( lapack_const(transA), lapack_const(transB),
-             tempmm, tempnn, tempkk,
-             lalpha, (cuDoubleComplex*)A, ldam,
-                     (cuDoubleComplex*)B, ldbn,
-             lbeta,  (cuDoubleComplex*)C, ldcm );
+    parsec_body.dyld_fn(lapack_const(transA), lapack_const(transB),
+                        tempmm, tempnn, tempkk,
+                        lalpha, (cuDoubleComplex*)A, ldam,
+                        (cuDoubleComplex*)B, ldbn,
+                        lbeta, (cuDoubleComplex*)C, ldcm);
     status = cublasGetError();
     PARSEC_CUDA_CHECK_ERROR( "cublasZsumma ", status,
                             {return -1;} );
@@ -193,15 +192,12 @@ END
 BODY
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
-    irregular_tile_data_copy_t *cA = (irregular_tile_data_copy_t*)_f_A;
-    irregular_tile_data_copy_t *cB = (irregular_tile_data_copy_t*)_f_B;
-    irregular_tile_data_copy_t *cC = (irregular_tile_data_copy_t*)_f_C;
-    int tempmm = cC->mb;
-    int tempnn = cC->nb;
-    int tempkk = cA->nb;
-    int ldam = cA->mb;
-    int ldbn = cB->nb;
-    int ldcm = cC->mb;
+    int tempmm = SUMMA_N_ROWS(descA, m);
+    int tempnn = SUMMA_T_COLS(descB, n);
+    int tempkk = SUMMA_T_ROWS(descB, k);
+    int ldam = SUMMA_N_BLKLDD(descA, m);
+    int ldbn = SUMMA_T_BLKLDD(descB, n);
+    int ldcm = SUMMA_N_BLKLDD(descC, m);
 
     fprintf(stdout, "summa( %d, %d, %d )\n"
              "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",
