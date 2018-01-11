@@ -103,6 +103,7 @@ struct parsec_taskpool_s {
     uint16_t                   devices_mask; /**< A bitmask on what devices this taskpool may use */
     int32_t                    initial_number_tasks; /**< Counts the number of task classes initially ready */
     int32_t                    priority;             /**< A constant used to bump the priority of tasks related to this taskpool */
+    char                      *taskpool_name;
     int32_t                    taskpool_type;
     volatile uint32_t          nb_pending_actions;  /**< Internal counter of pending actions tracking all runtime
                                                      *   activities (such as communications, data movement, and
@@ -307,13 +308,19 @@ parsec_dependency_t *parsec_hash_find_deps(const parsec_taskpool_t *tp,
                                            const parsec_task_t* task);
 
 typedef struct __parsec_internal_incarnation_s {
-    int32_t                     type;
-    parsec_hook_t              *here;
-    parsec_evaluate_function_t *evaluate;
-    parsec_hook_t              *hook;
-    char                       *dyld;
-    parsec_hook_t              *dyld_fn;
+    int32_t                       type;
+    expr_t                       *weight;
+    parsec_hook_t                *here;
+    parsec_evaluate_function_t   *evaluate;
+    parsec_hook_t                *hook;
+    char                         *dyld;
+    parsec_hook_t                *dyld_fn;
 } __parsec_chore_t;
+
+typedef struct parsec_property_s {
+    const char   *name;
+    const expr_t *expr;
+} parsec_property_t;
 
 struct parsec_task_class_s {
     const char                  *name;
@@ -331,7 +338,8 @@ struct parsec_task_class_s {
     const parsec_flow_t         *in[MAX_PARAM_COUNT];
     const parsec_flow_t         *out[MAX_PARAM_COUNT];
     const expr_t                *priority;
-
+    const parsec_property_t     *properties;     /**< {NULL, NULL} terminated array of properties holding all function-specific properties expressions */
+ 
     parsec_data_ref_fn_t        *initial_data;   /**< Populates an array of data references, of maximal size MAX_PARAM_COUNT */
     parsec_data_ref_fn_t        *final_data;     /**< Populates an array of data references, of maximal size MAX_PARAM_COUNT */
     parsec_data_ref_fn_t        *data_affinity;  /**< Populates an array of data references, of size 1 */

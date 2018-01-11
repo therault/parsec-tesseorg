@@ -137,6 +137,14 @@ static jdf_data_entry_t* jdf_find_or_create_data(jdf_t* jdf, const char* dname)
     return data;
 }
 
+static int key_from_type(char *type) {
+    if (!strcmp(type, "uint32_t")) return EXPR_TYPE_UINT32;
+    if (!strcmp(type, "int64_t"))  return EXPR_TYPE_INT64;
+    if (!strcmp(type, "uint64_t")) return EXPR_TYPE_UINT64;
+    if (!strcmp(type, "float"))    return EXPR_TYPE_FLOAT;
+    if (!strcmp(type, "double"))   return EXPR_TYPE_DOUBLE;
+    return EXPR_TYPE_INT32;
+}
 %}
 
 %union {
@@ -361,6 +369,16 @@ property:     VAR ASSIGNMENT expr_simple
                   assign->name              = strdup($1);
                   assign->expr              = $3;
                   JDF_OBJECT_LINENO(assign) = JDF_OBJECT_LINENO($3);
+                  $$ = assign;
+              }
+       |      VAR VAR ASSIGNMENT expr_simple
+              {
+                  jdf_def_list_t* assign = new(jdf_def_list_t);
+                  assign->next              = NULL;
+                  assign->name              = strdup($2);
+                  assign->expr              = $4;
+                  assign->expr->jdf_type    = key_from_type($1);
+                  JDF_OBJECT_LINENO(assign) = JDF_OBJECT_LINENO($4);
                   $$ = assign;
               }
        ;
@@ -1040,6 +1058,7 @@ expr_simple:  expr_simple EQUAL expr_simple
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_CST;
                   e->jdf_cst = $1;
+                  e->jdf_type = 0;
                   $$ = e;
                   JDF_OBJECT_LINENO($$) = current_lineno;
               }
@@ -1048,6 +1067,7 @@ expr_simple:  expr_simple EQUAL expr_simple
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_CST;
                   e->jdf_cst = -$2;
+                  e->jdf_type = 0;
                   $$ = e;
                   JDF_OBJECT_LINENO($$) = current_lineno;
               }
@@ -1065,6 +1085,7 @@ expr_simple:  expr_simple EQUAL expr_simple
                   $$ = new(jdf_expr_t);
                   $$->op = JDF_C_CODE;
                   $$->jdf_c_code.code = $1;
+                  $$->jdf_type = 0;
                   $$->jdf_c_code.lineno = current_lineno;
                   /* This will be set by the upper level parsing if necessary */
                   $$->jdf_c_code.function_context = NULL;

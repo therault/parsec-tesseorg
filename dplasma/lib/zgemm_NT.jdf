@@ -109,7 +109,7 @@ CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb READ_B(n, k+lookP)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight=(descA->nt-k)]
+      weight= inline_c%{ return (descA->nt-k); %}]
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));

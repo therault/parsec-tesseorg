@@ -150,7 +150,7 @@ zgemm(k, m, n)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight="dplasma_imin( m-k, n-k )"]
+      weight= inline_c%{ return dplasma_imin( m-k, n-k ); %}]
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex zone  = make_cuDoubleComplex( 1., 0.);

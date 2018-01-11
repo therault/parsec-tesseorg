@@ -150,7 +150,7 @@ int parsec_gpu_push_workspace(gpu_device_t* gpu_device, parsec_gpu_exec_stream_t
 void* parsec_gpu_pop_workspace(gpu_device_t* gpu_device, parsec_gpu_exec_stream_t* gpu_stream, size_t size);
 int parsec_gpu_free_workspace(gpu_device_t * gpu_device);
 
-int parsec_gpu_get_best_device( parsec_task_t* this_task, double ratio );
+int parsec_gpu_get_best_device( parsec_task_t* this_task);
 
 /* sort pending task list by number of spaces needed */
 int parsec_gpu_sort_pending_list(gpu_device_t *gpu_device);

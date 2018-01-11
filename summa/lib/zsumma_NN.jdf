@@ -165,7 +165,7 @@ CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb RING_B(k+lookP, n, m%P)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight=(descA->nt-k)]
+      uint64_t weight= %{ return (descA->nt-k); %} ]
 {
     /* fprintf(stdout, "CUDA BODY for task (%d;%d;%d)\n", m,n,k); */
     /* return PARSEC_HOOK_RETURN_NEXT; */

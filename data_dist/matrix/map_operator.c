@@ -65,7 +65,7 @@ static inline int minexpr_of_row_fct(const parsec_taskpool_t *tp, const assignme
 }
 static const expr_t minexpr_of_row = {
     .op = EXPR_OP_INLINE,
-    .u_expr = { .inline_func_int32 = minexpr_of_row_fct }
+    .u_expr.v_func = { .type=0, .func = { .inline_func_int32 = minexpr_of_row_fct }}
 };
 static inline int maxexpr_of_row_fct(const parsec_taskpool_t *tp, const assignment_t *assignments)
 {
@@ -77,7 +77,7 @@ static inline int maxexpr_of_row_fct(const parsec_taskpool_t *tp, const assignme
 }
 static const expr_t maxexpr_of_row = {
     .op = EXPR_OP_INLINE,
-    .u_expr = { .inline_func_int32 = maxexpr_of_row_fct }
+    .u_expr.v_func = { .type=0, .func = {.inline_func_int32 = maxexpr_of_row_fct }}
 };
 static const symbol_t symb_row = {
     .min = &minexpr_of_row,
@@ -94,7 +94,7 @@ static inline int minexpr_of_column_fct(const parsec_taskpool_t *tp, const assig
 
 static const expr_t minexpr_of_column = {
     .op = EXPR_OP_INLINE,
-    .u_expr = { .inline_func_int32 = minexpr_of_column_fct }
+    .u_expr.v_func = { .type=0, .func = { .inline_func_int32 = minexpr_of_column_fct }}
 };
 
 static inline int maxexpr_of_column_fct(const parsec_taskpool_t *tp, const assignment_t *assignments)
@@ -107,7 +107,7 @@ static inline int maxexpr_of_column_fct(const parsec_taskpool_t *tp, const assig
 }
 static const expr_t maxexpr_of_column = {
     .op = EXPR_OP_INLINE,
-    .u_expr = { .inline_func_int32 = maxexpr_of_column_fct }
+    .u_expr.v_func = { .type=0, .func = { .inline_func_int32 = maxexpr_of_column_fct }}
 };
 static const symbol_t symb_column = {
     .min = &minexpr_of_column,

@@ -355,6 +355,13 @@ typedef enum { JDF_EQUAL,
                                     JDF_OP_IS_VAR(op) ||                \
                                     JDF_OP_IS_C_CODE(op)) )
 
+#define EXPR_TYPE_INT32   0
+#define EXPR_TYPE_UINT32  1
+#define EXPR_TYPE_INT64   2
+#define EXPR_TYPE_UINT64  3
+#define EXPR_TYPE_FLOAT   4
+#define EXPR_TYPE_DOUBLE  5
+
 typedef struct jdf_expr {
     struct jdf_object_t           super;
     struct jdf_expr              *next;
@@ -375,12 +382,22 @@ typedef struct jdf_expr {
         } unary;
         char                     *varname;
         struct {
-            char                 *code;
-            int                   lineno;
-            char                 *fname;
-            jdf_function_entry_t *function_context;
-        } c_code;
-        int                       cstval;
+            int                   type;
+            union {            
+                struct {
+                    char                 *code;
+                    int                   lineno;
+                    char                 *fname;
+                    jdf_function_entry_t *function_context;
+                } c_code;
+                int32_t           int32_cstval;
+                uint32_t          uint32_cstval;
+                int64_t           int64_cstval;
+                uint64_t          uint64_cstval;
+                float             float_cstval;
+                double            double_cstval;
+            } w;
+        } v;
     } u;
 } jdf_expr_t;
 
@@ -392,8 +409,15 @@ typedef struct jdf_expr {
 #define jdf_tat u.ternary.arg3
 #define jdf_ta3 u.ternary.arg3
 #define jdf_var u.varname
-#define jdf_cst u.cstval
-#define jdf_c_code u.c_code
+#define jdf_cst       u.v.w.int32_cstval
+#define jdf_cstu32    u.v.w.uint32_cstval
+#define jdf_cst64     u.v.w.int64_cstval
+#define jdf_cstu64    u.v.w.uint64_cstval
+#define jdf_cstfloat  u.v.w.float_cstval
+#define jdf_cstdouble u.v.w.double_cstval
+
+#define jdf_c_code u.v.w.c_code
+#define jdf_type u.v.type
 
 char *malloc_and_dump_jdf_expr_list( const jdf_expr_t *e );
 
@@ -425,16 +449,21 @@ jdf_expr_t* jdf_find_property( const jdf_def_list_t* properties, const char* pro
  * Accessors for the properties
  */
 int jdf_property_get_int( const jdf_def_list_t* properties, const char* prop_name, int ret_if_not_found );
-const char *jdf_property_get_string( const jdf_def_list_t* properties, const char* prop_name, const char *ret_if_not_found );
-
+const char* jdf_property_get_string( const jdf_def_list_t* properties, const char* prop_name, const char* ret_if_not_found );
+const char* jdf_property_get_function( const jdf_def_list_t* properties, const char* prop_name, const char* ret_if_not_found );
+ 
 /**
- * Add a new string property
+ * Add a new user-defined function as a property
  */
-jdf_def_list_t *jdf_add_string_property(jdf_def_list_t **properties, const char *prop_name, const char *prop_value);
-
+jdf_def_list_t *jdf_add_function_property(jdf_def_list_t **properties, const char *prop_name, const char *prop_value);
 /**
  * Function cleanup and management. Available in jdf.c
  */
 int jdf_flatten_function(jdf_function_entry_t* function);
+
+/**
+ * Returns true iff property name is a property keyword for a function.
+ **/
+int jdf_function_property_is_keyword(const char *name);
 
 #endif

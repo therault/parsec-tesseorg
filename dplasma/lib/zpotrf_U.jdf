@@ -295,7 +295,7 @@ RW    C <- (k == 0)   ? descA(m, n)  : C potrf_zgemm(m, n, k-1)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight=(m+1-k)]
+      weight= inline_c %{ return (m+1-k); %}]
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex zone  = make_cuDoubleComplex( 1., 0.);

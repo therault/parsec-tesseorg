@@ -144,7 +144,7 @@ CTL ctlb -> (k < (descA->nt-lookP)) ? ctlb RING_B(n, k+lookP, m%P)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight=(descA->nt-k)]
+      weight=10000]
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));

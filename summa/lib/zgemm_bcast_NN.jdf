@@ -128,7 +128,7 @@ RW C <- kprev == -1
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
-      weight=1]
+      uint64_t weight=%{ return descA->Mtiling[m] * descB->Ntiling[n]; %}]
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
@@ -171,7 +171,7 @@ BODY [type=CUDA
 END
 
 BODY [type=RECURSIVE
-      weight=1]
+      uint64_t weight=%{ return descA->Mtiling[m] * descB->Ntiling[n]; %}]
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
 
@@ -259,7 +259,7 @@ BODY [type=RECURSIVE
 }
 END
 
-BODY [weight=1]
+BODY [uint64_t weight=%{ return descA->Mtiling[m] * descB->Ntiling[n]; %}]
 {
     parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
 
