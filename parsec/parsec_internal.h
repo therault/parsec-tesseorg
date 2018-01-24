@@ -88,6 +88,8 @@ typedef struct data_repo_s             data_repo_t;
  */
 typedef struct parsec_vp_s              parsec_vp_t;
 
+#include "parsec/mca/termdet/termdet.h"
+
 /**
  * @brief The prototype of startup functions
  *
@@ -113,6 +115,9 @@ typedef void (*parsec_destruct_fn_t)(parsec_taskpool_t* tp);
 #define PARSEC_TASKPOOL_TYPE_COMPOUND  0x0002
 #define PARSEC_TASKPOOL_TYPE_DTD       0x0004
 
+#define PARSEC_TASKPOOL_NOID           (~(uint32_t)0)
+
+    
 /**
  * @brief a PaRSEC taskpool represents an a collection of tasks (with or without their dependencies).
  *        as provided by the Domain Specific Language.
@@ -141,6 +146,7 @@ struct parsec_taskpool_s {
                                                      *   completion of all tasks.
                                                      */
     parsec_context_t*           context;   /**< The PaRSEC context on which this taskpool was enqueued */
+    parsec_termdet_monitor_t    tdm;       /**< Termination detection structures and pointer to module */
     parsec_startup_fn_t         startup_hook;  /**< Pointer to the function that generates initial tasks */
     const parsec_task_class_t** task_classes_array; /**< Array of task classes that build this DAG */
 #if defined(PARSEC_PROF_TRACE)
@@ -335,7 +341,37 @@ parsec_dependency_t *parsec_default_find_deps(const parsec_taskpool_t *tp,
 parsec_dependency_t *parsec_hash_find_deps(const parsec_taskpool_t *tp,
                                            parsec_execution_stream_t *es,
                                            const parsec_task_t* task);
-
+typedef int (parsec_update_dependency_fn_t)(parsec_taskpool_t *tp,
+                                            const parsec_task_t* restrict task,
+                                            parsec_dependency_t *deps,
+                                            const parsec_task_t* restrict origin,
+                                            const parsec_flow_t* restrict origin_flow,
+                                            const parsec_flow_t* restrict dest_flow);
+int parsec_update_deps_with_mask(parsec_taskpool_t *tp,
+                                 const parsec_task_t* restrict task,
+                                 parsec_dependency_t *deps,
+                                 const parsec_task_t* restrict origin,
+                                 const parsec_flow_t* restrict origin_flow,
+                                 const parsec_flow_t* restrict dest_flow);
+int parsec_update_deps_with_mask_count_task(parsec_taskpool_t *tp,
+                                            const parsec_task_t* restrict task,
+                                            parsec_dependency_t *deps,
+                                            const parsec_task_t* restrict origin,
+                                            const parsec_flow_t* restrict origin_flow,
+                                            const parsec_flow_t* restrict dest_flow);
+int parsec_update_deps_with_counter(parsec_taskpool_t *tp,
+                                    const parsec_task_t* restrict task,
+                                    parsec_dependency_t *deps,
+                                    const parsec_task_t* restrict origin,
+                                    const parsec_flow_t* restrict origin_flow,
+                                    const parsec_flow_t* restrict dest_flow);
+int parsec_update_deps_with_counter_count_task(parsec_taskpool_t *tp,
+                                               const parsec_task_t* restrict task,
+                                               parsec_dependency_t *deps,
+                                               const parsec_task_t* restrict origin,
+                                               const parsec_flow_t* restrict origin_flow,
+                                               const parsec_flow_t* restrict dest_flow);
+    
 typedef struct __parsec_internal_incarnation_s {
     int32_t                     type;
     parsec_evaluate_function_t *evaluate;
@@ -381,7 +417,8 @@ struct parsec_task_class_s {
     const __parsec_chore_t      *incarnations;
     parsec_hook_t               *prepare_output;
 
-    parsec_find_dependency_fn_t *find_deps;
+    parsec_find_dependency_fn_t   *find_deps;
+    parsec_update_dependency_fn_t *update_deps;
 
     parsec_traverse_function_t  *iterate_successors;
     parsec_traverse_function_t  *iterate_predecessors;
@@ -404,6 +441,8 @@ struct parsec_data_pair_s {
  */
 PARSEC_DECLSPEC extern size_t parsec_task_startup_iter;
 PARSEC_DECLSPEC extern size_t parsec_task_startup_chunk;
+
+PARSEC_DECLSPEC extern mca_base_component_t *termdet_local_component;
 
 /**
  * Global configuration variable controlling the getrusage report.

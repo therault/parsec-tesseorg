@@ -46,7 +46,7 @@ RW   B <- (i == 0)      ? descB(i, 0) : B HORIZONTAL(i-1)
        -> (i != (NI-1)) ? B HORIZONTAL(i+1)
 BODY
     if(verbose)
-        printf("HORIZONTAL(%d) [left-over tasks %d]\n", i, tp->super.nb_tasks);
+        printf("HORIZONTAL(%d) [left-over tasks %d]\n", i, tp->super.tdm.counters.nb_tasks);
 END
 
 VERTICAL(i, j)
@@ -61,7 +61,7 @@ RW   B <- (i == 0)      ? descB(i, 0) : B VERTICAL(i-1, j)
        -> (i != (NI-1)) ? B VERTICAL(i+1, j) : descB(i, 0)
 BODY
     if(verbose)
-        printf("VERTICAL(%d, %d) [left-over tasks %d]\n", i, j, tp->super.nb_tasks);
+        printf("VERTICAL(%d, %d) [left-over tasks %d]\n", i, j, tp->super.tdm.counters.nb_tasks);
 END
 
 extern "C" %{

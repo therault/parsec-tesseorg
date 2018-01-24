@@ -176,6 +176,7 @@ typedef unsigned int jdf_flags_t;
 
 #define JDF_HAS_UD_NB_LOCAL_TASKS              ((jdf_flags_t)(1 << 0))
 #define JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME     "nb_local_tasks_fn"
+#define JDF_PROP_DYNAMIC_JDF                   "dynamic"
 
 #define JDF_FUNCTION_HAS_UD_HASH_STRUCT        ((jdf_flags_t)(1 << 1))
 #define JDF_PROP_UD_HASH_STRUCT_NAME           "hash_struct"

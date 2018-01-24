@@ -158,7 +158,7 @@ static pthread_t dep_thread_id;
 parsec_dequeue_t dep_cmd_queue;
 parsec_list_t    dep_cmd_fifo;             /* ordered non threaded fifo */
 parsec_list_t    dep_activates_fifo;       /* ordered non threaded fifo */
-parsec_list_t    dep_activates_noobj_fifo; /* non threaded fifo */
+parsec_list_t    dep_activates_noobj_fifo; /* non threaded fifo of dep activates related to taskpools not actually known */
 parsec_list_t    dep_put_fifo;             /* ordered non threaded fifo */
 
 /* help manage the messages in the same category, where a category is either messages
@@ -865,6 +865,8 @@ remote_dep_release_incoming(parsec_execution_stream_t* es,
     if(0 != origin->incoming_mask)  /* not done receiving */
         return origin;
 
+    origin->taskpool->tdm.module->incoming_message_end(origin->taskpool, origin);
+    
     /**
      * All incoming data are now received, start the propagation. We first
      * release the local dependencies, thus we must ensure the communication
@@ -937,8 +939,6 @@ remote_dep_dequeue_nothread_progress(parsec_execution_stream_t* es,
 
     PARSEC_OBJ_CONSTRUCT(&temp_list, parsec_list_t);
  check_pending_queues:
-    if( cycles >= 0 )
-        if( 0 == cycles--) return executed_tasks;  /* report how many events were progressed */
 
     /* Move a number of transfers from the shared dequeue into our ordered lifo. */
     how_many = 0;
@@ -1398,7 +1398,7 @@ static int remote_dep_mpi_setup(parsec_context_t* context)
         MPI_Start(&array_of_requests[parsec_comm_last_active_req]);
         parsec_comm_last_active_req++;
     }
-
+    
     return 0;
 }
 
@@ -1449,6 +1449,13 @@ static int remote_dep_mpi_cleanup(parsec_context_t* context)
         MPI_Request_free(&array_of_requests[i]);
         assert( MPI_REQUEST_NULL == array_of_requests[i] );
     }
+#if defined(PARSEC_DEBUG_PARANOID)
+    for(i = parsec_comm_activations_max + parsec_comm_data_get_max;
+        i < parsec_comm_activations_max + parsec_comm_data_get_max;
+        i++) {
+        assert(MPI_REQUEST_NULL == array_of_requests[i]);
+    }
+#endif
     parsec_comm_last_active_req -= (parsec_comm_activations_max + parsec_comm_data_get_max);
     assert(0 == parsec_comm_last_active_req);
 
@@ -1519,6 +1526,8 @@ static int remote_dep_mpi_pack_dep(int peer,
     peer_mask = 1U << (peer % (sizeof(uint32_t) * 8));
 
     MPI_Pack_size(dep_count, dep_dtt, dep_comm, &dsize);
+    dsize += deps->taskpool->tdm.module->outgoing_message_piggyback_size;
+    
     if( (length - (*position)) < dsize ) {  /* no room. bail out */
         PARSEC_DEBUG_VERBOSE(20, parsec_comm_output_stream, "Can't pack at %d/%d. Bail out!", *position, length);
         return 1;
@@ -1527,7 +1536,7 @@ static int remote_dep_mpi_pack_dep(int peer,
     *position += dsize;
     assert((0 != msg->output_mask) &&   /* this should be preset */
            (msg->output_mask & deps->outgoing_mask) == deps->outgoing_mask);
-    msg->length = 0;
+    msg->length = deps->taskpool->tdm.module->outgoing_message_piggyback_size;
     item->cmd.activate.task.output_mask = 0;  /* clean start */
     /* Treat for special cases: CTL, Short, etc... */
     for(k = 0; deps->outgoing_mask >> k; k++) {
@@ -1581,6 +1590,7 @@ static int remote_dep_mpi_pack_dep(int peer,
 #endif
     /* And now pack the updated message (msg->length and msg->output_mask) itself. */
     MPI_Pack(msg, dep_count, dep_dtt, packed_buffer, length, &saved_position, dep_comm);
+    deps->taskpool->tdm.module->outgoing_message_pack(deps->taskpool, peer, packed_buffer, &saved_position, length, dep_comm);
     return 0;
 }
 
@@ -1706,6 +1716,8 @@ static int remote_dep_mpi_progress(parsec_execution_stream_t* es)
                 continue;  /* The callback replaced the completed request, keep going */
             /* Get the last active callback to replace the empty one */
             parsec_comm_last_active_req--;
+            assert(parsec_comm_last_active_req >= (parsec_comm_activations_max + parsec_comm_data_get_max));
+            assert(pos >= (parsec_comm_activations_max + parsec_comm_data_get_max));
             if( parsec_comm_last_active_req > pos ) {
                 array_of_requests[pos]  = array_of_requests[parsec_comm_last_active_req];
                 array_of_callbacks[pos] = array_of_callbacks[parsec_comm_last_active_req];
@@ -1953,6 +1965,10 @@ static void remote_dep_mpi_recv_activate(parsec_execution_stream_t* es,
            deps->from, tmp, deps->msg.deps, deps->incoming_mask,
            deps->msg.length, *position, length, deps->max_priority);
 #endif
+
+    deps->taskpool->tdm.module->incoming_message_start(deps->taskpool, deps->from, packed_buffer, position,
+                                                       length, deps, dep_comm);
+        
     for(k = 0; deps->incoming_mask>>k; k++) {
         if(!(deps->incoming_mask & (1U<<k))) continue;
         /* Check for CTL and data that do not carry payload */
@@ -2123,11 +2139,13 @@ void
 remote_dep_mpi_new_taskpool( parsec_execution_stream_t* es,
                              dep_cmd_item_t *dep_cmd_item )
 {
-    parsec_list_item_t *item;
     parsec_taskpool_t* obj = dep_cmd_item->cmd.new_taskpool.tp;
+    parsec_list_item_t *item;
 #if defined(PARSEC_DEBUG_NOISIER)
     char tmp[MAX_TASK_STRLEN];
 #endif
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "OPAQUE_MPI: ThreadID %d\tNew taskpool %d registered",
+                         (int)pthread_self(), obj->taskpool_id);
     for(item = PARSEC_LIST_ITERATOR_FIRST(&dep_activates_noobj_fifo);
         item != PARSEC_LIST_ITERATOR_END(&dep_activates_noobj_fifo);
         item = PARSEC_LIST_ITERATOR_NEXT(item) ) {
@@ -2294,3 +2312,4 @@ remote_dep_mpi_get_end_cb(parsec_execution_stream_t* es,
     parsec_comm_gets--;
     return 0;
 }
+

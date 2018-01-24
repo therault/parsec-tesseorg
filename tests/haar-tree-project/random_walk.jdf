@@ -1,0 +1,100 @@
+extern "C" %{
+#include "tree_dist.h"
+#include <math.h>
+#include "parsec/sys/atomic.h"
+
+struct __parsec_random_walk_WALK_task_s;
+
+static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const assignment_t *_as);
+
+static int my_random_walk_startup(parsec_execution_stream_t * es,
+                                  struct __parsec_random_walk_WALK_task_s * this_task);
+%}
+
+%option dynamic = ON
+
+NP                  [type = "int"]
+fakeDesc            [type = "parsec_data_collection_t *"]
+mp_length           [type = "int"]
+prob_branch         [type = "double"]
+verbose             [type = "int"]
+
+WALK (n, s) [ make_key_fn = random_walk_make_key
+              startup_fn = my_random_walk_startup ]
+  n = 1 .. mp_length
+  s = 1 .. mp_length
+  branch = 1
+
+:fakeDesc(n % NP, s % NP)
+
+CTL RL <-  ((s == 1) & (n > 1)) ? RL WALK(n-1, s)
+       <-  ((s > 1)) ? RL WALK(n, s-1)
+       ->  ((s == 1) & (n+1 < mp_length)) ? RL WALK(n+1, s)
+       ->  ((s+1 < mp_length) & branch) ? RL WALK(n, s+1)
+
+BODY
+{
+    double v;
+    int rank = fakeDesc->rank_of(fakeDesc, n % NP, s % NP);
+
+    v = (double)rand() / (double)RAND_MAX;
+    this_task->locals.branch.value = (v > prob_branch);
+
+    if( verbose )
+        fprintf(stderr, "CALLING WALK(%d, %d) on rank %d (%s)\n", n, s, rank, this_task->locals.branch.value ? "branching" : "not branching");
+    
+}
+END
+
+extern "C" %{
+
+static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const assignment_t *_as)
+{
+    (void)__tp;
+    const struct __parsec_random_walk_WALK_assignment_s * assignments = (const struct __parsec_random_walk_WALK_assignment_s *)_as;
+    return (parsec_key_t)(((uint64_t)assignments->n.value) << 32) | ((uint64_t)assignments->s.value);
+}
+
+static int my_random_walk_startup(parsec_execution_stream_t * es, __parsec_random_walk_WALK_task_t * this_task)
+{
+  __parsec_random_walk_WALK_task_t *new_task;
+  __parsec_random_walk_internal_taskpool_t *__tp = (__parsec_random_walk_internal_taskpool_t *) this_task->taskpool;
+  int vpid = 0;
+  parsec_context_t *context = __tp->super.super.context;
+
+  if ( ((parsec_data_collection_t *)__tp->super._g_fakeDesc)->myrank != ((parsec_data_collection_t *) __tp->super._g_fakeDesc)->rank_of((parsec_data_collection_t *) __tp->super._g_fakeDesc, 1 % __tp->super._g_NP, 1 % __tp->super._g_NP))
+      return PARSEC_HOOK_RETURN_DONE;
+  if (NULL != ((parsec_data_collection_t *) __tp->super._g_fakeDesc)->vpid_of) {
+      vpid = ((parsec_data_collection_t *) __tp->super._g_fakeDesc)->vpid_of((parsec_data_collection_t *) __tp->super._g_fakeDesc, 1, 1);
+      assert(context->nb_vp >= vpid);
+  }
+  new_task = (__parsec_random_walk_WALK_task_t *) parsec_thread_mempool_allocate(context->virtual_processes[0]->execution_streams[0]->context_mempool);
+  new_task->status = PARSEC_TASK_STATUS_NONE;
+  new_task->taskpool = this_task->taskpool;
+  new_task->task_class = __tp->super.super.task_classes_array[random_walk_WALK.task_class_id];
+  new_task->chore_id = 0;
+
+  new_task->locals.n.value = 1;
+  new_task->locals.s.value = 1;
+  new_task->locals.branch.value = 1;
+  new_task->data._f_RL.data_repo = NULL;
+  new_task->data._f_RL.data_in = NULL;
+  new_task->data._f_RL.data_out = NULL;
+
+  new_task->priority = 1;
+
+  PARSEC_LIST_ITEM_SINGLETON(new_task);
+
+  /* It is the user-specific function responsibility to count tasks
+   * that it generates before scheduling them, knowing that 1 task is
+   * already scheduled... So, nothing to do here since we just added
+   * 1 task
+   */
+   parsec_atomic_fetch_add_int32(&__tp->initial_number_tasks, 1);
+  __parsec_schedule(es, (parsec_task_t *)new_task, 0);
+
+  (void)vpid;
+  return PARSEC_HOOK_RETURN_DONE;
+}
+
+%}

@@ -201,12 +201,8 @@ int __parsec_execute( parsec_execution_stream_t* es,
  */
 int parsec_taskpool_update_runtime_nbtask(parsec_taskpool_t *tp, int32_t nb_tasks)
 {
-    int remaining;
-
-    assert( tp->nb_pending_actions != 0 );
-    remaining = tp->update_nb_runtime_task( tp, nb_tasks );
-    assert( 0 <= remaining );
-    return parsec_check_complete_cb(tp, tp->context, remaining);
+    tp->tdm.module->taskpool_addto_nb_pa(tp, nb_tasks);
+    return 0;
 }
 
 static inline int all_tasks_done(parsec_context_t* context)
@@ -214,24 +210,18 @@ static inline int all_tasks_done(parsec_context_t* context)
     return (context->active_taskpools == 0);
 }
 
-int parsec_check_complete_cb(parsec_taskpool_t *tp, parsec_context_t *context, int remaining)
+void parsec_taskpool_termination_detected(parsec_taskpool_t *tp)
 {
-    if( 0 == remaining ) {
-        /* A parsec taskpool has been completed. Call the attached callback if
-         * necessary, then update the main engine.
-         */
-        if( NULL != tp->on_complete ) {
-            (void)tp->on_complete( tp, tp->on_complete_data );
-        }
-        (void)parsec_atomic_fetch_dec_int32( &context->active_taskpools );
-        PARSEC_PINS_TASKPOOL_FINI(tp);
-        return 1;
+    if( NULL != tp->on_complete ) {
+        (void)tp->on_complete( tp, tp->on_complete_data );
     }
-    return 0;
+    (void)parsec_atomic_fetch_dec_int32( &(tp->context->active_taskpools) );
+    PARSEC_PINS_TASKPOOL_FINI(tp);
 }
 
 parsec_sched_module_t *parsec_current_scheduler           = NULL;
 static parsec_sched_base_component_t *scheduler_component = NULL;
+static parsec_termdet_module_t *termdet_local_module      = NULL;
 
 void parsec_remove_scheduler( parsec_context_t *parsec )
 {
@@ -242,6 +232,47 @@ void parsec_remove_scheduler( parsec_context_t *parsec )
         parsec_current_scheduler = NULL;
         scheduler_component = NULL;
     }
+}
+
+static mca_base_module_t    *td_module = NULL;
+static mca_base_component_t *td_component = NULL;
+
+int parsec_termdet_open_dyn_module(parsec_taskpool_t *tp)
+{
+    mca_base_component_t **tds;
+
+    assert(NULL == tp->tdm.module);
+
+    if( NULL == td_component ) {
+        tds = mca_components_open_bytype( "termdet" );
+        mca_components_query(tds,
+                             &td_module,
+                             &td_component);
+        mca_components_close(tds);
+
+        if( NULL == td_module ) {
+            parsec_fatal("Could not find a termdet component");
+            return PARSEC_ERROR;
+        }
+    }
+    
+    tp->tdm.module = &((parsec_termdet_module_t*)td_module)->module;
+
+    if( strcmp(td_component->mca_component_name, "local") == 0 ) {
+        parsec_warning("Warning: the local termination detection algorithm was selected by MCA where a global one was probably expected by the user");
+    }
+    
+    return PARSEC_SUCCESS;
+}
+
+int parsec_termdet_close_dyn_module(void)
+{
+    if(NULL != td_component) {
+        td_component->mca_close_component();
+        td_component = NULL;
+        td_module = NULL;
+    }
+    return PARSEC_SUCCESS;
 }
 
 int parsec_set_scheduler( parsec_context_t *parsec )
@@ -376,7 +407,6 @@ static inline unsigned long exponential_backoff(uint64_t k)
 int __parsec_complete_execution( parsec_execution_stream_t *es,
                                  parsec_task_t *task )
 {
-    parsec_taskpool_t *tp = task->taskpool;
     int rc = 0;
 
     /* complete execution PINS event includes the preparation of the
@@ -400,20 +430,8 @@ int __parsec_complete_execution( parsec_execution_stream_t *es,
     DEBUG_MARK_EXE( es->th_id, es->virtual_process->vp_id, task );
 
     /* Release the execution context */
-    task->task_class->release_task( es, task );
-
-    /* Check to see if the DSL has marked the taskpool as completed */
-    if( 0 == tp->nb_tasks ) {
-        /* The taskpool has been marked as complete. Unfortunately, it is possible
-         * that multiple threads are completing tasks associated with this taskpool
-         * simultaneously and we need to release the runtime action associated with
-         * this taskpool tasks once. We need to protect this action by atomically
-         * setting the number of tasks to a non-zero value.
-         */
-        if( parsec_atomic_cas_int32(&tp->nb_tasks, 0, PARSEC_RUNTIME_RESERVED_NB_TASKS) )
-            parsec_taskpool_update_runtime_nbtask(tp, -1);
-    }
-
+    (void)task->task_class->release_task( es, task );
+    
     return rc;
 }
 
@@ -620,6 +638,24 @@ int parsec_context_add_taskpool( parsec_context_t* context, parsec_taskpool_t* t
 
     PARSEC_PINS_TASKPOOL_INIT(tp);  /* PINS taskpool initialization */
 
+    /* If the DSL did not install a termination detection module,
+     * assume that the old behavior (local detection when local 
+     * number of tasks is 0) is expected: install the local termination
+     * detection module, and declare the taskpool as ready */
+    if( tp->tdm.module == NULL ) {
+        if( NULL == termdet_local_component ) {
+            termdet_local_component = mca_component_open_byname("termdet", "local");
+            assert(NULL != termdet_local_component);
+            termdet_local_module = (parsec_termdet_module_t*)mca_component_query(termdet_local_component);
+            assert(NULL != termdet_local_module);
+        }
+        assert(tp->tdm.monitor == NULL);
+        tp->tdm.module = &termdet_local_module->module;
+        assert( NULL != tp->tdm.module );
+        tp->tdm.module->monitor_taskpool(tp, parsec_taskpool_termination_detected);
+        tp->tdm.module->taskpool_ready(tp);
+    }
+    
     /* Update the number of pending taskpools */
     (void)parsec_atomic_fetch_inc_int32( &context->active_taskpools );
 
@@ -650,9 +686,7 @@ int parsec_context_add_taskpool( parsec_context_t* context, parsec_taskpool_t* t
             __parsec_schedule(context->virtual_processes[vpid]->execution_streams[0],
                               startup_list[vpid], 0);
         }
-    } else {
-        parsec_check_complete_cb(tp, context, tp->nb_pending_actions);
-    }
+    } 
 
     return 0;
 }

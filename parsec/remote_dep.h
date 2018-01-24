@@ -80,18 +80,18 @@ struct remote_dep_output_param_s {
 
 struct parsec_remote_deps_s {
     parsec_list_item_t               super;
-    parsec_lifo_t                   *origin;    /**< The memory arena where the data pointer is comming from */
-    struct parsec_taskpool_s        *taskpool;  /**< parsec taskpool generating this data transfer */
-    int32_t                          pending_ack;  /**< Number of releases before completion */
-    int32_t                          from;    /**< From whom we received the control */
-    int32_t                          root;    /**< The root of the control message */
-    uint32_t                         incoming_mask;  /**< track all incoming actions (receives) */
-    uint32_t                         outgoing_mask;  /**< track all outgoing actions (send) */
-    remote_dep_wire_activate_t       msg;     /**< A copy of the message control */
+    parsec_lifo_t                   *origin;        /**< The memory arena where the data pointer is comming from */
+    struct parsec_taskpool_s        *taskpool;      /**< parsec taskpool generating this data transfer */
+    int32_t                          pending_ack;   /**< Number of releases before completion */
+    int32_t                          from;          /**< From whom we received the control */
+    int32_t                          root;          /**< The root of the control message */
+    uint32_t                         incoming_mask; /**< track all incoming actions (receives) */
+    uint32_t                         outgoing_mask; /**< track all outgoing actions (send) */
+    remote_dep_wire_activate_t       msg;           /**< A copy of the message control */
     int32_t                          max_priority;
     int32_t                          priority;
     uint32_t                        *remote_dep_fw_mask;  /**< list of peers already notified about
-                                                            * the control sequence (only used for control messages) */
+                                                           * the control sequence (only used for control messages) */
     struct data_repo_entry_s        *repo_entry;
     struct remote_dep_output_param_s output[1];
 };
@@ -172,6 +172,9 @@ int parsec_remote_dep_propagate(parsec_execution_stream_t* es,
                                parsec_remote_deps_t* deps);
 #endif
 
+/* This function sends a delayed deps */
+int parsec_remote_dep_send(int rank, parsec_remote_deps_t *deps);
+
 #else
 #define parsec_remote_dep_init(ctx)            1
 #define parsec_remote_dep_fini(ctx)            0
@@ -181,6 +184,7 @@ int parsec_remote_dep_propagate(parsec_execution_stream_t* es,
 #define parsec_remote_dep_activate(ctx, o, r) -1
 #define parsec_remote_dep_new_taskpool(ctx)    0
 #define remote_dep_mpi_initialize_execution_stream(ctx) 0
+#define parsec_remote_dep_send(r, deps)        0
 #endif /* DISTRIBUTED */
 
 END_C_DECLS
