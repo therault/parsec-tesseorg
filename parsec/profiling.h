@@ -510,7 +510,7 @@ void profiling_thread_save_sinfo(parsec_thread_profiling_t * thread,
 /** @endcond */
 
 #ifdef __cplusplus
-}
+} /* extern "C" */
 #endif
 
 /** @} */

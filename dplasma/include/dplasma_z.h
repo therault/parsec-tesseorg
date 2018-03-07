@@ -9,6 +9,7 @@
 #define _DPLASMA_Z_H_
 
 #include "parsec/data_dist/matrix/matrix.h"
+#include "parsec/data_dist/matrix/irregular_tiled_matrix.h"
 
 /***********************************************************
  *               Blocking interface
@@ -319,5 +320,40 @@ int dplasma_zheev( parsec_context_t *parsec, const PLASMA_enum jobz, const PLASM
 void dplasma_zhbrdt_Destruct( parsec_taskpool_t *o );
 void dplasma_zheev_Destruct( parsec_taskpool_t *o );
 void dplasma_zherbt_Destruct( parsec_taskpool_t *o );
+
+/***********************************************************
+ *               Tesse project functions
+ */
+
+#define SUMMA_NN      1
+#define SUMMA_NT      2
+#define SUMMA_TT      3
+#define SUMMA_TN      4
+#define GEMM_BCAST_NN 5
+
+int dplasma_zsumma( parsec_context_t *parsec,
+                    PLASMA_enum transA, PLASMA_enum transB,
+                    parsec_complex64_t alpha,
+                    const irregular_tiled_matrix_desc_t *A,
+                    const irregular_tiled_matrix_desc_t *B,
+                    irregular_tiled_matrix_desc_t *C);
+
+/* Recursive kernel */
+int
+dplasma_zsumma_rec( parsec_context_t *parsec,
+                    PLASMA_enum transA, PLASMA_enum transB,
+                    parsec_complex64_t alpha,
+                    const irregular_tiled_matrix_desc_t *A,
+                    const irregular_tiled_matrix_desc_t *B,
+                    irregular_tiled_matrix_desc_t *C, int bigtile, int opttile);
+
+parsec_taskpool_t*
+dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
+                    parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
+                    const irregular_tiled_matrix_desc_t* B,
+                    irregular_tiled_matrix_desc_t* C);
+
+void dplasma_zsumma_Destruct( parsec_taskpool_t *o );
+void dplasma_zsumma_recursive_Destruct( parsec_taskpool_t *o );
 
 #endif /* _DPLASMA_Z_H_ */

@@ -77,9 +77,10 @@ struct data_repo_entry_s {
     parsec_thread_mempool_t   *data_repo_mempool_owner;
     void*                      generator;
     parsec_hash_table_item_t   ht_item;
-    volatile int32_t           usagecnt;
-    volatile int32_t           usagelmt;
-    volatile int32_t           retained;
+    parsec_execution_stream_t *ttg_task;
+    volatile uint32_t          usagecnt;
+    volatile uint32_t          usagelmt;
+    volatile uint32_t          retained;
 #if defined(PARSEC_SIM)
     int                        sim_exec_date;
 #endif

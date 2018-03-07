@@ -859,6 +859,9 @@ parsec_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
                              "GPU[%d]:%s: Investigating flow %s:%i",
                              gpu_device->cuda_index, task_name, flow->name, i);
         temp_loc[i] = NULL;
+        if (this_task->data[i].data_in == NULL)
+            continue;
+
         master   = this_task->data[i].data_in->original;
         gpu_elem = PARSEC_DATA_GET_COPY(master, gpu_device->super.device_index);
         this_task->data[i].data_out = gpu_elem;
@@ -1189,6 +1192,8 @@ parsec_gpu_check_space_needed(gpu_device_t *gpu_device,
         if(!(flow->flow_flags)) continue;
 
         data = this_task->data[i].data_in;
+        if (data == NULL) continue;
+
         original = data->original;
         if( NULL != PARSEC_DATA_GET_COPY(original, gpu_device->super.device_index) ) {
             continue;
@@ -1608,6 +1613,7 @@ parsec_gpu_kernel_push( gpu_device_t                    *gpu_device,
         flow = gpu_task->flow[i];
         /* Skip CTL flows */
         if(!(flow->flow_flags)) continue;
+        if(this_task->data[i].data_in == NULL) continue;
 
         assert( NULL != parsec_data_copy_get_ptr(this_task->data[i].data_in) );
 

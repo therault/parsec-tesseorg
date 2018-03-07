@@ -456,6 +456,7 @@ int __parsec_task_progress( parsec_execution_stream_t* es,
                 task->priority /= 10;  /* demote the task */
             PARSEC_LIST_ITEM_SINGLETON(task);
             __parsec_schedule(es, task, distance + 1);
+            task = NULL;
             break;
         case PARSEC_HOOK_RETURN_ASYNC:   /* The task is outside our reach we should not
                                           * even try to change it's state, the completion
@@ -489,7 +490,22 @@ int __parsec_task_progress( parsec_execution_stream_t* es,
     return rc;
 }
 
-int __parsec_context_wait( parsec_execution_stream_t* es )
+typedef int (*cond_function_t)(parsec_context_t*, void *);
+
+static int cond_stop_on_all_done(parsec_context_t *parsec_context, void *cond_function_data)
+{
+  (void)cond_function_data;
+  return all_tasks_done(parsec_context);
+}
+
+static int cond_stop_on_taskpool_done(parsec_context_t *parsec_context, void *cond_function_data )
+{
+    parsec_taskpool_t *tp = (parsec_taskpool_t*)cond_function_data;
+    (void)parsec_context;
+    return (tp->nb_tasks == PARSEC_RUNTIME_RESERVED_NB_TASKS) && (tp->nb_pending_actions == 0);
+}
+
+int __parsec_wait( parsec_execution_stream_t* es, cond_function_t cond_function_stop, void *cond_function_data )
 {
     uint64_t misses_in_a_row;
     parsec_context_t* parsec_context = es->virtual_process->parsec_context;
@@ -540,7 +556,7 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
     }
 
   skip_first_barrier:
-    while( !all_tasks_done(parsec_context) ) {
+    while( !cond_function_stop(parsec_context, cond_function_data)) {
 #if defined(DISTRIBUTED)
         if( (1 == parsec_communication_engine_up) &&
             (es->virtual_process[0].parsec_context->nb_nodes == 1) &&
@@ -572,9 +588,9 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
 
     parsec_rusage_per_es(es, true);
 
-    /* We're all done ? */
-    parsec_barrier_wait( &(parsec_context->barrier) );
-
+    /* We're all done? */
+    if( cond_stop_on_all_done(parsec_context, NULL) ) {
+        parsec_barrier_wait( &(parsec_context->barrier) );
 #if defined(PARSEC_SIM)
     if( PARSEC_THREAD_IS_MASTER(es) ) {
         parsec_vp_t *vp;
@@ -586,12 +602,14 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
                 if( vp->execution_streams[my_idx]->largest_simulation_date > largest_date )
                     largest_date = vp->execution_streams[my_idx]->largest_simulation_date;
             }
+            parsec_context->largest_simulation_date = largest_date;
         }
         parsec_context->largest_simulation_date = largest_date;
     }
     parsec_barrier_wait( &(parsec_context->barrier) );
     es->largest_simulation_date = 0;
 #endif
+    }
 
     if( !PARSEC_THREAD_IS_MASTER(es) ) {
         my_barrier_counter++;
@@ -609,6 +627,17 @@ int __parsec_context_wait( parsec_execution_stream_t* es )
     }
     
     return nbiterations;
+}
+
+void parsec_ptg_taskpool_wait( parsec_context_t *parsec, parsec_taskpool_t *tp)
+{
+    parsec_execution_stream_t *es = parsec->virtual_processes[0]->execution_streams[0];
+    __parsec_wait(es, cond_stop_on_taskpool_done, tp);
+}
+
+int __parsec_context_wait( parsec_execution_stream_t* es )
+{
+    return __parsec_wait(es, cond_stop_on_all_done, NULL);
 }
 
 /*  *********** COMPOSITION OF PARSEC_TASKPOOLS ***************  */

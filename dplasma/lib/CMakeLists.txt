@@ -17,6 +17,7 @@ set(EXTRA_SOURCES
   dplasma_systolic_qr.c
   map2_wrapper.c
   butterfly_map.c
+  dplasma_bcast.c
 )
 if( NOT PARSEC_HAVE_COMPLEX_H )
   list(APPEND EXTRA_SOURCES complex.c)
@@ -93,7 +94,13 @@ set(JDF
   zhetrd_b2s.jdf
   ztrdsm.jdf
   ztrmdm.jdf
-)
+  # TESSE
+  zsumma_NN.jdf
+  zsumma_NT.jdf
+  zsumma_TT.jdf
+  zsumma_TN.jdf
+  zgemm_bcast_NN.jdf
+  )
 precisions_rules_py(generated_jdf
                     "${JDF}"
                     PRECISIONS "${DPLASMA_PRECISIONS}")
@@ -195,6 +202,8 @@ set(SOURCES
   zhetrs_wrapper.c
   ztrdsm_wrapper.c
   zheev_wrapper.c
+  # TESSE
+  zsumma_wrapper.c
 )
 precisions_rules_py(generated_wrappers
                     "${SOURCES}"

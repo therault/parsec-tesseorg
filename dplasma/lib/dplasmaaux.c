@@ -112,3 +112,23 @@ dplasma_aux_getGEMMLookahead( parsec_tiled_matrix_dc_t *A )
     }
 }
 
+int
+dplasma_irr_tiled_getGEMMLookahead( irregular_tiled_matrix_desc_t *A )
+{
+    /**
+     * Assume that the number of threads per node is constant, and compute the
+     * look ahead based on the global information to get the same one on all
+     * nodes.
+     */
+    int nbunits = vpmap_get_nb_total_threads() * A->super.nodes;
+    double alpha =  3. * (double)nbunits / ( A->mt * A->nt );
+
+    if ( A->super.nodes == 1 ) {
+        /* No look ahaead */
+        return dplasma_imax( A->mt, A->nt );
+    }
+    else {
+        /* Look ahaed of at least 2, and that provides 3 tiles per computational units */
+        return dplasma_imax( ceil( alpha ), 2 );
+    }
+}
