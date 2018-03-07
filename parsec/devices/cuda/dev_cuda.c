@@ -154,6 +154,10 @@ static int parsec_cuda_memory_register(parsec_device_t* device, parsec_data_coll
     cudaError_t status;
     int rc = PARSEC_ERROR;
 
+    if (NULL == ptr) {
+        return PARSEC_SUCCESS;
+    }
+
     if (desc->memory_registration_status == MEMORY_STATUS_REGISTERED) {
         rc = PARSEC_SUCCESS;
         return rc;
@@ -855,6 +859,9 @@ parsec_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
         if(!(flow->flow_flags)) continue;
 
         temp_loc[i] = NULL;
+        if (this_task->data[i].data_in == NULL)
+            continue;
+
         master   = this_task->data[i].data_in->original;
         gpu_elem = PARSEC_DATA_GET_COPY(master, gpu_device->super.device_index);
         this_task->data[i].data_out = gpu_elem;
@@ -1120,6 +1127,8 @@ static inline int parsec_gpu_check_space_needed(gpu_device_t *gpu_device, parsec
         if(!(flow->flow_flags)) continue;
 
         data = this_task->data[i].data_in;
+        if (data == NULL) continue;
+
         original = data->original;
         if( NULL != PARSEC_DATA_GET_COPY(original, gpu_device->super.device_index) ) {
             continue;
@@ -1464,6 +1473,7 @@ progress_stream( gpu_device_t* gpu_device,
                     assert( flow );
                     assert( flow->flow_index == i );
                     if(!flow->flow_flags) continue;
+                    if(this_task->data[i].data_in == NULL) continue;
                     if (this_task->data[i].data_out->push_task == this_task) {   /* only the task who did this PUSH can modify the status */
                         this_task->data[i].data_out->data_transfer_status = DATA_STATUS_COMPLETE_TRANSFER;
                         continue;
@@ -1634,6 +1644,7 @@ parsec_gpu_kernel_push( gpu_device_t            *gpu_device,
         flow = gpu_task->flow[i];
         /* Skip CTL flows */
         if(!(flow->flow_flags)) continue;
+        if(this_task->data[i].data_in == NULL) continue;
 
         assert( NULL != parsec_data_copy_get_ptr(this_task->data[i].data_in) );
 
@@ -2074,6 +2085,7 @@ parsec_gpu_kernel_scheduler( parsec_execution_stream_t *es,
     parsec_gpu_kernel_epilog( gpu_device, gpu_task );
     __parsec_complete_execution( es, gpu_task->ec );
     gpu_device->super.executed_tasks++;
+
   remove_gpu_task:
     parsec_device_load[gpu_device->super.device_index] -= parsec_device_sweight[gpu_device->super.device_index];
     free( gpu_task );

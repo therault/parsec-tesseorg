@@ -55,7 +55,7 @@ static inline int dplasma_iceil(int a, int b) { return (a + b - 1) / b; };
 
 /* Functions specific to QR */
 #include "dplasma_qr_param.h"
-
+/* The following lines imply that precisions are not optional, build them all or do not use dplasma */
 #include "dplasma_s.h"
 #include "dplasma_d.h"
 #include "dplasma_c.h"

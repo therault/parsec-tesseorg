@@ -16,6 +16,8 @@ install(FILES
   dplasma.h
   dplasma_complex.h
   dplasma_qr_param.h
+  dplasma_bcast.h
+  flops.h
   DESTINATION ${DPLASMA_INSTALL_PREFIX}/include)
 
 foreach(generated_header ${generated_headers})

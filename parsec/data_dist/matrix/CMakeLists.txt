@@ -28,6 +28,8 @@ set(sources
         vector_two_dim_cyclic.c
         reduce_wrapper.c
         subtile.c
+        irregular_tiled_matrix.c
+        irregular_subtile.c
         ${generated_jdf}
 )
 
@@ -61,4 +63,6 @@ install(FILES
   two_dim_tabular.h
   grid_2Dcyclic.h
   subtile.h
+  irregular_tiled_matrix.h
+  irregular_subtile.h
   DESTINATION include/parsec/data_dist/matrix )

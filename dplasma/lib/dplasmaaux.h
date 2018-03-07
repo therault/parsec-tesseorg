@@ -13,6 +13,6 @@
 int dplasma_aux_get_priority_limit( char* function, const parsec_tiled_matrix_dc_t* dc );
 
 int dplasma_aux_getGEMMLookahead( parsec_tiled_matrix_dc_t *A );
+int dplasma_irr_tiled_getGEMMLookahead( irregular_tiled_matrix_desc_t *A );
 
 #endif
-

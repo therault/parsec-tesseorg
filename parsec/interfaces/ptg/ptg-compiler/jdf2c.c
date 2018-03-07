@@ -2914,6 +2914,7 @@ jdf_generate_function_incarnation_list( const jdf_t *jdf,
         if( NULL == type_property) {
             string_arena_add_string(sa, "    { .type     = PARSEC_DEV_CPU,\n");
             string_arena_add_string(sa, "      .evaluate = %s,\n", "NULL");
+            string_arena_add_string(sa, "      .here     = %s,\n", "NULL");
             string_arena_add_string(sa, "      .hook     = (parsec_hook_t*)hook_of_%s },\n", base_name);
         } else {
             string_arena_add_string(sa, "#if defined(PARSEC_HAVE_%s)\n", type_property->expr->jdf_var);
@@ -2932,6 +2933,7 @@ jdf_generate_function_incarnation_list( const jdf_t *jdf,
                 string_arena_add_string(sa, "      .dyld     = \"%s\",\n", dyld_property->expr->jdf_var);
             }
             string_arena_add_string(sa, "      .evaluate = %s,\n", "NULL");
+            string_arena_add_string(sa, "      .here     = %s,\n", "NULL");
             string_arena_add_string(sa, "      .hook     = (parsec_hook_t*)hook_of_%s_%s },\n", base_name, type_property->expr->jdf_var);
             string_arena_add_string(sa, "#endif  /* defined(PARSEC_HAVE_%s) */\n", type_property->expr->jdf_var);
         }
@@ -2940,6 +2942,7 @@ jdf_generate_function_incarnation_list( const jdf_t *jdf,
     string_arena_add_string(sa,
                             "    { .type     = PARSEC_DEV_NONE,\n"
                             "      .evaluate = NULL,\n"
+                            "      .here     = NULL,\n"
                             "      .hook     = (parsec_hook_t*)NULL },  /* End marker */\n"
                             "};\n\n");
 }
@@ -3358,6 +3361,7 @@ static void jdf_generate_startup_hook( const jdf_t *jdf )
             "    }\n"
             "    chores[index].type     = PARSEC_DEV_NONE;\n"
             "    chores[index].evaluate = NULL;\n"
+            "    chores[index].here     = NULL;\n"
             "    chores[index].hook     = NULL;\n"
             "    parsec_task_t* task = (parsec_task_t*)parsec_thread_mempool_allocate(context->virtual_processes[0]->execution_streams[0]->context_mempool);\n"
             "    task->taskpool = (parsec_taskpool_t *)__parsec_tp;\n"

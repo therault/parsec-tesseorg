@@ -1,4 +1,4 @@
-add_library(common STATIC common.c common_timing.h flops.h)
+add_library(common STATIC common.c common_timing.h)
 target_link_libraries(common parsec ${MPI_LIBRARIES})
 add_dependencies(common dplasma_includes)
 
@@ -67,6 +67,8 @@ set(TESTS
   testing_zgeqrf_dtd_untied.c
   testing_zgetrf_incpiv_dtd.c
   testing_zgemm_dtd.c
+  # TESSE
+  testing_zsumma.c
 )
 if( DPLASMA_DEBUG_QR_PIVGEN )
   list(APPEND TESTS testing_zpivgen.c)
