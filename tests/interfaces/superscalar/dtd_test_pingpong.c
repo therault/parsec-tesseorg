@@ -178,6 +178,7 @@ int main(int argc, char **argv)
 
     /* End of correctness checking */
 
+//if(0) {
 
     /* Start of Pingpong timing */
     int repeat_pingpong = 1;
@@ -237,6 +238,7 @@ int main(int argc, char **argv)
         parsec_dtd_data_collection_fini( A );
         free_data(dcA);
     }
+//}
 
     parsec_fini(&parsec);
 
