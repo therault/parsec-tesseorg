@@ -728,16 +728,17 @@ parsec_cuda_memory_reserve( gpu_device_t* gpu_device,
         /* This computation leads to allocating more than available if we asked for more than GPU memory */
         mem_elem_per_gpu = (how_much_we_allocate + eltsize - 1 ) / eltsize;
         size_t total_size = (size_t)mem_elem_per_gpu * eltsize;
+
         if (total_size > initial_free_mem) {
             /* Mapping more than 100% of GPU memory is obviously wrong */
             /* Mapping exactly 100% of the GPU memory ends up producing errors about __global__ function call is not configured */
             /* Mapping 95% works with low-end GPUs like 1060, how much to let available for cuda runtime, I don't know how to calculate */
-            total_size = (size_t)((int)(.95*initial_free_mem / eltsize)) * eltsize;
+            total_size = (size_t)((int)(.9*initial_free_mem / eltsize)) * eltsize;
             mem_elem_per_gpu = total_size / eltsize;
         }
         status = (cudaError_t)cudaMalloc(&base_ptr, total_size);
         PARSEC_CUDA_CHECK_ERROR( "(parsec_cuda_memory_reserve) cudaMalloc ", status,
-                                 ({ parsec_warning("GPU[%d] Allocating memory on the GPU device failed", gpu_device->cuda_index); }) );
+                                 ({ parsec_warning("GPU[%d] Allocating %zu bytes of memory on the GPU device failed", gpu_device->cuda_index, total_size); }) );
 
         gpu_device->memory = zone_malloc_init( base_ptr, mem_elem_per_gpu, eltsize );
 
