@@ -168,6 +168,22 @@ BODY [type=CUDA
     status = cublasGetError();
     PARSEC_CUDA_CHECK_ERROR( "cublasZgemm ", status,
                             {return -1;} );
+
+    /* Quick and dirty emulation of the next GEMM */
+    if( knext != -1 ) {
+        __parsec_zgemm_bcast_NN_GEMM_task_t next_gemm;
+        memcpy(&next_gemm, this_task, sizeof(__parsec_zgemm_bcast_NN_GEMM_task_t));
+        next_gemm.locals.k.value = knext;
+        assert( PARSEC_DEV_CUDA == next_gemm.task_class->incarnations[this_task->chore_id].type );
+        if(NULL != next_gemm.task_class->incarnations[this_task->chore_id].evaluate) {
+            if( next_gemm.task_class->incarnations[this_task->chore_id].evaluate((parsec_task_t*)&next_gemm) ==
+                PARSEC_HOOK_RETURN_NEXT ) {
+                    /* The next GEMM wants to run on the CPUs... */
+                    gpu_task->pushout |= (1 << 0);
+            }
+        }
+    }
+    
 }
 END
 
