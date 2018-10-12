@@ -24,16 +24,18 @@
 
 #include "parsec/utils/mca_param.h"
 
-typedef struct parsec_function_vampire_s {
+typedef struct parsec_tc_vampire_s {
     parsec_task_class_t super;
-    parsec_hook_t    *saved_prepare_input;
+    parsec_hook_t         *saved_prepare_input;
+    parsec_destruct_fn_t  *saved_destructor;
+    parsec_task_class_t   *saved_tc;
     void *         (*resolve_future_function)(void*, void*, void*);
-} parsec_function_vampire_t;
+} parsec_tc_vampire_t;
 
 static int future_input_for_read_a_task(parsec_execution_stream_t * es, __parsec_zsumma_NN_READ_A_task_t * this_task)
 {
     const parsec_zsumma_NN_taskpool_t *__parsec_tp = (parsec_zsumma_NN_taskpool_t *) this_task->taskpool;
-    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->task_class;
+    parsec_tc_vampire_t *vf = (parsec_tc_vampire_t*)this_task->task_class;
     parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
@@ -54,7 +56,7 @@ static int future_input_for_read_a_task(parsec_execution_stream_t * es, __parsec
 static int future_input_for_read_b_task(parsec_execution_stream_t * es, __parsec_zsumma_NN_READ_B_task_t * this_task)
 {
     const parsec_zsumma_NN_taskpool_t *__parsec_tp = (parsec_zsumma_NN_taskpool_t *) this_task->taskpool;
-    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->task_class;
+    parsec_tc_vampire_t *vf = (parsec_tc_vampire_t*)this_task->task_class;
     parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int k = this_task->locals.k.value;
@@ -75,7 +77,7 @@ static int future_input_for_read_b_task(parsec_execution_stream_t * es, __parsec
 static int future_input_for_summa_task(parsec_execution_stream_t * es, __parsec_zsumma_NN_SUMMA_task_t * this_task)
 {
     const parsec_zsumma_NN_taskpool_t *__parsec_tp = (parsec_zsumma_NN_taskpool_t *) this_task->taskpool;
-    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->task_class;
+    parsec_tc_vampire_t *vf = (parsec_tc_vampire_t*)this_task->task_class;
     parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
@@ -99,7 +101,7 @@ static int future_input_for_summa_task(parsec_execution_stream_t * es, __parsec_
 static int future_input_for_accumulate_c_task(parsec_execution_stream_t * es, __parsec_zgemm_bcast_NN_ACCUMULATE_C_task_t * this_task)
 {
     const parsec_zgemm_bcast_NN_taskpool_t *__parsec_tp = (parsec_zgemm_bcast_NN_taskpool_t *) this_task->taskpool;
-    parsec_function_vampire_t *vf = (parsec_function_vampire_t*)this_task->task_class;
+    parsec_tc_vampire_t *vf = (parsec_tc_vampire_t*)this_task->task_class;
     parsec_data_copy_t *copy = NULL;
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
@@ -121,25 +123,50 @@ static int future_input_for_accumulate_c_task(parsec_execution_stream_t * es, __
     return vf->saved_prepare_input(es, (parsec_task_t *)this_task);
 }
 
+static void vtp_destructor(parsec_taskpool_t *tp)
+{
+    parsec_task_class_t *rf;
+    parsec_destruct_fn_t destructor = NULL;
+    parsec_tc_vampire_t *vf;
+    int fid;
+    for(fid = 0; fid < tp->nb_task_classes; fid++) {
+        if( strstr(tp->task_classes_array[fid]->name, "(vampirized)") ) {
+            vf = (parsec_tc_vampire_t*)tp->task_classes_array[fid];
+            rf = vf->saved_tc;
+            if(NULL == destructor) /* Do it once, or you'll call vtp_destructor again */
+                destructor = vf->saved_destructor;
+            free((char*)tp->task_classes_array[fid]->name);
+            free((void*)tp->task_classes_array[fid]);
+            tp->task_classes_array[fid] = rf; 
+        }
+    }
+    if( NULL != destructor ) {
+        fprintf(stderr, "Calling destructor\n");
+        destructor(tp);
+    }
+}
+
 static void attach_futures_prepare_input(parsec_taskpool_t *tp, const char *task_name, void*(*resolve_future_function)(void*, void*, void*))
 {
     int fid;
-    parsec_function_vampire_t *vf;
-    for(fid = 0; NULL != tp->task_classes_array[fid]; fid++) {
+    parsec_tc_vampire_t *vf;
+    for(fid = 0; fid < tp->nb_task_classes; fid++) {
         if( strcmp(tp->task_classes_array[fid]->name, task_name) == 0 ) {
             break;
         }
     }
-    if( NULL == tp->task_classes_array[fid] ) {
+    if( fid == tp->nb_task_classes ) {
         fprintf(stderr, "%s:%d -- Internal Error: could not find a task class with name '%s' in the taskpool\n", __FILE__, __LINE__, task_name);
         assert(0);
         return;
     }
     assert(NULL != resolve_future_function);
-    vf = (parsec_function_vampire_t*)malloc(sizeof(parsec_function_vampire_t));
+    vf = (parsec_tc_vampire_t*)malloc(sizeof(parsec_tc_vampire_t));
+    vf->saved_tc = tp->task_classes_array[fid];
     memcpy(&vf->super, tp->task_classes_array[fid], sizeof(parsec_task_class_t));
     asprintf((char **)&vf->super.name, "%s(vampirized)", tp->task_classes_array[fid]->name);
     vf->saved_prepare_input = vf->super.prepare_input;
+    vf->saved_destructor = tp->destructor;
     vf->resolve_future_function = resolve_future_function;
     if( strcmp(task_name, "READ_A") == 0 )
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_read_a_task;
@@ -150,6 +177,7 @@ static void attach_futures_prepare_input(parsec_taskpool_t *tp, const char *task
     else if( strcmp(task_name, "ACCUMULATE_C") == 0 )
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_accumulate_c_task;
     else exit(3);
+    tp->destructor = vtp_destructor;
     tp->task_classes_array[fid] = (parsec_task_class_t*)vf;
 }
 
@@ -528,7 +556,7 @@ dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     Bsize = B->m * B->n;
     Csize = C->m * C->n;
 
-    if( ((transA == PlasmaNoTrans) && (transB == PlasmaNoTrans)) && ((10 * (Asize + Csize) < Bsize)) ) {
+    if( ((transA == PlasmaNoTrans) && (transB == PlasmaNoTrans)) ) {
         fprintf(stdout, "calling zgemm_bcast\n");
         return dplasma_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
