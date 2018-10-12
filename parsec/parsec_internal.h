@@ -242,7 +242,7 @@ typedef parsec_key_t (parsec_functionkey_fn_t)(const parsec_taskpool_t *tp,
 /**
  *
  */
-typedef float (parsec_evaluate_function_t)(const parsec_task_t* task);
+typedef parsec_hook_return_t (parsec_evaluate_function_t)(const parsec_task_t* task);
 
 /**
  * Retrieve the datatype for each flow (for input) or dependency (for output)

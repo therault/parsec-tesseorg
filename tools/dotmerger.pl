@@ -1,6 +1,7 @@
 #!perl -W
 use strict;
 use Getopt::Long;
+use Data::Dumper;
 
 my $nodefmt="<%R/%V/%T> %K(%P)<%p>";
 my $nodeshapeexpr="0";
@@ -13,11 +14,13 @@ my $linkstyleexpr = "%C ? \"dashed\" : \"solid\"";
 my @shapes=("ellipse", "circle", "oval", "box", "polygon", "diamond", "pentagon", "hexagon", "septagon", "octagon", "square", "house", "invhouse", "trapezium","invtrapezium");
 my @colors=("589AB7", "D7ACEF", "ABD6FD", "D2FC3D", "993300","9933FF","CC3300", "CC33FF", "FF3300","FF33FF","FFFF00");
 my $ignore={};
+my $ignore_tp={ };
+my $only_tp={ };
 my $inputs=[];
 
 sub parseArgs {
   my $help = 0;
-  my @il;
+  my (@il, @ohl, @ihl);
   my $result = GetOptions ("nodefmt=s"   => \$nodefmt,
                            "nodeshape=s" => \$nodeshapeexpr,
                            "nodefc=s"    => \$nodefcexpr,
@@ -27,7 +30,9 @@ sub parseArgs {
                            "links=s"     => \$linkstyleexpr,
                            "help!"       => \$help,
                            "ignore=s"    => \@il,
-                           "input=s"     => \@{$inputs});
+                           "input=s"     => \@{$inputs},
+			   "only-tp=s"   => \@ohl,
+			   "ignore-tp=s" => \@ihl);
   foreach my $f (@ARGV) {
     push @{$inputs}, $f;
   }
@@ -75,6 +80,8 @@ END
                            Can use %E and %C (see below)
                            Default: '$linkstyleexpr'
    --ignore=KERNEL      Ignore this kernel. This option can appear multiple times
+   --ignore-tp=TPID     Ignore this taskpool. This option can appear multiple times
+   --only-tp=TPID       Only consider this taskpool. This option can appear multiple times
    --input=INPUT        Add this input file. This option can appear multiple times.
                         Remaining arguments (unparsed) are considered as other input files.
                         The ordering of input files define the ranks.
@@ -119,6 +126,9 @@ END
   }
 
   %{$ignore} = map { $_ => 1 } @il;
+  %{$only_tp} = map { $_ => 1 } @ohl;
+  %{$ignore_tp} = map { $_ => 1 } @ihl;
+  print STDERR Dumper(\%{$only_tp});
 }
 
 parseArgs(@ARGV);
@@ -198,7 +208,7 @@ sub nodeLineColor {
 }
 
 sub outputNode {
-  my ($ID, $R, $V, $T, $K, $P, $op, $p) = @_;
+  my ($ID, $R, $V, $T, $K, $P, $op, $p, $hid) = @_;
 
   my $label = $nodefmt;
   $label =~ s/%R/$R/g;
@@ -223,7 +233,7 @@ sub nodeRank {
 }
 
 sub computeSpaceNode {
-  my ($ID, $R, $V, $T, $K, $P, $op, $p) = @_;
+  my ($ID, $R, $V, $T, $K, $P, $op, $p, $hid) = @_;
 
   $NR = $R+1 if( $R + 1 > $NR );
   $NV = $V+1 if( $V + 1 > $NV );
@@ -235,7 +245,15 @@ sub computeSpaceNode {
 }
 
 sub ignored {
-  my ($k) = @_;
+  my ($k, $hid) = @_;
+  if( exists $ignore_tp->{$hid} ) {
+    return 1;
+  }
+  if( keys $only_tp > 0 ) {
+    if( not exists $only_tp->{$hid} ) {
+      return 1;
+    }
+  }
   foreach my $y ( keys %{$ignore} ) {
     if( $k =~ /$y/ ) {
       return 1;
@@ -258,10 +276,10 @@ sub onNodes {
       next if ($line =~ /^digraph G \{$/);
       last if ($line =~ /^\}/);
       next if ($line =~ / -> /);
-      my ($ID, $COLOR, $T, $V, $K, $P, $op, $p);
-      if( ($ID, $COLOR, $T, $V, $K, $P, $op, $p) = ($line =~ /^([^ ]+) \[shape="[^"]+",style=filled,fillcolor="#(......)",fontcolor="black",label="<([0-9]+)\/([0-9]+)> ([^(]+)\(([^\)]*)\)\[([^>]*)\]<([^>]+)>/) ) {
-        if( !ignored($K) ) {
-          $fct->($ID, $R, $V, $T, $K, $P, $op, $p);
+      my ($ID, $COLOR, $T, $V, $K, $P, $op, $p, $hid);
+      if( ($ID, $COLOR, $T, $V, $K, $P, $op, $p, $hid) = ($line =~ /^([^ ]+) \[shape="[^"]+",style=filled,fillcolor="#(......)",fontcolor="black",label="<([0-9]+)\/([0-9]+)> ([^(]+)\(([^\)]*)\)\[([^>]*)\]<([^>]+)>{([0-9]+)}/) ) {
+        if( !ignored($K, $hid) ) {
+          $fct->($ID, $R, $V, $T, $K, $P, $op, $p, $hid);
         }
       } else {
         print STDERR "  Error on $f:$lnb malformed line $line\n";

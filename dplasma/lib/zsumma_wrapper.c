@@ -22,6 +22,8 @@
 #include "zsumma_TT.h"
 #include "zgemm_bcast_NN.h"
 
+#include "parsec/utils/mca_param.h"
+
 typedef struct parsec_function_vampire_s {
     parsec_task_class_t super;
     parsec_hook_t    *saved_prepare_input;
@@ -263,6 +265,40 @@ zsumma_check_operation_valid(PLASMA_enum transA, PLASMA_enum transB,
     return b;
 }
 
+static float dplasma_zgemm_NN_bcast_cuda_cutoff_ratio = 0.0;
+
+static parsec_hook_return_t dplasma_zgemm_NN_bcast_cuda_cutoff(const parsec_task_t *task)
+{
+    const __parsec_zgemm_bcast_NN_GEMM_task_t * this_task = (const __parsec_zgemm_bcast_NN_GEMM_task_t *)task;
+    const parsec_zgemm_bcast_NN_taskpool_t *tp = (const parsec_zgemm_bcast_NN_taskpool_t*)this_task->taskpool;
+    int m, n, k;
+    int a_mb, a_nb, b_mb, b_nb, c_mb, c_nb;
+    float mem;
+    float flops;
+    float ratio;
+    
+    m = this_task->locals.m.value;
+    n = this_task->locals.n.value;
+    k = this_task->locals.k.value;
+
+    a_mb = tp->_g_descA->Mtiling[m];
+    a_nb = tp->_g_descA->Ntiling[k];
+    b_mb = tp->_g_descB->Mtiling[k];
+    b_nb = tp->_g_descB->Ntiling[n];
+    c_mb = tp->_g_descC->Mtiling[m];
+    c_nb = tp->_g_descC->Ntiling[n];
+
+    mem = a_mb * a_nb + b_mb * b_nb + c_mb * c_nb;
+    flops = 2.0 * a_mb * a_nb * c_nb;
+
+    ratio = flops/mem;
+
+    if( ratio < dplasma_zgemm_NN_bcast_cuda_cutoff_ratio ) {
+        return PARSEC_HOOK_RETURN_NEXT;
+    }
+    return PARSEC_HOOK_RETURN_DONE;
+}
+
 parsec_taskpool_t*
 dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                          parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
@@ -273,7 +309,16 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_arena_t* arena;
     int P, Q, m, n, i, j, k, rank;
     gemm_plan_t *plan;
+    static char *cutoff_str = NULL;
 
+    if( NULL == cutoff_str ) {
+        parsec_mca_param_reg_string_name("dplasma", "zgemm_bcast_cutoff_ratio",
+                                         "CUDA Cutoff ratio: any task with arithmetic intensity lower than this will never be scheduled on a GPU",
+                                         false, false, "0.0", &cutoff_str);
+        dplasma_zgemm_NN_bcast_cuda_cutoff_ratio = strtof(cutoff_str, NULL);
+        parsec_debug_verbose(0, parsec_debug_output, "Cutoff ratio set to %f for zgemm_bcast", dplasma_zgemm_NN_bcast_cuda_cutoff_ratio);
+    }
+    
     /* Check input arguments */
     if ((transA != PlasmaNoTrans)) {
         dplasma_error("summa_zgemm_bcast_New", "illegal value of transA");
@@ -341,6 +386,8 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
             parsec_zgemm_bcast_NN_taskpool_t* handle;
+            parsec_task_class_t *gemm_tc;
+            
             handle = parsec_zgemm_bcast_NN_new(GEMM_BCAST_NN, transA, transB, alpha,
                                                (const irregular_tiled_matrix_desc_t *)A,
                                                (const irregular_tiled_matrix_desc_t *)B,
@@ -348,6 +395,20 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                                                (parsec_data_collection_t*)B,
                                                plan);
             arena = handle->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
+
+            assert( 0 == strcmp(handle->super.task_classes_array[3]->name, "GEMM") );
+            gemm_tc = (parsec_task_class_t*)handle->super.task_classes_array[3];
+            for(i = 0; ; i++) {
+                if( PARSEC_DEV_NONE == gemm_tc->incarnations[i].type )
+                    break;
+                if( PARSEC_DEV_CUDA == gemm_tc->incarnations[i].type ) {
+                    ((__parsec_chore_t *)&gemm_tc->incarnations[i])->evaluate = dplasma_zgemm_NN_bcast_cuda_cutoff;
+                    break;
+                }
+            }
+
+            handle->_g_summa_type = GEMM_BCAST_NN;
+            
             zgemm_handle = (parsec_taskpool_t*)handle;
         } 
     }
@@ -467,8 +528,7 @@ dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     Bsize = B->m * B->n;
     Csize = C->m * C->n;
 
-    if( ((transA == PlasmaNoTrans) && (transB == PlasmaNoTrans))
-        || ((10 * (Asize + Csize) < Bsize)) ) {
+    if( ((transA == PlasmaNoTrans) && (transB == PlasmaNoTrans)) && ((10 * (Asize + Csize) < Bsize)) ) {
         fprintf(stdout, "calling zgemm_bcast\n");
         return dplasma_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
@@ -588,19 +648,23 @@ dplasma_zsumma_Destruct( parsec_taskpool_t *tp )
         zsumma_taskpool->_g_summa_type == SUMMA_NT ||
         zsumma_taskpool->_g_summa_type == SUMMA_TN ||
         zsumma_taskpool->_g_summa_type == SUMMA_TT ) {
+        
         if ( zsumma_taskpool->_g_Cdist != NULL ) {
             parsec_tiled_matrix_dc_destroy( (parsec_tiled_matrix_dc_t*)(zsumma_taskpool->_g_Cdist) );
             free( (parsec_tiled_matrix_dc_t*)zsumma_taskpool->_g_Cdist );
             zsumma_taskpool->_g_Cdist = NULL;
         }
-        parsec_arena_t *arena = ((parsec_zsumma_NN_taskpool_t *)tp)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA];
-        if (arena)
-            parsec_matrix_del2arena( ((parsec_zsumma_NN_taskpool_t *)tp)->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
+        if (zsumma_taskpool->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA])
+            parsec_matrix_del2arena( zsumma_taskpool->arenas[PARSEC_zsumma_NN_DEFAULT_ARENA] );
     }
     if( zsumma_taskpool->_g_summa_type == GEMM_BCAST_NN ) {
-        parsec_arena_t *arena = ((parsec_zgemm_bcast_NN_taskpool_t *)tp)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
-        if (arena)
-            parsec_matrix_del2arena( ((parsec_zgemm_bcast_NN_taskpool_t *)tp)->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
+        parsec_zgemm_bcast_NN_taskpool_t *zgemm_bcast_NN_tp = (parsec_zgemm_bcast_NN_taskpool_t *)tp;
+        if (zgemm_bcast_NN_tp->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA])
+            parsec_matrix_del2arena( zgemm_bcast_NN_tp->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
+        free(zgemm_bcast_NN_tp->_g_plan->ip);
+        free(zgemm_bcast_NN_tp->_g_plan->prev);
+        free(zgemm_bcast_NN_tp->_g_plan->next);
+        free(zgemm_bcast_NN_tp->_g_plan);
     }
     parsec_taskpool_free(tp);
 }
