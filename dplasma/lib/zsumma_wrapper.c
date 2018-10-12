@@ -364,7 +364,7 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
     Q = ((irregular_tiled_matrix_desc_t*)C)->grid.cols;
     plan = (gemm_plan_t*)malloc(sizeof(gemm_plan_t));
-    plan->P = P;
+    plan->P = P*Q;
     plan->mt = C->mt;
     plan->nt = C->nt;
     plan->kt = B->mt;
@@ -379,7 +379,7 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
             for(k = 0; k < B->mt; k++) {
                 /* Cubic loop to determine, for each C(m, n),
                  * what are the local GEMM segments */
-                rank = B->super.rank_of((parsec_data_collection_t*)B, k, n)/Q;
+                rank = B->super.rank_of((parsec_data_collection_t*)B, k, n);
                 plan->prev[(m*plan->nt+n)*plan->kt + k] = lastk[rank];
                 if( -1 != lastk[rank] )
                     plan->next[(m*plan->nt+n)*plan->kt + lastk[rank]] = k;
@@ -394,23 +394,70 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
              *    This is used in an attempt to distribute the order of reductions
              *  - Remember the last k used by each rank in the index/process array
              */
-            rank = C->super.rank_of((parsec_data_collection_t*)C, m, n)/Q;
+            rank = C->super.rank_of((parsec_data_collection_t*)C, m, n);
             j = 0;
             i = rank;
             do {
-                i = (i+1)%P;
+                i = (i+1)%plan->P;
                 if( lastk[i] != -1 ) {
                     plan->ip[(m*plan->nt+n)*plan->P + j] = lastk[i];
                     j++;
                 }
             } while(i != rank);
             assert(j != 0);
-            for(; j < P; j++)
+            for(; j < plan->P; j++)
                 plan->ip[(m*plan->nt+n)*plan->P + j] = -1;
         }
     }
-    free(lastk);
 
+#if 0
+    if( A->super.myrank == 0 ) {
+        printf("Distribution of C:\n");
+        for(m = 0; m < C->mt; m++) {
+            printf(" ");
+            for(n = 0; n < C->nt; n++) {
+                rank = C->super.rank_of((parsec_data_collection_t*)C, m, n);
+                printf("%d", rank);
+            }
+            printf("\n");
+        }
+        printf("Distribution of A:\n");
+        for(m = 0; m < A->mt; m++) {
+            printf(" ");
+            for(n = 0; n < A->nt; n++) {
+                rank = A->super.rank_of((parsec_data_collection_t*)A, m, n);
+                printf("%d", rank);
+            }
+            printf("\n");
+        }
+        printf("Distribution of B:\n");
+        for(m = 0; m < B->mt; m++) {
+            printf(" ");
+            for(n = 0; n < B->nt; n++) {
+                rank = B->super.rank_of((parsec_data_collection_t*)B, m, n);
+                printf("%d", rank);
+            }
+            printf("\n");
+        }
+        for(m = 0; m < C->mt; m++) {
+            for(n = 0; n < C->nt; n++) {
+                for(int kk = 0; kk < B->mt; kk++) {
+                    if( plan->prev[(m*plan->nt+n)*plan->kt + kk] == -1 ) {
+                        k = kk;
+                        do {
+                            rank = B->super.rank_of((parsec_data_collection_t*)B, k, n);
+                            printf("G(%d,%d,%d)on(%d),", m, n, k, rank);
+                            k = plan->next[(m*plan->nt+n)*plan->kt + k];
+                        } while(k != -1);
+                        printf("\n");
+                    }
+                }
+            }
+        }
+    }
+#endif
+    free(lastk);
+    
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
             parsec_zgemm_bcast_NN_taskpool_t* handle;
