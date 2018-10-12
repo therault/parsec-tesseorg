@@ -61,6 +61,8 @@ struct parsec_device_s {
     uint8_t type;
 };
 
+BEGIN_C_DECLS
+
 extern uint32_t parsec_nb_devices;
 extern int parsec_device_output;
 extern parsec_atomic_lock_t parsec_devices_mutex;
@@ -100,6 +102,11 @@ extern int parsec_devices_freeze(parsec_context_t*);
  * to parsec_devices_freeze().
  */
 extern int parsec_devices_freezed(parsec_context_t*);
+
+/**
+ * Reset the load of all the devices to force a reconsideration of the load balance
+ */
+PARSEC_DECLSPEC void parsec_devices_reset_load(parsec_context_t *context);
 
 /**
  * Declare a new device with the runtime. The device will later provide a list
@@ -152,5 +159,7 @@ PARSEC_DECLSPEC void*
 parsec_device_find_function(const char* function_name,
                             const char* libname,
                             const char* paths[]);
+
+END_C_DECLS
 
 #endif  /* PARSEC_DEVICE_H_HAS_BEEN_INCLUDED */

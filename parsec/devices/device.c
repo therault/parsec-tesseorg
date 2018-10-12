@@ -362,6 +362,17 @@ int parsec_devices_freeze(parsec_context_t* context)
     return 0;
 }
 
+void parsec_devices_reset_load(parsec_context_t *context)
+{
+    int i;
+    (void)context;
+    if( NULL == parsec_device_load )
+        return;
+    for(i = 0; i < parsec_nb_devices; i++) {
+        parsec_device_load[i] = 0;
+    }
+}
+
 int parsec_devices_freezed(parsec_context_t* context)
 {
     (void)context;
