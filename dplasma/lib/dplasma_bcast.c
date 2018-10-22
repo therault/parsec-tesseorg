@@ -9,14 +9,30 @@
 #include "dplasma_bcast.h"
 
 /*
- * Returns k such that gemm_plan_red_index(plan, m, n, k) == i
+ * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and
+ * k is the last gemm on node i
  */
-int gemm_plan_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+int gemm_plan_last_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
 {
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
     assert( (i >= 0) && (i<plan->P));
     return plan->ip[(m*plan->nt+n)*plan->P + i];
+}
+
+/*
+ * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and
+ * k is the first gemm of node i
+ */
+int gemm_plan_first_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+{
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    assert( (i >= 0) && (i<plan->P));
+    int k = plan->ip[(m*plan->nt+n)*plan->P + i];
+    while( plan->prev[(m*plan->nt+n)*plan->kt + k] != -1 )
+        k = plan->prev[(m*plan->nt+n)*plan->kt + k];
+    return k;
 }
 
 /*
