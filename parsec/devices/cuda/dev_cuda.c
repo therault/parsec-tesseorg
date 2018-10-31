@@ -1056,7 +1056,6 @@ parsec_gpu_data_stage_in( gpu_device_t* gpu_device,
         /* make sure the element is not in any tracking lists */
         parsec_list_item_ring_chop((parsec_list_item_t*)gpu_elem);
         PARSEC_LIST_ITEM_SINGLETON(gpu_elem);
-        gpu_elem->version++;  /* on to the next version */
     }
 
     /* DtoD copy, if data is read only, then we go back to CPU copy, and fetch data from CPU (HtoD) */
@@ -1072,6 +1071,9 @@ parsec_gpu_data_stage_in( gpu_device_t* gpu_device,
     }
 
     transfer_from = parsec_data_transfer_ownership_to_copy(original, gpu_device->super.device_index, (uint8_t)type);
+    if( FLOW_ACCESS_WRITE & type )
+        gpu_elem->version++;  /* on to the next version */
+
     gpu_device->super.required_data_in += original->nb_elts;
     if( -1 != transfer_from ) {
         cudaError_t status;
@@ -1082,8 +1084,7 @@ parsec_gpu_data_stage_in( gpu_device_t* gpu_device,
                              in_elem->version, in_elem->device_private,
                              gpu_elem->version, (void*)gpu_elem->device_private);
 
-        assert( gpu_elem->version <= in_elem->version );
-        assert((gpu_elem->version != in_elem->version) || (gpu_elem->data_transfer_status == DATA_STATUS_NOT_TRANSFER));
+        assert((gpu_elem->version < in_elem->version) || (gpu_elem->data_transfer_status == DATA_STATUS_NOT_TRANSFER));
 
 #if defined(PARSEC_PROF_TRACE)
         if( gpu_stream->prof_event_track_enable ) {
@@ -1399,6 +1400,9 @@ progress_stream( gpu_device_t* gpu_device,
 {
     advance_task_function_t progress_fct;
     int saved_rc = 0, rc;
+#if defined(PARSEC_DEBUG_VERBOSE)
+    char task_str[MAX_TASK_STRLEN];
+#endif
 
     /* We always handle the tasks in order. Thus if we got a new task, add it to the
      * local list (possibly by reordering the list). Also, as we can return a single
@@ -1416,10 +1420,10 @@ progress_stream( gpu_device_t* gpu_device,
             /* Save the task for the next step */
             task = *out_task = stream->tasks[stream->end];
             PARSEC_DEBUG_VERBOSE(19, parsec_cuda_output_stream,
-                                 "GPU[%d]: Completed %s(task %p) priority %d on stream %s{%p}",
+                                 "GPU[%d]: Completed %s priority %d on stream %s{%p}",
                                  gpu_device->cuda_index,
-                                 task->ec->task_class->name, (void*)task->ec, task->ec->priority,
-                                 stream->name, (void*)stream);
+                                 parsec_task_snprintf(task_str, MAX_TASK_STRLEN, task->ec),
+                                 task->ec->priority, stream->name, (void*)stream);
             stream->tasks[stream->end]    = NULL;
             stream->end = (stream->end + 1) % stream->max_events;
 
