@@ -854,7 +854,7 @@ parsec_gpu_data_reserve_device_space( gpu_device_t* gpu_device,
         assert( flow && (flow->flow_index == i) );
 
         /* Skip CTL flows only */
-        if(!(flow->flow_flags)) continue;
+        if(FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags)) continue;
 
         PARSEC_DEBUG_VERBOSE(20, parsec_cuda_output_stream,
                              "GPU[%d]:%s: Investigating flow %s:%i",
@@ -1191,7 +1191,7 @@ parsec_gpu_check_space_needed(gpu_device_t *gpu_device,
 
     for( i = 0; i < this_task->task_class->nb_flows; i++ ) {
         flow = gpu_task->flow[i];
-        if(!(flow->flow_flags)) continue;
+        if(FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags)) continue;
 
         data = this_task->data[i].data_in;
         if (data == NULL) continue;
@@ -1372,7 +1372,7 @@ parsec_gpu_callback_complete_push(gpu_device_t              *gpu_device,
         flow = gtask->flow[i];
         assert( flow );
         assert( flow->flow_index == i );
-        if(!flow->flow_flags) continue;
+        if(FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags)) continue;
         if(task->data[i].data_out->push_task == task ) {   /* only the task who did this PUSH can modify the status */
             task->data[i].data_out->data_transfer_status = DATA_STATUS_COMPLETE_TRANSFER;
             task->data[i].data_out->push_task = NULL;
@@ -1472,7 +1472,7 @@ progress_stream( gpu_device_t* gpu_device,
         const parsec_flow_t *flow;
         for( i = 0; i < task->ec->task_class->nb_flows; i++ ) {
             flow = task->flow[i];
-            if(!flow->flow_flags) continue;
+            if(FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags)) continue;
             assert(task->ec->data[i].data_out->data_transfer_status == DATA_STATUS_COMPLETE_TRANSFER);
         }
 #endif /* defined(PARSEC_DEBUG_PARANOID) */
@@ -1617,7 +1617,7 @@ parsec_gpu_kernel_push( gpu_device_t                    *gpu_device,
     for( i = 0; i < this_task->task_class->nb_flows; i++ ) {
         flow = gpu_task->flow[i];
         /* Skip CTL flows */
-        if(!(flow->flow_flags)) continue;
+        if(FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags)) continue;
         if(this_task->data[i].data_in == NULL) continue;
 
         assert( NULL != parsec_data_copy_get_ptr(this_task->data[i].data_in) );
@@ -1690,7 +1690,7 @@ parsec_gpu_kernel_pop( gpu_device_t            *gpu_device,
         /* We need to manage all data that has been used as input, even if they were read only */
 
         flow = gpu_task->flow[i];
-        if( 0 == flow->flow_flags )  continue;  /* control flow */
+        if( FLOW_ACCESS_NONE == (FLOW_ACCESS_MASK & flow->flow_flags) )  continue;  /* control flow */
 
         gpu_copy = this_task->data[i].data_out;
         original = gpu_copy->original;
