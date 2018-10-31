@@ -119,7 +119,7 @@ GEMM(m, n, k)
   k = 0 .. descB->mt-1
   kprev = %{ return gemm_plan_prev(plan, m, n, k); %}
   knext = %{ return gemm_plan_next(plan, m, n, k); %}
-  index = %{ if( (knext==-1) || (kprev==-1) ) return gemm_plan_red_index(plan, m, n, k); else return -1; %}
+  index = %{ if( knext==-1 ) return gemm_plan_red_index(plan, m, n, k); if((kprev==-1)  && (n > 0) && (ctlmode == -1)) return gemm_plan_i_for_k(plan, m, n-1, k); return -1; %}
 
 : CompDist(k, n)
 
@@ -135,10 +135,10 @@ RW C <- kprev == -1
           ? C GEMM(m, n, knext) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
 
 
- CTL X <- ( (ctlmode == -1) & (n > 0) & (kprev==-1) ) ? X ACCUMULATE_C(m, n-1, index)
+CTL X <- ( (ctlmode == -1) & (n > 0) & (kprev==-1) ) ? X ACCUMULATE_C(m, n-1, index)
  
- CTL Y <- ( (ctlmode == -2) & (m > 0) & (kprev==-1) & (n == 0) ) ? Y GEMM(m-1, descC->nt-1, k)
-       -> ( (ctlmode == -2) & (m < descB->mt-1) & (kprev==-1) & (n == (descC->nt-1)) ) ? Y GEMM(m+1, 0, k)
+CTL Y <- ( (ctlmode == -2) & (m > 0) & (kprev==-1) & (n == 0) ) ? Y GEMM(m-1, descC->nt-1, k)
+      -> ( (ctlmode == -2) & (m < descB->mt-1) & (kprev==-1) & (n == (descC->nt-1)) ) ? Y GEMM(m+1, 0, k)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t

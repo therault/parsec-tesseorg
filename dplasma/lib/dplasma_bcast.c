@@ -36,6 +36,22 @@ int gemm_plan_first_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
 }
 
 /*
+ * Returns i such that gemm_plan_first_k_of_red_index(plan, m, n, i) == k and
+ * k is the last gemm of node i
+ */
+int gemm_plan_i_for_k(gemm_plan_t *plan, int m, int n, int k)
+{
+    int i;
+    assert( (m >= 0) && (m<plan->mt));
+    assert( (n >= 0) && (n<plan->nt));
+    assert( (k >= 0) && (k<plan->nt));
+    for(i = 0; i < plan->P; i++)
+        if( gemm_plan_first_k_of_red_index(plan, m, n, i ) == k)
+            return i;
+    return -1;
+}
+
+/*
  * Returns the position in the pipeline reduction of the
  * different node contributions to C(m, n), such that
  * k is the last local contribution to C(m, n) for the calling
@@ -47,9 +63,14 @@ int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
     assert( (m >= 0) && (m<plan->mt));
     assert( (n >= 0) && (n<plan->nt));
     for(i = 0; i < plan->P; i++) {
-        if( plan->ip[(m*plan->nt+n)*plan->P + i] == k )
+        if( plan->ip[(m*plan->nt+n)*plan->P + i] == k ) {
+            PARSEC_DEBUG_VERBOSE(parsec_debug_output, 20, "plan->ip[%d,%d,%d] == %d",
+                                 m, n, i, k);
             return i;
+        }
     }
+    PARSEC_DEBUG_VERBOSE(parsec_debug_output, 20, "Error in plan: could not find i such that plan->ip[%d,%d,i] == %d",
+                         m, n, k);
     assert(0);
     return -1;
 }

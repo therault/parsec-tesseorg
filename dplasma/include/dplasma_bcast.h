@@ -47,6 +47,12 @@ int gemm_plan_last_k_of_red_index(gemm_plan_t *plan, int m, int n, int i);
 int gemm_plan_first_k_of_red_index(gemm_plan_t *plan, int m, int n, int i);
 
 /*
+ * Returns i such that gemm_plan_first_k_of_red_index(plan, m, n, i) == k and
+ * k is the last gemm of node i
+ */
+int gemm_plan_i_for_k(gemm_plan_t *plan, int m, int n, int k);
+
+/*
  * Returns the position in the pipeline reduction of the
  * different node contributions to C(m, n), such that
  * k is the last local contribution to C(m, n) for the calling
