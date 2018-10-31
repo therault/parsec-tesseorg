@@ -25,9 +25,9 @@
 #include "parsec/utils/mca_param.h"
 
 typedef struct parsec_tc_vampire_s {
-    parsec_task_class_t super;
+    parsec_task_class_t    super;
     parsec_hook_t         *saved_prepare_input;
-    parsec_destruct_fn_t  *saved_destructor;
+    parsec_destruct_fn_t   saved_destructor;
     parsec_task_class_t   *saved_tc;
     void *         (*resolve_future_function)(void*, void*, void*);
 } parsec_tc_vampire_t;
@@ -128,7 +128,7 @@ static void vtp_destructor(parsec_taskpool_t *tp)
     parsec_task_class_t *rf;
     parsec_destruct_fn_t destructor = NULL;
     parsec_tc_vampire_t *vf;
-    int fid;
+    unsigned int fid;
     for(fid = 0; fid < tp->nb_task_classes; fid++) {
         if( strstr(tp->task_classes_array[fid]->name, "(vampirized)") ) {
             vf = (parsec_tc_vampire_t*)tp->task_classes_array[fid];
@@ -148,7 +148,7 @@ static void vtp_destructor(parsec_taskpool_t *tp)
 
 static void attach_futures_prepare_input(parsec_taskpool_t *tp, const char *task_name, void*(*resolve_future_function)(void*, void*, void*))
 {
-    int fid;
+    unsigned int fid;
     parsec_tc_vampire_t *vf;
     for(fid = 0; fid < tp->nb_task_classes; fid++) {
         if( strcmp(tp->task_classes_array[fid]->name, task_name) == 0 ) {
@@ -162,7 +162,7 @@ static void attach_futures_prepare_input(parsec_taskpool_t *tp, const char *task
     }
     assert(NULL != resolve_future_function);
     vf = (parsec_tc_vampire_t*)malloc(sizeof(parsec_tc_vampire_t));
-    vf->saved_tc = tp->task_classes_array[fid];
+    vf->saved_tc = (parsec_task_class_t*)tp->task_classes_array[fid];
     memcpy(&vf->super, tp->task_classes_array[fid], sizeof(parsec_task_class_t));
     asprintf((char **)&vf->super.name, "%s(vampirized)", tp->task_classes_array[fid]->name);
     vf->saved_prepare_input = vf->super.prepare_input;
@@ -583,8 +583,6 @@ dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_arena_t* arena;
     int P, Q, m, n;
 
-    int Asize, Bsize, Csize;
-
     /* Check input arguments */
     if ((transA != PlasmaNoTrans) && (transA != PlasmaTrans) && (transA != PlasmaConjTrans)) {
         dplasma_error("summa_zsumma_New", "illegal value of transA");
@@ -599,12 +597,7 @@ dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
         return NULL;
     }
 
-    Asize = A->m * A->n;
-    Bsize = B->m * B->n;
-    Csize = C->m * C->n;
-
     if( ((transA == PlasmaNoTrans) && (transB == PlasmaNoTrans)) ) {
-        fprintf(stdout, "calling zgemm_bcast\n");
         return dplasma_zgemm_bcast_New(transA, transB, alpha, A, B, C);
     }
 
