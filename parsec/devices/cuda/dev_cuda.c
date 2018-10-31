@@ -1402,7 +1402,7 @@ progress_stream( gpu_device_t* gpu_device,
 {
     advance_task_function_t progress_fct;
     int saved_rc = 0, rc;
-#if defined(PARSEC_DEBUG_VERBOSE)
+#if defined(PARSEC_DEBUG_NOISIER)
     char task_str[MAX_TASK_STRLEN];
 #endif
 
