@@ -55,39 +55,36 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
 
 #if 1 || defined(SUMMA_WITH_RANDOM_TILING)
     if (mca_random_tiling) {
-        int p;
+        /*
+          std::vector<unsigned int> result(ntiles+1);
+          result[0] = 0;
+          for(long t=0; t!=ntiles-1; ++t) {
+              result[t+1] = result[t] + average_tile_size + ((t%2==0)?(t+1):(-t));
+          }
+          result[ntiles] = range_size;
+        */
+        if (MT >= MB) fprintf(stderr, "Warning, MT should not be greater than MB, aborting.\n" );
 
-    /*
-      std::vector<unsigned int> result(ntiles+1);
-      result[0] = 0;
-      for(long t=0; t!=ntiles-1; ++t) {
-        result[t+1] = result[t] + average_tile_size + ((t%2==0)?(t+1):(-t));
-      }
-      result[ntiles] = range_size;
-    */
-    if (MT >= MB) fprintf(stderr, "Warning, MT should not be greater than MB, aborting.\n" );
+        int p1, p2, b1, b2, t_root = sqrt(MT);
+        b1 = sqrt(MB);
+        b2 = sqrt(MB);
 
-    int p1, p2, b1, b2, t_root = sqrt(MT);
-    b1 = sqrt(MB);
-    b2 = sqrt(MB);
+        fprintf(stderr, "Tiling:");
+        for (p1 = 0; p1 < t_root; ++p1)
+            fprintf(stderr, " %d", weird_tiling(b1, p1));
+        fprintf(stderr, "\n");
 
-    fprintf(stderr, "Tiling:");
-    for (p1 = 0; p1 < t_root; ++p1)
-      fprintf(stderr, " %d", weird_tiling(b1, p1));
-    fprintf(stderr, "\n");
-
-    for (p1 = 0; p1 < t_root; ++p1) {
-      for (p2 = 0; p2 < t_root; ++p2) {
-        T[p2 + p1 * t_root] = weird_tiling(b1, p1) * weird_tiling(b2, p2);
-
-      }
-    }
-
+        for (p1 = 0; p1 < t_root; ++p1) {
+            for (p2 = 0; p2 < t_root; ++p2) {
+                T[p2 + p1 * t_root] = weird_tiling(b1, p1) * weird_tiling(b2, p2);
+            }
+        }
 #if 0
         unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
         unsigned int upper_bound = MB*2;
         unsigned long long int ran = *seed;
         unsigned int share = (MB/10 > 0) ? MB/10 : 1;
+        int p;
         
         for (p = 0; p < MT*MT/2; ++p) {
             int t1 = ran%MT;
@@ -545,9 +542,9 @@ int main(int argc, char ** argv)
     double gflops = -1.0, flops = FLOPS_ZGEMM((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K);
 
     PASTE_MKL_WARMUP();
-    fprintf(stdout, " > MKL warmed up!\n");
+
     /* Create Parsec taskpool */
-    for(int run = 0; run < 2; run++) {
+    for(int run = 0; run < 10; run++) {
         parsec_taskpool_t* PARSEC_zsumma = dplasma_zsumma_New(tA, tB, alpha,
                                                               (irregular_tiled_matrix_desc_t*)&ddescA,
                                                               (irregular_tiled_matrix_desc_t*)&ddescB,
@@ -555,17 +552,14 @@ int main(int argc, char ** argv)
 
         /* Intercept the handler, change */
         ((__parsec_chore_t*)PARSEC_zsumma->task_classes_array[4]->incarnations)[0].here = execute_on_gpu;
-        fprintf(stdout, " > Taskpool created!\n");
 
 #if defined(PARSEC_HAVE_RECURSIVE)
         if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
             dplasma_zsumma_setrecursive(PARSEC_zsumma, iparam[IPARAM_HNB], iparam[IPARAM_HNB]);
 #endif
         parsec_enqueue(parsec, PARSEC_zsumma);
-        fprintf(stdout, " > Taskpool enqueued!\n");
 
         if( loud > 2 ) SYNC_TIME_PRINT(rank, ("zsumma\tDAG created\n"));
-
         
         /* lets rock! */
         SYNC_TIME_START();
@@ -576,6 +570,8 @@ int main(int argc, char ** argv)
                                gflops=(flops/1e9)/sync_time_elapsed));
 
         dplasma_zsumma_Destruct( PARSEC_zsumma );
+
+        parsec_devices_reset_load(parsec);
     }
 
     if(iparam[IPARAM_HNB] != iparam[IPARAM_NB])
