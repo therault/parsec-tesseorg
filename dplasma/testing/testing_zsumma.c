@@ -571,6 +571,7 @@ int main(int argc, char ** argv)
 
         dplasma_zsumma_Destruct( PARSEC_zsumma );
 
+        parsec_devices_dump_and_reset_statistics(parsec);
         parsec_devices_reset_load(parsec);
     }
 
