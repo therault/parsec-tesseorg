@@ -97,8 +97,7 @@ static int vpid_of(parsec_data_collection_t *desc, ...)
     return 0;
 }
 
-#if defined(PARSEC_PROF_TRACE)
-static uint32_t data_key(struct parsec_data_collection_s *desc, ...)
+static uint64_t data_key(struct parsec_data_collection_s *desc, ...)
 {
     int k;
     va_list ap;
@@ -107,9 +106,8 @@ static uint32_t data_key(struct parsec_data_collection_s *desc, ...)
     k = va_arg(ap, int);
     va_end(ap);
 
-    return (uint32_t)k;
+    return (uint64_t)k;
 }
-#endif
 
 parsec_data_collection_t *create_and_distribute_data(int rank, int world, int size)
 {
@@ -121,11 +119,9 @@ parsec_data_collection_t *create_and_distribute_data(int rank, int world, int si
     d->rank_of = rank_of;
     d->data_of = data_of;
     d->vpid_of = vpid_of;
-#if defined(PARSEC_PROF_TRACE)
-    asprintf(&d->key_dim, "(%d)", size);
-    d->key = NULL;
+    asprintf(&d->dc_dim, "(%d)", size);
+    d->dc_name = NULL;
     d->data_key = data_key;
-#endif
 
     m->size     = size;
     m->data_map = (parsec_data_t**)calloc(size, sizeof(parsec_data_t*));

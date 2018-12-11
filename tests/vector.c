@@ -68,8 +68,7 @@ static parsec_data_t* data_of(parsec_data_collection_t *desc, ...)
     return (void*)(dat->data);
 }
 
-#if defined(PARSEC_PROF_TRACE)
-static uint32_t data_key(parsec_data_collection_t *desc, ...)
+static uint64_t data_key(parsec_data_collection_t *desc, ...)
 {
     int k;
     va_list ap;
@@ -78,9 +77,8 @@ static uint32_t data_key(parsec_data_collection_t *desc, ...)
     k = va_arg(ap, int);
     va_end(ap);
 
-    return (uint32_t)k;
+    return (uint64_t)k;
 }
-#endif
 
 parsec_data_collection_t*
 create_vector(int me, int world, int start_rank,
@@ -95,11 +93,8 @@ create_vector(int me, int world, int start_rank,
     d->rank_of = rank_of;
     d->data_of = data_of;
     d->vpid_of = vpid_of;
-#if defined(PARSEC_PROF_TRACE)
-    asprintf(&d->key_dim, "(%d)", (total_size+block_size-1)%total_size);
-    d->key_base = NULL;
+    asprintf(&d->dc_dim, "(%d)", (total_size+block_size-1)%total_size);
     d->data_key = data_key;
-#endif
 
     m->start_rank = start_rank;
     m->block_size = block_size;

@@ -227,8 +227,7 @@ static int tree_dist_unregister_memory(parsec_data_collection_t* desc, struct pa
     return device->device_memory_unregister(device, desc, tree->buffers->buffer);
 }
 
-#ifdef PARSEC_PROF_TRACE
-static int tree_dist_key_to_string(parsec_data_collection_t *desc, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
+static char *tree_dist_key_to_string(parsec_data_collection_t *desc, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
 {
     (void)desc;
     (void)key;
@@ -236,9 +235,8 @@ static int tree_dist_key_to_string(parsec_data_collection_t *desc, parsec_data_k
         buffer[0] = '\0';
     (void)desc;
     (void)key;
-    return PARSEC_SUCCESS;
+    return buffer;
 }
-#endif
 
 /***********************************************************************************************
  * Utilitiy functions to move on the tree
@@ -377,12 +375,9 @@ tree_dist_t *tree_dist_create_empty(int myrank, int nodes)
     res->super.register_memory   = tree_dist_register_memory;
     res->super.unregister_memory = tree_dist_unregister_memory;
     res->super.memory_registration_status = MEMORY_STATUS_UNREGISTERED;
-    res->super.key_base = NULL;
-#ifdef PARSEC_PROF_TRACE
+    res->super.dc_name = NULL;
     res->super.key_to_string = tree_dist_key_to_string;
-    res->super.key_dim = "";
-    res->super.key     = "";
-#endif
+    res->super.dc_dim = strdup("N/A");
 
     /** Then, the tree-specific info */
     pthread_mutex_init(&res->buffer_lock, NULL);

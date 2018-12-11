@@ -54,14 +54,11 @@ struct parsec_data_collection_s {
     parsec_memory_region_management_f unregister_memory;
     memory_registration_status_t memory_registration_status;
 
-    char      *key_base;
+    char      *dc_name;
+    char      *dc_dim;
 
-#ifdef PARSEC_PROF_TRACE
-    /* compute a string in 'buffer' meaningful for profiling about data, return the size of the string */
-    int (*key_to_string)(parsec_data_collection_t *d, parsec_data_key_t key, char * buffer, uint32_t buffer_size);
-    char      *key_dim;
-    char      *key;
-#endif /* PARSEC_PROF_TRACE */
+    /* compute a human readable string in 'buffer', describing d[ket]; return buffer for simplified use in printf */
+    char *(*key_to_string)(parsec_data_collection_t *d, parsec_data_key_t key, char * buffer, uint32_t buffer_size);
 };
 
 /**
@@ -88,11 +85,7 @@ parsec_dc_unregister_id(parsec_dc_key_t key);
 parsec_dc_t *
 parsec_dc_lookup(parsec_dc_key_t key);
 
-#if defined(PARSEC_PROF_TRACE)
 void parsec_data_collection_set_key( parsec_data_collection_t* d, char* name);
-#else
-#define parsec_data_collection_set_key(d, k) do {} while(0)
-#endif
 
 END_C_DECLS
 

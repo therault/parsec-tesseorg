@@ -8,6 +8,7 @@
 #include "parsec/vpmap.h"
 #include "parsec/utils/output.h"
 #include <string.h>
+#include "parsec/utils/debug.h"
 
 #define DEFAULT_HASH_SIZE 65536
 
@@ -16,13 +17,14 @@ static inline uint32_t hash_hash(uint32_t hash_size, uint32_t key)
     return key % hash_size;
 }
 
-static uint32_t      hash_data_key(   parsec_data_collection_t *desc, ...);
+static parsec_data_key_t hash_data_key(   parsec_data_collection_t *desc, ...);
 static uint32_t      hash_rank_of(    parsec_data_collection_t* dc, ... );
 static uint32_t      hash_rank_of_key(parsec_data_collection_t* dc, parsec_data_key_t key);
 static int32_t       hash_vpid_of(    parsec_data_collection_t* dc, ... );
 static int32_t       hash_vpid_of_key(parsec_data_collection_t* dc, parsec_data_key_t key);
 static parsec_data_t* hash_data_of(    parsec_data_collection_t* dc, ... );
 static parsec_data_t* hash_data_of_key(parsec_data_collection_t* dc, parsec_data_key_t key);
+static char *        hash_key_to_string(parsec_data_collection_t *d, parsec_data_key_t key, char * buffer, uint32_t buffer_size);
 
 parsec_hash_datadist_t *parsec_hash_datadist_create(int np, int myrank)
 {
@@ -38,11 +40,13 @@ parsec_hash_datadist_t *parsec_hash_datadist_create(int np, int myrank)
     o->super.data_of_key   = hash_data_of_key;
     o->super.vpid_of       = hash_vpid_of;
     o->super.vpid_of_key   = hash_vpid_of_key;
+    o->super.key_to_string = hash_key_to_string;
 
     o->hash_size = DEFAULT_HASH_SIZE;
     o->hash = (parsec_hash_datadist_entry_t **)calloc(DEFAULT_HASH_SIZE,
                                                      sizeof(parsec_hash_datadist_entry_t *));
-
+    o->super.dc_dim = strdup("NaN"); /* The dimension of a hash datadist is unknown/undefined */
+    
     assert(vpmap_get_nb_vp() > 0);
 
     return o;
@@ -132,9 +136,9 @@ void parsec_hash_datadist_set_data(parsec_hash_datadist_t *d, void *actual_data,
     u->size = size;
 }
 
-static uint32_t      hash_data_key(    parsec_data_collection_t *desc, ...)
+static parsec_data_key_t hash_data_key(parsec_data_collection_t *desc, ...)
 {
-    uint32_t k;
+    parsec_data_key_t k;
     va_list ap;
 
     va_start(ap, desc);
@@ -202,4 +206,13 @@ static parsec_data_t* hash_data_of_key(parsec_data_collection_t* dc, parsec_data
     assert(e != NULL);
     return parsec_data_create( &(e->data), dc, key,
                               e->actual_data, e->size );
+}
+
+static char *hash_key_to_string(parsec_data_collection_t *d, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
+{
+    int res;
+    res = snprintf(buffer, buffer_size, "%s(%lu)", d->dc_name, key);
+    if( res < 0 )
+        parsec_warning("Wrong key_to_string for tile at key: %u", key);
+    return buffer;
 }

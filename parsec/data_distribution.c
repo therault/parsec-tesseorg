@@ -6,6 +6,7 @@
 
 #include "parsec/parsec_config.h"
 #include "parsec/data_distribution.h"
+#include "parsec/profiling.h"
 
 #if defined(PARSEC_HAVE_STDARG_H)
 #include <stdarg.h>
@@ -92,22 +93,20 @@ parsec_data_collection_init(parsec_data_collection_t *d,
 void
 parsec_data_collection_destroy(parsec_data_collection_t *d)
 {
-#if defined(PARSEC_PROF_TRACE)
-    if( NULL != d->key_dim ) free(d->key_dim);
-    d->key_dim = NULL;
-#endif
-    if( NULL != d->key_base ) free(d->key_base);
-    d->key_base = NULL;
+    if( NULL != d->dc_dim ) free(d->dc_dim);
+    d->dc_dim = NULL;
+    if( NULL != d->dc_name ) free(d->dc_name);
+    d->dc_name = NULL;
 }
-
-#if defined(PARSEC_PROF_TRACE)
-#include "parsec/profiling.h"
 
 void parsec_data_collection_set_key( parsec_data_collection_t* d, char* name)
 {
-    char dim[strlen(name) + strlen( (d)->key_dim ) + 4];
-    (d)->key_base = strdup(name);
-    sprintf(dim, "%s%s", name, (d)->key_dim);
-    parsec_profiling_add_information( "DIMENSION", dim );
+    d->dc_name = strdup(name);
+#if defined(PARSEC_PROF_TRACE)
+    {
+        char dim[strlen(name) + strlen( d->dc_dim ) + 1];
+        sprintf(dim, "%s%s", name, d->dc_dim);
+        parsec_profiling_add_information( "DIMENSION", dim );
+    }
+#endif /*PARSEC_PROF_TRACE */
 }
-#endif  /* defined(PARSEC_PROF_TRACE) */

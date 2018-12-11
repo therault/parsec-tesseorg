@@ -27,7 +27,7 @@ static int32_t        irregular_tiled_matrix_vpid_of(     parsec_data_collection
 static int32_t        irregular_tiled_matrix_vpid_of_key( parsec_data_collection_t* dc, parsec_data_key_t key);
 static parsec_data_t* irregular_tiled_matrix_data_of(     parsec_data_collection_t* dc, ...);
 static parsec_data_t* irregular_tiled_matrix_data_of_key( parsec_data_collection_t* dc, parsec_data_key_t key);
-static uint32_t       irregular_tiled_matrix_coord_to_key(parsec_data_collection_t* dc, ...);
+static parsec_data_key_t irregular_tiled_matrix_coord_to_key(parsec_data_collection_t* dc, ...);
 static void           irregular_tiled_matrix_key_to_coord(parsec_data_collection_t* dc, parsec_data_key_t key, int *i, int *j);
 
 static void irregular_tile_data_copy_construct(irregular_tile_data_copy_t* t)
@@ -203,7 +203,7 @@ static parsec_data_t* irregular_tiled_matrix_data_of_key(parsec_data_collection_
     return irregular_tiled_matrix_data_of(dc, i, j);
 }
 
-static uint32_t irregular_tiled_matrix_coord_to_key(struct parsec_data_collection_s *dc, ...)
+static parsec_data_key_t irregular_tiled_matrix_coord_to_key(struct parsec_data_collection_s *dc, ...)
 {
     irregular_tiled_matrix_desc_t* desc = (irregular_tiled_matrix_desc_t*)dc;
     int i, j;
@@ -217,13 +217,12 @@ static uint32_t irregular_tiled_matrix_coord_to_key(struct parsec_data_collectio
     i += desc->i;
     j += desc->j;
 
-    uint32_t k = (i * desc->lnt) + j;
+    parsec_data_key_t k = (i * desc->lnt) + j;
 
     return k;
 }
 
-#if defined(PARSEC_PROF_TRACE)
-static int irregular_tiled_matrix_key_to_string(parsec_data_collection_t *dc, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
+static char *irregular_tiled_matrix_key_to_string(parsec_data_collection_t *dc, parsec_data_key_t key, char * buffer, uint32_t buffer_size)
 {
     unsigned int m, n;
     int res;
@@ -231,12 +230,11 @@ static int irregular_tiled_matrix_key_to_string(parsec_data_collection_t *dc, pa
 
     m = key % desc->lnt;
     n = key / desc->lnt;
-    res = snprintf(buffer, buffer_size, "(%u, %u)", m, n);
+    res = snprintf(buffer, buffer_size, "%s(%u, %u)", dc->dc_name, m, n);
     if (res < 0)
         parsec_warning("Wrong key_to_string for tile (%u, %u) key: %u", m, n, key);
-    return res;
+    return buffer;
 }
-#endif
 
 
 int tile_is_local(int i, int j, grid_2Dcyclic_t* g)
@@ -300,9 +298,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
     d->data_of_key = irregular_tiled_matrix_data_of_key;
     d->data_key    = irregular_tiled_matrix_coord_to_key;
 
-#if defined(PARSEC_PROF_TRACE)
     d->key_to_string = irregular_tiled_matrix_key_to_string;
-#endif
 
     grid_2Dcyclic_init(&ddesc->grid, myrank, P, Q, 1, 1);
 
@@ -350,6 +346,7 @@ void irregular_tiled_matrix_desc_init(irregular_tiled_matrix_desc_t* ddesc,
                 ddesc->max_tile = Mtiling[i]*Ntiling[j];
     }
     ddesc->future_resolve_fct = future_resolve_fct;
+    asprintf(&ddesc->super.dc_dim, "(%d, %d)", mt, nt);
 }
 
 void irregular_tiled_matrix_destroy_data(irregular_tiled_matrix_desc_t* ddesc)
@@ -391,7 +388,7 @@ void irregular_tiled_matrix_desc_destroy(irregular_tiled_matrix_desc_t* ddesc)
     ddesc->data_map[idx].vpid = vpid;
     ddesc->data_map[idx].rank = rank;
 
-    assert (rank == ((parsec_data_collection_t*)ddesc)->myrank || actual_data == NULL);
+    assert ((uint32_t)rank == ((parsec_data_collection_t*)ddesc)->myrank || actual_data == NULL);
 }
 
 #if 0

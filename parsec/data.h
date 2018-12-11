@@ -20,7 +20,7 @@
 
 BEGIN_C_DECLS
 
-typedef uint32_t parsec_data_key_t;
+typedef uint64_t parsec_data_key_t;
 struct parsec_context_s;
 
 typedef uint8_t parsec_data_coherency_t;
@@ -49,6 +49,7 @@ parsec_data_get_copy(parsec_data_t* data, uint32_t device);
 
 PARSEC_DECLSPEC parsec_data_copy_t*
 parsec_data_copy_new(parsec_data_t* data, uint8_t device);
+
 /**
  * Decrease the refcount of this copy of the data. If the refcount reach
  * 0 the upper level is in charge of cleaning up and releasing all content

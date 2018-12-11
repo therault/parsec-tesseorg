@@ -61,6 +61,7 @@ static void parsec_data_construct(parsec_data_t* obj )
     obj->nb_elts          = 0;
     for( uint32_t i = 0; i < parsec_nb_devices;
          obj->device_copies[i] = NULL, i++ );
+    obj->dc               = NULL;
     PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Allocate data %p", obj);
 }
 
@@ -382,7 +383,7 @@ void parsec_dump_data_copy(parsec_data_copy_t* copy)
 
 void parsec_dump_data(parsec_data_t* data)
 {
-    printf("data %p key %x owner %d\n", data, data->key, data->owner_device);
+    printf("data %p key %lu owner %d\n", data, data->key, data->owner_device);
 
     for( uint32_t i = 0; i < parsec_nb_devices; i++ ) {
         if( NULL != data->device_copies[i])

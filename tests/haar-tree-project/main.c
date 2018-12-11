@@ -219,7 +219,8 @@ int main(int argc, char *argv[])
     }
 
     treeA = tree_dist_create_empty(rank, world);
-
+    parsec_data_collection_set_key((parsec_data_collection_t*)treeA, "A");
+    
     two_dim_block_cyclic_init(&fakeDesc, matrix_RealFloat, matrix_Tile,
                               world, rank, 1, 1, world, world, 0, 0, world, world, 1, 1, 1);
 

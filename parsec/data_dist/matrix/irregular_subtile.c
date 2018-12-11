@@ -14,7 +14,6 @@ static int32_t        irregular_subtile_vpid_of(     parsec_data_collection_t* d
 static int32_t        irregular_subtile_vpid_of_key( parsec_data_collection_t* dc, parsec_data_key_t key);
 static parsec_data_t* irregular_subtile_data_of(     parsec_data_collection_t* dc, ...);
 static parsec_data_t* irregular_subtile_data_of_key( parsec_data_collection_t* dc, parsec_data_key_t key);
-static uint32_t       irregular_subtile_coord_to_key(parsec_data_collection_t *dc, ...);
 static void           irregular_subtile_key_to_coord(parsec_data_collection_t *desc, parsec_data_key_t key, int *m, int *n);
 
 two_dim_block_cyclic_t* recursive_fake_Cdist(const two_dim_block_cyclic_t* original)
@@ -176,21 +175,4 @@ static void irregular_subtile_key_to_coord(parsec_data_collection_t *dc, parsec_
 
     *m = key % tdesc->lmt;
     *n = key / tdesc->lmt;
-}
-
-static uint32_t irregular_subtile_coord_to_key(parsec_data_collection_t *dc, ...)
-{
-    int i, j;
-    va_list ap;
-    irregular_tiled_matrix_desc_t * sdesc = (irregular_tiled_matrix_desc_t*)dc;
-
-    /* Get coordinates */
-    va_start(ap, dc);
-    i = (int)va_arg(ap, unsigned int);
-    j = (int)va_arg(ap, unsigned int);
-    va_end(ap);
-
-    uint32_t k = (i * sdesc->lnt + j);
-
-    return k;
 }

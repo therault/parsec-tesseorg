@@ -22,11 +22,9 @@
 #endif
 #include <string.h>
 
-static uint32_t tiled_matrix_data_key(struct parsec_data_collection_s *desc, ...);
+static parsec_data_key_t tiled_matrix_data_key(struct parsec_data_collection_s *desc, ...);
 
-#if defined(PARSEC_PROF_TRACE)
-static int      tiled_matrix_key_to_string(struct parsec_data_collection_s * desc, uint32_t datakey, char * buffer, uint32_t buffer_size);
-#endif
+static char *tiled_matrix_key_to_string(struct parsec_data_collection_s * desc, parsec_data_key_t datakey, char * buffer, uint32_t buffer_size);
 
 parsec_data_t*
 parsec_matrix_create_data(parsec_tiled_matrix_dc_t* matrix,
@@ -134,10 +132,8 @@ void parsec_tiled_matrix_dc_init( parsec_tiled_matrix_dc_t *tdesc,
     tdesc->nt = (j+n-1)/nb - j/nb + 1;
 
     /* finish to update the main object properties */
-#if defined(PARSEC_PROF_TRACE)
     o->key_to_string = tiled_matrix_key_to_string;
-    asprintf(&(o->key_dim), "(%d, %d)", tdesc->lmt, tdesc->lnt);
-#endif
+    asprintf(&(o->dc_dim), "(%d, %d)", tdesc->lmt, tdesc->lnt);
 }
 
 void
@@ -203,10 +199,10 @@ tiled_matrix_submatrix( parsec_tiled_matrix_dc_t *tdesc,
 }
 
 /* return a unique key (unique only for the specified parsec_dc) associated to a data */
-static uint32_t tiled_matrix_data_key(struct parsec_data_collection_s *desc, ...)
+static parsec_data_key_t tiled_matrix_data_key(struct parsec_data_collection_s *desc, ...)
 {
     parsec_tiled_matrix_dc_t * dc;
-    unsigned int m, n;
+    parsec_data_key_t m, n;
     va_list ap;
     dc = (parsec_tiled_matrix_dc_t*)desc;
 
@@ -223,9 +219,7 @@ static uint32_t tiled_matrix_data_key(struct parsec_data_collection_s *desc, ...
     return ((n * dc->lmt) + m);
 }
 
-#if defined(PARSEC_PROF_TRACE)
-static int  tiled_matrix_key_to_string(struct parsec_data_collection_s *desc, uint32_t datakey, char * buffer, uint32_t buffer_size)
-/* return a string meaningful for profiling about data */
+static char *tiled_matrix_key_to_string(struct parsec_data_collection_s *desc, parsec_data_key_t datakey, char * buffer, uint32_t buffer_size)
 {
     parsec_tiled_matrix_dc_t * dc;
     unsigned int m, n;
@@ -233,14 +227,11 @@ static int  tiled_matrix_key_to_string(struct parsec_data_collection_s *desc, ui
     dc = (parsec_tiled_matrix_dc_t*)desc;
     m = datakey % dc->lmt;
     n = datakey / dc->lmt;
-    res = snprintf(buffer, buffer_size, "(%u, %u)", m, n);
+    res = snprintf(buffer, buffer_size, "%s(%u, %u)", desc->dc_name, m, n);
     if (res < 0)
-    {
-        parsec_warning("Wrong key_to_string for tile (%u, %u) key: %u", m, n, datakey);
-    }
-    return res;
+        parsec_warning("Wrong key_to_string for tile (%u, %u) key: %lu", m, n, datakey);
+    return buffer;
 }
-#endif /* PARSEC_PROF_TRACE */
 
 /*
  * Writes the data into the file filename

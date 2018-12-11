@@ -82,7 +82,7 @@ static parsec_data_t* data_of_key(parsec_data_collection_t *desc, parsec_data_ke
     return parsec_data_create( &dat->data, desc, key, dat->ptr, dat->size );
 }
 
-static uint32_t data_key(parsec_data_collection_t *desc, ...)
+static uint64_t data_key(parsec_data_collection_t *desc, ...)
 {
     int k;
     va_list ap;
@@ -95,7 +95,7 @@ static uint32_t data_key(parsec_data_collection_t *desc, ...)
     assert( (unsigned int)k < dat->super.nodes && k >= 0 );
     (void)dat;
 
-    return (uint32_t)k;
+    return (uint64_t)k;
 }
 
 parsec_data_collection_t *create_and_distribute_data(int rank, int world, int size)
@@ -112,9 +112,7 @@ parsec_data_collection_t *create_and_distribute_data(int rank, int world, int si
     d->vpid_of      = vpid_of;
     d->vpid_of_key  = vpid_of_key;
     d->data_key     = data_key;
-#if defined(PARSEC_PROF_TRACE)
-    asprintf(&d->key_dim, "(%d)", world);
-#endif
+    asprintf(&d->dc_dim, "(%d)", world);
 
     m->size = size;
     m->data = NULL;

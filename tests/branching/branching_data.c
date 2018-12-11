@@ -64,19 +64,27 @@ static parsec_data_t* data_of(parsec_data_collection_t *desc, ...)
     return (void*)(dat->data);
 }
 
-#if defined(PARSEC_PROF_TRACE)
-static uint32_t data_key(parsec_data_collection_t *desc, ...)
+static parsec_data_key_t data_key(parsec_data_collection_t *desc, ...)
 {
-    int k;
+    parsec_data_key_t k;
     va_list ap;
 
     va_start(ap, desc);
     k = va_arg(ap, int);
     va_end(ap);
 
-    return (uint32_t)k;
+    return k;
 }
-#endif
+
+static char *data_key_to_string(struct parsec_data_collection_s * desc, parsec_data_key_t datakey, char * buffer, uint32_t buffer_size)
+{
+    int res;
+
+    res = snprintf(buffer, buffer_size, "%s(%lu)", desc->dc_name, datakey);
+    if (res < 0)
+        parsec_warning("error in key_to_string for tile (%lu) key: %lu\n", datakey, datakey);
+    return buffer;
+}
 
 parsec_data_collection_t *create_and_distribute_data(int rank, int world, int size)
 {
@@ -88,12 +96,11 @@ parsec_data_collection_t *create_and_distribute_data(int rank, int world, int si
     d->rank_of = rank_of;
     d->data_of = data_of;
     d->vpid_of = vpid_of;
-#if defined(PARSEC_PROF_TRACE)
-    asprintf(&d->key_dim, "(%d)", size);
-    d->key_base = NULL;
+    asprintf(&d->dc_dim, "(%d)", size);
+    d->dc_name = NULL;
     d->data_key = data_key;
-#endif
-
+    d->key_to_string = data_key_to_string;
+    
     m->data = NULL;
     m->ptr = (int32_t*)malloc(size * sizeof(int32_t));
 

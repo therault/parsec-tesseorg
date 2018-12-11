@@ -15,13 +15,9 @@ static uint32_t vector_twoDBC_rank_of(parsec_data_collection_t* dc, ...);
 static int32_t  vector_twoDBC_vpid_of(parsec_data_collection_t* dc, ...);
 static parsec_data_t* vector_twoDBC_data_of(parsec_data_collection_t* dc, ...);
 
-#if defined(PARSEC_PROF_TRACE) || defined(PARSEC_HAVE_CUDA)
-static uint32_t vector_twoDBC_data_key(struct parsec_data_collection_s *desc, ...);
-#endif /* defined(PARSEC_PROF_TRACE) || defined(PARSEC_HAVE_CUDA) */
+static parsec_data_key_t vector_twoDBC_data_key(struct parsec_data_collection_s *desc, ...);
 
-#if defined(PARSEC_PROF_TRACE)
-static int      vector_twoDBC_key_to_string(struct parsec_data_collection_s * desc, uint32_t datakey, char * buffer, uint32_t buffer_size);
-#endif
+static char *vector_twoDBC_key_to_string(struct parsec_data_collection_s * desc, parsec_data_key_t datakey, char * buffer, uint32_t buffer_size);
 
 static inline int gcd(int a, int b){
     int x, y, t;
@@ -135,15 +131,9 @@ void vector_two_dim_cyclic_init( vector_two_dim_cyclic_t * dc,
     o->vpid_of = vector_twoDBC_vpid_of;
     o->data_of = vector_twoDBC_data_of;
 
-#if defined(PARSEC_PROF_TRACE) || defined(PARSEC_HAVE_CUDA)
     o->data_key      = vector_twoDBC_data_key;
-#endif
-#if defined(PARSEC_PROF_TRACE)
     o->key_to_string = vector_twoDBC_key_to_string;
-    o->key_dim       = NULL;
-    o->key           = NULL;
-    asprintf(&(o->key_dim), "(%d)", dc->super.lmt);
-#endif
+    asprintf(&(o->dc_dim), "(%d)", dc->super.lmt);
     dc->super.data_map = (parsec_data_t**)calloc(dc->super.nb_local_tiles, sizeof(parsec_data_t*));
 
     PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "vector_two_dim_cyclic_init: \n"
@@ -275,11 +265,10 @@ static parsec_data_t* vector_twoDBC_data_of(parsec_data_collection_t *desc, ...)
 /*
  * Common functions
  */
-#if defined(PARSEC_PROF_TRACE) || defined(PARSEC_HAVE_CUDA)
 /* return a unique key (unique only for the specified parsec_dc) associated to a data */
-static uint32_t vector_twoDBC_data_key(struct parsec_data_collection_s *desc, ...)
+static parsec_data_key_t vector_twoDBC_data_key(struct parsec_data_collection_s *desc, ...)
 {
-    unsigned int m;
+    parsec_data_key_t m;
     vector_two_dim_cyclic_t * dc;
     va_list ap;
     dc = (vector_two_dim_cyclic_t *)desc;
@@ -294,20 +283,13 @@ static uint32_t vector_twoDBC_data_key(struct parsec_data_collection_s *desc, ..
 
     return m;
 }
-#endif /* defined(PARSEC_PROF_TRACE) || defined(PARSEC_HAVE_CUDA) */
 
-#if defined(PARSEC_PROF_TRACE)
-/* return a string meaningful for profiling about data */
-static int  vector_twoDBC_key_to_string(struct parsec_data_collection_s * desc, uint32_t datakey, char * buffer, uint32_t buffer_size)
+static char *vector_twoDBC_key_to_string(struct parsec_data_collection_s * desc, parsec_data_key_t datakey, char * buffer, uint32_t buffer_size)
 {
     int res;
-    (void)desc;
 
-    res = snprintf(buffer, buffer_size, "(%u)", datakey);
+    res = snprintf(buffer, buffer_size, "%s(%lu)", desc->dc_name, datakey);
     if (res < 0)
-    {
-        printf("error in key_to_string for tile (%u) key: %u\n", datakey, datakey);
-    }
-    return res;
+        parsec_warning("error in key_to_string for tile (%lu) key: %lu\n", datakey, datakey);
+    return buffer;
 }
-#endif /* PARSEC_PROF_TRACE */
