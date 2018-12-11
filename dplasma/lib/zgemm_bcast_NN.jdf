@@ -85,6 +85,30 @@ BODY
   /* Nothing */
 END
 
+/**************************************************
+ *                       MAKE_C                   *
+ **************************************************/
+
+MAKE_C(m, n, k, kprev)
+  m = 0 .. descC->mt-1
+  n = 0 .. descC->nt-1
+  k = 0 .. descB->mt-1
+  kprev = %{ return gemm_plan_prev(plan, m, n, k); %} .. -1
+
+: CompDist(k, n)
+
+RW C <- kprev == -1 ? NEW : NULL      [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+     -> kprev == -1 ? C GEMM(m, n, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+
+BODY
+  if( kprev == -1 ) {
+      parsec_advise_data_on_device( _f_C->original, 2, PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE);
+  }
+END
+
+/**************************************************
+ *                       ACC_C                    *
+ **************************************************/
 ACCUMULATE_C(m, n, i)
   m = 0 .. descC->mt-1
   n = 0 .. descC->nt-1
@@ -102,6 +126,7 @@ RW C <- i == 0 ? descC(m, n) : C ACCUMULATE_C(m, n, i-1) [ type= DEFAULT layout=
 READ Ci <- C GEMM(m, n, k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
 
 CTL X -> ((ctlmode == -1) & (n < descC->nt)) ? X GEMM(m, n+1, firstk_nextn)
+CTL Z -> ((ctlmode == -1) & (n < descC->nt-1)) ? Z GEMM(0 .. descC->mt-1, n+2, firstk_nextn)
 
 BODY
 {
@@ -112,6 +137,10 @@ BODY
     CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Ci, cCmb, za, C, cCmb);
 }
 END
+
+/**************************************************
+ *                       GEMM                     *
+ **************************************************/
 
 GEMM(m, n, k)
   m = 0 .. descC->mt-1
@@ -126,7 +155,7 @@ GEMM(m, n, k)
 READ A <- A READ_A(m ,k) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descA, m, k); %} ]
 READ B <- B READ_B(k, n) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descB, k, n); %} ]
 RW C <- kprev == -1
-          ? NEW          [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
+          ? C MAKE_C(m, n, k, -1)    [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
      <- kprev != -1
           ? C GEMM(m, n, kprev ) [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
      -> knext == -1
@@ -139,6 +168,8 @@ CTL X <- ( (ctlmode == -1) & (n > 0) & (kprev==-1) ) ? X ACCUMULATE_C(m, n-1, in
  
 CTL Y <- ( (ctlmode == -2) & (m > 0) & (kprev==-1) & (n == 0) ) ? Y GEMM(m-1, descC->nt-1, k)
       -> ( (ctlmode == -2) & (m < descB->mt-1) & (kprev==-1) & (n == (descC->nt-1)) ) ? Y GEMM(m+1, 0, k)
+
+CTL Z <- ( (ctlmode == -1) & (n > 1) & (kprev==-1) ) ? Z ACCUMULATE_C(0 .. descC->mt-1, n-2, index)
 
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
@@ -170,6 +201,13 @@ BODY [type=CUDA
     /*         "CUDA: gemm( %d, %d, %d ) > A(%d,%d) * B(%d,%d) C(%d,%d)\n", */
     /*         m, n, k, cAmb, cAnb, cBmb, cBnb, cCmb, cCnb); */
 #endif
+
+    if( 0 && m+1 < descB->mt ) {
+    	parsec_advise_data_on_device( descB->super.data_of((parsec_data_collection_t *)&descB->super, m+1, n), 2, PARSEC_DEV_DATA_ADVICE_PREFETCH);
+    }
+    if( 0 && n+1 < descB->nt ) {
+    	parsec_advise_data_on_device( descB->super.data_of((parsec_data_collection_t *)&descB->super, m, n+1), 2, PARSEC_DEV_DATA_ADVICE_PREFETCH);
+    }
 
     cublasStatus_t status;
     cublasSetKernelStream( parsec_body.stream );

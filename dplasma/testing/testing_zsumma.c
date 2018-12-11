@@ -545,6 +545,8 @@ int main(int argc, char ** argv)
 
     /* Create Parsec taskpool */
     for(int run = 0; run < 10; run++) {
+        parsec_devices_release_memory();
+        
         parsec_taskpool_t* PARSEC_zsumma = dplasma_zsumma_New(tA, tB, alpha,
                                                               (irregular_tiled_matrix_desc_t*)&ddescA,
                                                               (irregular_tiled_matrix_desc_t*)&ddescB,

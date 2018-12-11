@@ -10,6 +10,8 @@
 #ifndef _DPLASMAAUX_H_INCLUDED
 #define _DPLASMAAUX_H_INCLUDED
 
+#include "parsec/data_dist/matrix/irregular_tiled_matrix.h"
+
 /**
  * Returns the priority limit of a specific function for a specific precision.
  *

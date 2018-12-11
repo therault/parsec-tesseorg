@@ -471,8 +471,8 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                                                plan);
             arena = handle->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
 
-            assert( 0 == strcmp(handle->super.task_classes_array[3]->name, "GEMM") );
-            gemm_tc = (parsec_task_class_t*)handle->super.task_classes_array[3];
+            assert( 0 == strcmp(handle->super.task_classes_array[4]->name, "GEMM") );
+            gemm_tc = (parsec_task_class_t*)handle->super.task_classes_array[4];
             for(i = 0; ; i++) {
                 if( PARSEC_DEV_NONE == gemm_tc->incarnations[i].type )
                     break;
