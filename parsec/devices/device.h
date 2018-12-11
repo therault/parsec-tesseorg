@@ -22,6 +22,10 @@
 #define PARSEC_DEV_OPENCL     ((uint8_t)(1 << 4))
 #define PARSEC_DEV_ALL        ((uint8_t)    0x1f)
 
+#define PARSEC_DEV_DATA_ADVICE_PREFETCH              ((int) 0x01)
+#define PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE      ((int) 0x02)
+#define PARSEC_DEV_DATA_ADVICE_WARMUP                ((int) 0x03)
+
 typedef struct parsec_device_s parsec_device_t;
 
 typedef int   (*parsec_device_init_f)(parsec_device_t*);
@@ -30,6 +34,8 @@ typedef int   (*parsec_device_taskpool_register_f)(parsec_device_t*, parsec_task
 typedef int   (*parsec_device_taskpool_unregister_f)(parsec_device_t*, parsec_taskpool_t*);
 typedef int   (*parsec_device_memory_register_f)(parsec_device_t*, parsec_data_collection_t*, void*, size_t);
 typedef int   (*parsec_device_memory_unregister_f)(parsec_device_t*, parsec_data_collection_t*, void*);
+typedef int   (*parsec_device_memory_release_f)(parsec_device_t*);
+typedef int   (*parsec_device_data_advise_f)(parsec_device_t*, parsec_data_t *, int);
 typedef void* (*parsec_device_find_function_f)(parsec_device_t*, char*);
 
 struct parsec_device_s {
@@ -41,6 +47,8 @@ struct parsec_device_s {
     parsec_device_taskpool_unregister_f device_taskpool_unregister;
     parsec_device_memory_register_f     device_memory_register;
     parsec_device_memory_unregister_f   device_memory_unregister;
+    parsec_device_memory_release_f      device_memory_release;
+    parsec_device_data_advise_f         device_data_advise;
     parsec_device_find_function_f       device_find_function;
 
     struct parsec_context_s* context;  /**< The PaRSEC context this device belongs too */
@@ -50,6 +58,7 @@ struct parsec_device_s {
     uint64_t required_data_in;
     uint64_t required_data_out;
     uint64_t executed_tasks;
+    uint64_t nb_data_faults;
     float device_hweight;  /**< Number of half precision operations per second */
     float device_sweight;  /**< Number of single precision operations per second */
     float device_dweight;  /**< Number of double precision operations per second */
@@ -147,6 +156,33 @@ static inline int parsec_devices_enabled(void)
  */
 PARSEC_DECLSPEC void parsec_devices_taskpool_restrict( parsec_taskpool_t *tp,
                                                        uint8_t            devices_type );
+
+/**
+ * Release all additional memory allocated on device.
+ *
+ * Device 0 (CPU) does not release the memory allocated on it,
+ * only devices with local memory (e.g. GPUs) release temporary
+ * buffers. This is used to start with an empty cache.
+ */
+PARSEC_DECLSPEC int parsec_devices_release_memory(void);
+
+/**
+ * Provides hints to a device about data
+ *
+ * Possible advices are PARSEC_DEV_DATA_ADVICE_*
+ *   PREFETCH: a copy corresponding to the data should be prefetch
+ *             on the device
+ *   PREFERRED_DEVICE: this device is the preferred device to own
+ *                     the data (may be used when selecting given
+ *                     devices)
+ *   WARMUP: if the device uses a cache policy, this tells that
+ *           the data should be considered as recently used by
+ *           the call.
+ *
+ * The advice may be ignored by the device. Each device sets their
+ * policies wrt prefetching and caching through MCA parameters.
+ */
+PARSEC_DECLSPEC int parsec_advise_data_on_device(parsec_data_t *data, int device, int advice);
 
 /**
  * Find a function is a set of shared libraries specified in paths. If a path

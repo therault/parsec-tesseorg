@@ -3501,14 +3501,14 @@ static void jdf_generate_startup_hook( const jdf_t *jdf )
                            "      if( (NULL != parsec_dc->register_memory) &&\n"
                            "          (PARSEC_SUCCESS != parsec_dc->register_memory(parsec_dc, device)) ) {\n"
                            "        parsec_debug_verbose(3, parsec_debug_output, \"Device %s refused to register memory for data %s (%p) from taskpool %p\",\n"
-                           "                     device->name, parsec_dc->key_base, parsec_dc, __parsec_tp);\n"
+                           "                     device->name, parsec_dc->dc_name, parsec_dc, __parsec_tp);\n"
                            "        __parsec_tp->super.super.devices_index_mask &= ~(1 << device->device_index);\n"
                            "      }\n",
                            ";\n"
                            "      if( (NULL != parsec_dc->register_memory) &&\n"
                            "          (PARSEC_SUCCESS != parsec_dc->register_memory(parsec_dc, device)) ) {\n"
                            "        parsec_debug_verbose(3, parsec_debug_output, \"Device %s refused to register memory for data %s (%p) from taskpool %p\",\n"
-                           "                     device->name, parsec_dc->key_base, parsec_dc, __parsec_tp);\n"
+                           "                     device->name, parsec_dc->dc_name, parsec_dc, __parsec_tp);\n"
                            "        __parsec_tp->super.super.devices_index_mask &= ~(1 << device->device_index);\n"
                            "      }\n"));
     coutput("  /* Remove all the chores without a backend device */\n"
@@ -3600,7 +3600,9 @@ static void jdf_generate_destructor( const jdf_t *jdf )
                         "    dependencies_size += parsec_destruct_dependencies( __parsec_tp->super.super.dependencies_array[%d] );\n",
                         f->task_class_id, f->task_class_id);
             } else if (JDF_COMPILER_GLOBAL_ARGS.dep_management == DEP_MANAGEMENT_DYNAMIC_HASH_TABLE ) {
-                coutput("  parsec_hash_table_fini( (parsec_hash_table_t*)__parsec_tp->super.super.dependencies_array[%d] );\n",
+                coutput("  parsec_hash_table_fini( (parsec_hash_table_t*)__parsec_tp->super.super.dependencies_array[%d] );\n"
+                        "  OBJ_RELEASE(__parsec_tp->super.super.dependencies_array[%d]);\n",
+                        f->task_class_id,
                         f->task_class_id);
             } 
         } else {
@@ -5027,13 +5029,22 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
     jdf_coutput_prettycomment('-', "%s BODY", f->fname);
 
     if( profile_on ) {
-        coutput("  PARSEC_TASK_PROF_TRACE_IF(gpu_stream->prof_event_track_enable,\n"
-                "                           gpu_stream->profiling,\n"
-                "                           (-1 == gpu_stream->prof_event_key_start ?\n"
-                "                           PARSEC_PROF_FUNC_KEY_START(this_task->taskpool,\n"
-                "                                                     this_task->task_class->task_class_id) :\n"
-                "                           gpu_stream->prof_event_key_start),\n"
-                "                           (parsec_task_t*)this_task);\n");
+        coutput("#if defined(PARSEC_PROF_TRACE)\n"
+                "    if( gpu_stream->prof_event_track_enable &&\n"
+                "        (parsec_cuda_trackable_events & PARSEC_PROFILE_CUDA_TRACK_EXEC) ) {\n"
+                "        gpu_task->prof_key_end = PARSEC_PROF_FUNC_KEY_END(gpu_task->ec->taskpool,\n"
+                "                     gpu_task->ec->task_class->task_class_id);\n"
+                "        gpu_task->prof_event_id = gpu_task->ec->task_class->key_functions->\n"
+                "                     key_hash(gpu_task->ec->task_class->make_key( gpu_task->ec->taskpool, gpu_task->ec->locals ), 64, NULL);\n"
+                "        gpu_task->prof_tp_id = gpu_task->ec->taskpool->taskpool_id;\n"
+                "        PARSEC_TASK_PROF_TRACE(gpu_stream->profiling,\n"
+                "                               PARSEC_PROF_FUNC_KEY_START(gpu_task->ec->taskpool,\n"
+                "                                                          gpu_task->ec->task_class->task_class_id),\n"
+                "                               gpu_task->ec);\n"
+                "    } else {\n"
+                "        gpu_task->prof_key_end = -1;\n"
+                "    }\n"
+                "#endif\n");
     }
 
     dyld = jdf_property_get_string(body->properties, "dyld", NULL);
@@ -5112,7 +5123,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
             "  OBJ_CONSTRUCT(gpu_task, parsec_list_item_t);\n"
             "  gpu_task->ec = (parsec_task_t*)this_task;\n"
             "  gpu_task->submit = &gpu_kernel_submit_%s_%s;\n"
-            "  gpu_task->task_type = 0;\n"
+            "  gpu_task->task_type = GPU_TASK_TYPE_KERNEL;\n"
             "  gpu_task->load = ratio * parsec_device_sweight[dev_index];\n"
             "  gpu_task->last_data_check_epoch = -1;  /* force at least one validation for the task */\n",
             jdf_basename, f->fname);
@@ -5385,9 +5396,15 @@ jdf_generate_code_complete_hook(const jdf_t *jdf,
              * The data_out might be NULL if we don't forward anything.
              */
             coutput("  if ( NULL != this_task->data._f_%s.data_out ) {\n"
-                    "    this_task->data._f_%s.data_out->version++;  /* %s */\n"
+                    "     char tmp[128];\n"
+                    "     this_task->data._f_%s.data_out->version++;  /* %s */\n"
+                    "     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output,\n"
+                    "                          \"Complete hook of %%s: change Data copy %%p to version %%d at %%s:%%d\",\n"
+                    "                          parsec_task_snprintf(tmp, 128, (parsec_task_t*)(this_task)),\n"
+                    "                          this_task->data._f_%s.data_out, this_task->data._f_%s.data_out->version, __FILE__, __LINE__);\n"
                     "  }\n",
                     fl->varname,
+                    fl->varname, fl->varname,
                     fl->varname, fl->varname );
         }
     }

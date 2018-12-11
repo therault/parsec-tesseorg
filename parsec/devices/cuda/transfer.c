@@ -303,6 +303,11 @@ int parsec_gpu_W2R_task_fini(gpu_device_t *gpu_device,
             cpu_copy->coherency_state =  DATA_COHERENCY_SHARED;
             cpu_copy->version = gpu_copy->version;
             PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream,
+                                 "GPU[%d]: CPU copy %p gets the same version %d as GPU copy %p at %s:%d",
+                                 gpu_device->cuda_index,
+                                 cpu_copy, cpu_copy->version, gpu_copy,
+                                 __FILE__, __LINE__);
+            PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream,
                                  "D2H[%d] task %p:%i GPU data copy %p [%p] now available",
                                  gpu_device->cuda_index, (void*)task, i, gpu_copy, gpu_copy->original);
             parsec_list_nolock_push_back(&gpu_device->gpu_mem_lru, (parsec_list_item_t*)gpu_copy);
