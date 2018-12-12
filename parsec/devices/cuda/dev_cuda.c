@@ -639,6 +639,10 @@ int parsec_gpu_fini(void)
         if( NULL == (gpu_device = (gpu_device_t*)parsec_devices_get(i)) ) continue;
         if(PARSEC_DEV_CUDA != gpu_device->super.type) continue;
         parsec_cuda_device_fini((parsec_device_t*)gpu_device);
+    }
+    for(i = 0; i < parsec_devices_enabled(); i++) {
+        if( NULL == (gpu_device = (gpu_device_t*)parsec_devices_get(i)) ) continue;
+        if(PARSEC_DEV_CUDA != gpu_device->super.type) continue;
         parsec_devices_remove((parsec_device_t*)gpu_device);
         free(gpu_device);
     }

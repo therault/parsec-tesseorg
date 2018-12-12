@@ -335,9 +335,10 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
 {
     parsec_taskpool_t* zgemm_handle;
     parsec_arena_t* arena;
-    int P, Q, m, n, i, j, k, rank;
+    int P, Q, m, n, i, j, k, rank, nb;
     gemm_plan_t *plan;
     static char *cutoff_str = NULL;
+    int *dev_index = NULL;
 
     if( NULL == cutoff_str ) {
         parsec_mca_param_reg_string_name("dplasma", "zgemm_bcast_cutoff_ratio",
@@ -457,6 +458,22 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     }
 #endif
     free(lastk);
+
+    nb = 0;
+    for(i = 0; i < (int)parsec_nb_devices; i++) {
+        parsec_device_t *dev = parsec_devices_get(i);
+        if( PARSEC_DEV_CUDA == dev->type ) {
+            nb++;
+        }
+    }
+    dev_index = (int*)malloc(nb * sizeof(int));
+    nb = 0;
+    for(i = 0; i < (int)parsec_nb_devices; i++) {
+        parsec_device_t *dev = parsec_devices_get(i);
+        if( PARSEC_DEV_CUDA == dev->type ) {
+            dev_index[nb++] = dev->device_index;
+        }
+    }
     
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
@@ -468,7 +485,8 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                                                (const irregular_tiled_matrix_desc_t *)B,
                                                (irregular_tiled_matrix_desc_t *)C,
                                                (parsec_data_collection_t*)B,
-                                               plan);
+                                               plan,
+                                               nb, dev_index);
             arena = handle->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
 
             assert( 0 == strcmp(handle->super.task_classes_array[4]->name, "GEMM") );
