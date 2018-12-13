@@ -1714,7 +1714,7 @@ parsec_gpu_callback_complete_push(gpu_device_t              *gpu_device,
             PARSEC_DEBUG_VERBOSE(3, parsec_cuda_output_stream,
                                  "GPU[%1d]:\tMake copy %p available after prefetch from gpu_task %p, ec %p",
                                  gpu_device->cuda_index, gpu_copy, gtask, gtask->ec);
-            parsec_list_nolock_fifo_push(&gpu_device->gpu_mem_lru, (parsec_list_item_t*)gpu_copy);
+            parsec_list_nolock_push_back(&gpu_device->gpu_mem_lru, (parsec_list_item_t*)gpu_copy);
         }
         return parsec_cuda_destroy_task(gpu_device, gpu_task);
     }
@@ -1816,7 +1816,7 @@ progress_stream( gpu_device_t* gpu_device,
                                  "GPU[%d]: GPU task %p has been removed by the progress function",
                                  gpu_device->cuda_index, (void*)task);
         } else {
-            PARSEC_FIFO_PUSH(stream->fifo_pending, (parsec_list_item_t*)task);
+            parsec_fifo_push(stream->fifo_pending, (parsec_list_item_t*)task);
             PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream,
                                  "GPU[%d]: Reschedule task %p: no room available on the GPU for data",
                                  gpu_device->cuda_index, (void*)task->ec);
