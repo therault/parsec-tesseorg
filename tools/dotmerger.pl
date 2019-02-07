@@ -8,8 +8,8 @@ my $nodeshapeexpr="0";
 my $nodefcexpr="%k";
 my $nodelcexpr="%r*%V*%T+%v*%T+%t";
 my $linkfmt="%S=>%D";
-my $linkcolorexpr = "%E ? \"00FF00\" : \"FF0000\"";
-my $linkstyleexpr = "%C ? \"dashed\" : \"solid\"";
+my $linkcolorexpr = "%C ? \"FF0000\" : \"0000FF\"";
+my $linkstyleexpr = "%E ? \"dashed\" : \"solid\"";
 
 my @shapes=("ellipse", "circle", "oval", "box", "polygon", "diamond", "pentagon", "hexagon", "septagon", "octagon", "square", "house", "invhouse", "trapezium","invtrapezium");
 my @colors=("589AB7", "D7ACEF", "ABD6FD", "D2FC3D", "993300","9933FF","CC3300", "CC33FF", "FF3300","FF33FF","FFFF00");
@@ -17,6 +17,8 @@ my $ignore={};
 my $ignore_tp={ };
 my $only_tp={ };
 my $inputs=[];
+my $ignore_unknowns = 0;
+my $cluster_bynode = 0;
 
 sub parseArgs {
   my $help = 0;
@@ -29,6 +31,8 @@ sub parseArgs {
                            "linkc=s"     => \$linkcolorexpr,
                            "links=s"     => \$linkstyleexpr,
                            "help!"       => \$help,
+			   "ignore-unknowns!" => \$ignore_unknowns,
+			   "cluster-bynode!"  => \$cluster_bynode,
                            "ignore=s"    => \@il,
                            "input=s"     => \@{$inputs},
 			   "only-tp=s"   => \@ohl,
@@ -80,6 +84,8 @@ END
                            Can use %E and %C (see below)
                            Default: '$linkstyleexpr'
    --ignore=KERNEL      Ignore this kernel. This option can appear multiple times
+   --ignore-unknowns    Do not output links if source or destination is unknown
+   --cluster-bynode     Try to cluster all tasks that ran on the same node together
    --ignore-tp=TPID     Ignore this taskpool. This option can appear multiple times
    --only-tp=TPID       Only consider this taskpool. This option can appear multiple times
    --input=INPUT        Add this input file. This option can appear multiple times.
@@ -128,7 +134,6 @@ END
   %{$ignore} = map { $_ => 1 } @il;
   %{$only_tp} = map { $_ => 1 } @ohl;
   %{$ignore_tp} = map { $_ => 1 } @ihl;
-  print STDERR Dumper(\%{$only_tp});
 }
 
 parseArgs(@ARGV);
@@ -290,6 +295,70 @@ sub onNodes {
   }
 }
 
+sub outputLinkSameNode {
+  my ($ID1, $ID2, $VSRC, $VDST, $NSRC, $NDST, $EL) = @_;
+  my $label = $linkfmt;
+
+  return if( $NSRC != $NDST );
+  
+  $label =~ s/%S/$VSRC/g;
+  $label =~ s/%D/$VDST/g;
+  $label =~ s/%s/$NSRC/g;
+  $label =~ s/%d/$NDST/g;
+
+  my $same = 0;
+  if( ref($NSRC) eq "SCALAR" ) {
+    if( ref($NDST) eq "SCALAR" ) {
+      $same = ($NSRC == $NDST);
+    } else {
+      $same = ($NSRC == ($NDST + 0));
+    }
+  } else {
+    if( ref($NDST) eq "SCALAR" ) {
+      $same = (($NSRC + 0) == $NDST);
+    } else {
+      $same = ( $NSRC eq $NDST );
+    }
+  }
+
+  my $color=linkColor($EL, !$same);
+  my $style=linkStyle($EL, !$same);
+
+  print "$ID1 -> $ID2 [label=\"$label\" color=\"#$color\" style=\"$style\"];\n";
+}
+
+sub outputLinkDifferentNodes {
+  my ($ID1, $ID2, $VSRC, $VDST, $NSRC, $NDST, $EL) = @_;
+  my $label = $linkfmt;
+
+  return if( $NSRC == $NDST );
+  
+  $label =~ s/%S/$VSRC/g;
+  $label =~ s/%D/$VDST/g;
+  $label =~ s/%s/$NSRC/g;
+  $label =~ s/%d/$NDST/g;
+
+  my $same = 0;
+  if( ref($NSRC) eq "SCALAR" ) {
+    if( ref($NDST) eq "SCALAR" ) {
+      $same = ($NSRC == $NDST);
+    } else {
+      $same = ($NSRC == ($NDST + 0));
+    }
+  } else {
+    if( ref($NDST) eq "SCALAR" ) {
+      $same = (($NSRC + 0) == $NDST);
+    } else {
+      $same = ( $NSRC eq $NDST );
+    }
+  }
+
+  my $color=linkColor($EL, !$same);
+  my $style=linkStyle($EL, !$same);
+
+  print "$ID1 -> $ID2 [label=\"$label\" color=\"#$color\" style=\"$style\"];\n";
+}
+
 sub outputLink {
   my ($ID1, $ID2, $VSRC, $VDST, $NSRC, $NDST, $EL) = @_;
   my $label = $linkfmt;
@@ -339,11 +408,13 @@ sub onLinks {
         if( exists($TASKS->{$ID1}) ) {
           $NSRC=nodeRank($ID1);
 	} else {
+	  next if( $ignore_unknowns );
 	  $NSRC="Unknown";
 	}
 	if( exists($TASKS->{$ID2}) ) {
           $NDST=nodeRank($ID2);
 	} else {
+	  next if( $ignore_unknowns );
 	  $NDST="Unknown";
 	}
 	my $EL=( $COLOR eq "00FF00" );
@@ -359,6 +430,17 @@ sub onLinks {
 
 print "digraph G {\n";
 onNodes(\&computeSpaceNode, @{$inputs});
-onNodes(\&outputNode, @{$inputs});
-onLinks(\&outputLink, @{$inputs});
+if( $cluster_bynode ) {
+  my $n = 0;
+  foreach my $f (@{$inputs}) {
+    print " subgraph n$n {\n";
+    onNodes(\&outputNode, ($f));
+    onLinks(\&outputLinkSameNode, ($f));
+    print "}\n";
+  }
+  onLinks(\&outputLinkDifferentNodes, @{$inputs});
+} else {
+  onNodes(\&outputNode, @{$inputs});
+  onLinks(\&outputLink, @{$inputs});
+}
 print "}\n";
