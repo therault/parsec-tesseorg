@@ -113,7 +113,6 @@ static int init_irregular_tile_op( struct parsec_execution_stream_s *es,
             }
         }
     }
-    printf("Initialization of tile of (%d, %d) of matrix %p, which is of size %d x %d on core %d\n", m, n, M, mb, nb, es->th_id);
     uint32_t idx = ((parsec_data_collection_t*)M)->data_key((parsec_data_collection_t*)M, m, n);
     unsigned int rank = M->super.rank_of( &M->super, m ,n );
     irregular_tiled_matrix_desc_set_data(M, array, idx, M->Mtiling[m], M->Ntiling[n], 0, rank);
