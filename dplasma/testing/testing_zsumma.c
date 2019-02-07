@@ -17,6 +17,7 @@
 #include "parsec/data_dist/matrix/irregular_tiled_matrix.h"
 #include "dplasma_z.h"
 #include "flops.h"
+#include "dplasma/lib/irregular_tiled_matrix_init.h"
 
 //static unsigned long long int Rnd64seed = 100;
 #define Rnd64_A  6364136223846793005ULL
@@ -36,12 +37,10 @@ parsec_hook_return_t execute_on_gpu(parsec_execution_stream_t    *es,
     return PARSEC_HOOK_RETURN_NEXT;
 }
 
-#if 1 || defined(SUMMA_WITH_RANDOM_TILING)
 static unsigned int weird_tiling(int MB, int p)
 {
   return MB + (((p%2) == 0) ? +1 : -1) * (1 + 2 *(p/2));
 }
-#endif
 
 static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, int MB, int M, int mca_random_tiling)
 {
@@ -53,7 +52,6 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
     if (M%MB != 0 && MT > 0) T[MT-1] = M%MB;
     /* good old regular tiling with smaller last tile */
 
-#if 1 || defined(SUMMA_WITH_RANDOM_TILING)
     if (mca_random_tiling) {
         /*
           std::vector<unsigned int> result(ntiles+1);
@@ -79,87 +77,64 @@ static void init_tiling(unsigned int *T, unsigned long long int *seed, int MT, i
                 T[p2 + p1 * t_root] = weird_tiling(b1, p1) * weird_tiling(b2, p2);
             }
         }
-#if 0
-        unsigned int lower_bound = (MB/2 == 0)? 1: MB/2;
-        unsigned int upper_bound = MB*2;
-        unsigned long long int ran = *seed;
-        unsigned int share = (MB/10 > 0) ? MB/10 : 1;
-        int p;
-        
-        for (p = 0; p < MT*MT/2; ++p) {
-            int t1 = ran%MT;
-            ran = Rnd64_A * ran + Rnd64_C;
-            int t2 = t1;
-            while (t2 == t1) {
-                t2 = ran%MT;
-                ran = Rnd64_A * ran + Rnd64_C -1;
-            }
-
-            /* steal 1 from t1, give it to t2 if the boundaries are respected */
-            if (T[t1] > lower_bound && T[t2] < upper_bound) {
-                T[t1] -= share;
-                T[t2] += share;
-            }
-        }
-        *seed = ran;
-#endif
     }
-#endif
 }
 
-static void* init_tile(int mb, int nb, unsigned long long int *seed)
-{
-    unsigned long long int ran = *seed;
-    int i, j;
+typedef struct init_irregular_tile_op_arg_s {
+    int max_tile_size;
+    int zero;
+    int seed;
+    parsec_complex64_t **storage;
+} init_irregular_tile_op_arg_t;
 
-    /* fprintf(stdout, "Allocating %dx%d*sizeof(%d)\n", mb, nb, sizeof(parsec_complex64_t)); */
+static int init_irregular_tile_op( struct parsec_execution_stream_s *es,
+                                   irregular_tiled_matrix_desc_t *M,
+                                   int m, int n,
+                                   void *args )
+{
+    init_irregular_tile_op_arg_t *arg = (init_irregular_tile_op_arg_t*)args;
+    int i, mb = M->Mtiling[m];
+    int j, nb = M->Ntiling[n];
+    int jump;
     parsec_complex64_t *array = (parsec_complex64_t*)malloc(sizeof(parsec_complex64_t)*mb*nb);
-
-    for (j = 0; j < nb; ++j)
-        for (i = 0; i < mb; ++i) {
-            array[i+j*mb] = ran%10;
-            ran = Rnd64_A * ran + Rnd64_C;
+    (void)es;
+    if( arg->zero ) {
+        memset(array, 0, sizeof(parsec_complex64_t)*mb*nb);        
+    } else {
+        jump = arg->max_tile_size * ( m * M->mt + n ) + arg->seed;
+        for (j = 0; j < nb; ++j) {
+            for (i = 0; i < mb; ++i) {
+                array[i+j*mb] = 0.5f - jump * RndF_Mul;
+                jump = Rnd64_A * jump + Rnd64_C;
 #if defined(PRECISION_z) || defined(PRECISION_c)
-            array[i+j*mb] += I*(ran%10);
-            ran = Rnd64_A * ran + Rnd64_C;
+                array[i+j*mb] += I*(.5f - jump * RndF_Mul);
+                jump = Rnd64_A * jump + Rnd64_C;
 #endif
+            }
         }
-    *seed = ran;
-    return array;
+    }
+    printf("Initialization of tile of (%d, %d) of matrix %p, which is of size %d x %d on core %d\n", m, n, M, mb, nb, es->th_id);
+    uint32_t idx = ((parsec_data_collection_t*)M)->data_key((parsec_data_collection_t*)M, m, n);
+    unsigned int rank = M->super.rank_of( &M->super, m ,n );
+    irregular_tiled_matrix_desc_set_data(M, array, idx, M->Mtiling[m], M->Ntiling[n], 0, rank);
+    arg->storage[idx] = array;
+
+    return 0;
 }
 
-static void init_random_matrix(irregular_tiled_matrix_desc_t *M, unsigned long long int seed, parsec_complex64_t **storage_map, uint32_t *distribution)
+static void irregular_matrix_set_data_distribution(irregular_tiled_matrix_desc_t *M, parsec_complex64_t **storage_map, uint32_t *distribution)
 {
-    void *ptr;
-    int i, j, k, l;
-    for (i = 0; i < M->mt; i+=M->grid.strows)
-        for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
-            for (j = 0; j < M->nt; j+=M->grid.stcols)
-                for (l = 0; l < M->grid.stcols && (j+l)<M->nt; ++l) {
-                    uint32_t idx = ((parsec_data_collection_t*)M)->data_key((parsec_data_collection_t*)M, i+k, j+l);
-                    unsigned int rank = (!distribution) ? tile_owner(i+k,j+l,&M->grid) : distribution[idx];
-                    ptr = (rank == ((parsec_data_collection_t*)M)->myrank) ? init_tile(M->Mtiling[i+k], M->Ntiling[j+l], &seed) : NULL;
-                    irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
-                    storage_map[idx] = ptr;
-                }
-}
-
-static void init_empty_matrix(irregular_tiled_matrix_desc_t *M, parsec_complex64_t **storage_map, uint32_t *distribution)
-{
-    int i, j, k, l;
-    void *ptr;
-    /* i progresses by strows steps, while k progresses one by one from 0 to strows-1 */
-    for (i = 0; i < M->mt; i+=M->grid.strows)
-        for (k = 0; k < M->grid.stcols && (i+k) < M->mt; ++k)
-            /* j progresses by stcols steps, while l progresses one by one from 0 to stcols-1 */
-            for (j = 0; j < M->nt; j+=M->grid.stcols)
-                for (l = 0; l < M->grid.stcols && (j+l) < M->nt; ++l) {
-                    uint32_t idx = ((parsec_data_collection_t*)M)->data_key((parsec_data_collection_t*)M, i+k, j+l);
-                    unsigned int rank = (!distribution) ? tile_owner(i+k,j+l,&M->grid) : distribution[idx];
-                    ptr = (rank == ((parsec_data_collection_t*)M)->myrank) ? calloc(M->Mtiling[i+k]*M->Ntiling[j+l], sizeof(parsec_complex64_t)) : NULL;
-                    irregular_tiled_matrix_desc_set_data(M, ptr, idx, M->Mtiling[i+k], M->Ntiling[j+l], 0, rank);
-                    storage_map[idx] = ptr;
-                }
+    int m, n;
+    for (m = 0; m < M->mt; m++) {
+        for (n = 0; n < M->nt; n++) {
+            uint32_t idx = ((parsec_data_collection_t*)M)->data_key((parsec_data_collection_t*)M, m, n);
+            unsigned int rank = (!distribution) ? tile_owner(m, n, &M->grid) : distribution[idx];
+            /* We set the data at NULL for now, a parallel JDF running the init_irregular_tile_op on the
+             * local tiles will provide data for the local part */
+            irregular_tiled_matrix_desc_set_data(M, NULL, idx, M->Mtiling[m], M->Ntiling[n], 0, rank);
+            storage_map[idx] = NULL;
+        }
+    }
 }
 
 static void fini_matrix(parsec_complex64_t **Mstorage, int nb)
@@ -520,10 +495,43 @@ int main(int argc, char ** argv)
     parsec_complex64_t **Cstorage = (parsec_complex64_t**)calloc(MT*NT, sizeof(parsec_complex64_t*));
 
     /* matrix generation */
-    if (loud > 2) printf("+++ Generate matrices ... ");
-    init_random_matrix(&ddescA, Aseed, Astorage, Adistribution);
-    init_random_matrix(&ddescB, Bseed, Bstorage, Bdistribution);
-    init_empty_matrix(&ddescC, Cstorage, Cdistribution);
+    if (loud > 2) printf("+++ Generate matrices metadata ... ");
+    irregular_matrix_set_data_distribution(&ddescA, Astorage, Adistribution);
+    irregular_matrix_set_data_distribution(&ddescB, Bstorage, Bdistribution);
+    irregular_matrix_set_data_distribution(&ddescC, Cstorage, Cdistribution);
+
+    if (loud > 2) printf("+++ Generate matrices local data ... ");
+    init_irregular_tile_op_arg_t ddescA_init_arg = {
+        .max_tile_size = max_tile,
+        .zero = 0,
+        .seed = Aseed,
+        .storage = Astorage
+    };
+    parsec_irregular_tiled_matrix_init_taskpool_t *ddescA_init_tp =
+        parsec_irregular_tiled_matrix_init_new(&ddescA, init_irregular_tile_op, &ddescA_init_arg);
+    parsec_enqueue(parsec, (parsec_taskpool_t *)ddescA_init_tp);
+    init_irregular_tile_op_arg_t ddescB_init_arg = {
+        .max_tile_size = max_tile,
+        .zero = 0,
+        .seed = Bseed,
+        .storage = Bstorage
+    };
+    parsec_irregular_tiled_matrix_init_taskpool_t *ddescB_init_tp =
+        parsec_irregular_tiled_matrix_init_new(&ddescB, init_irregular_tile_op, &ddescB_init_arg);
+    parsec_enqueue(parsec, (parsec_taskpool_t *)ddescB_init_tp);
+    init_irregular_tile_op_arg_t ddescC_init_arg = {
+        .max_tile_size = max_tile,
+        .zero = 1,
+        .seed = 0,
+        .storage = Cstorage
+    };
+    parsec_irregular_tiled_matrix_init_taskpool_t *ddescC_init_tp =
+        parsec_irregular_tiled_matrix_init_new(&ddescC, init_irregular_tile_op, &ddescC_init_arg);
+    parsec_enqueue(parsec, (parsec_taskpool_t *)ddescC_init_tp);
+
+    parsec_context_start(parsec);
+    parsec_context_wait(parsec);
+        
     if(loud > 2) printf("Done\n");
 
     free(Mtiling);

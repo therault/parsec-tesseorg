@@ -109,6 +109,12 @@ void irregular_tiled_matrix_desc_init(
     unsigned int P,
     void *(*future_resolve_fct)(void*,void*,void*));
 
+typedef int (*irregular_tiled_matrix_init_op_t)( struct parsec_execution_stream_s *es,
+                                                 irregular_tiled_matrix_desc_t *desc1,
+                                                 int m, int n,
+                                                 void *args );
+
+
 /* add a parameter for number of expected tiles to register?*/
 /* I could then do a collective operation to to build the structure of the matrix */
 /* and the tiling vectors can be infered by sharing information */

@@ -115,6 +115,7 @@ endif( NOT ${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR} )
 
 list(APPEND generated_jdf
   ${CMAKE_CURRENT_SOURCE_DIR}/map2.jdf
+  ${CMAKE_CURRENT_SOURCE_DIR}/irregular_tiled_matrix_init.jdf
 )
 
 jdf_rules(generated_files "${generated_jdf}")
