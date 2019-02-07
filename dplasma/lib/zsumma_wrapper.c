@@ -98,7 +98,7 @@ static int future_input_for_summa_task(parsec_execution_stream_t * es, __parsec_
     return vf->saved_prepare_input(es, (parsec_task_t *)this_task);
 }
 
-static int future_input_for_accumulate_c_task(parsec_execution_stream_t * es, __parsec_zgemm_bcast_NN_ACCUMULATE_C_task_t * this_task)
+static int future_input_for_acc_c_task(parsec_execution_stream_t * es, __parsec_zgemm_bcast_NN_ACC_C_task_t * this_task)
 {
     const parsec_zgemm_bcast_NN_taskpool_t *__parsec_tp = (parsec_zgemm_bcast_NN_taskpool_t *) this_task->taskpool;
     parsec_tc_vampire_t *vf = (parsec_tc_vampire_t*)this_task->task_class;
@@ -106,10 +106,11 @@ static int future_input_for_accumulate_c_task(parsec_execution_stream_t * es, __
     void *f = NULL, *tile = NULL;
     const int m = this_task->locals.m.value;
     const int n = this_task->locals.n.value;
-    const int i = this_task->locals.i.value;
-    if( i == 0 ) {
+    const int r = this_task->locals.r.value;
+    const int rlast = this_task->locals.rlast.value;
+    if( r == rlast ) {
         /** Lookup the input data, and store them in the es if any */
-        assert(NULL == this_task->data._f_C.data_in);
+        assert(NULL == this_task->data._f_Cm.data_in);
         copy = parsec_data_get_copy(((parsec_data_collection_t*)__parsec_tp->_g_descC)->data_of(((parsec_data_collection_t*)__parsec_tp->_g_descC), m, n), 0);
         f = PARSEC_DATA_COPY_GET_PTR(copy);
         tile = vf->resolve_future_function(f, es, this_task);
@@ -174,8 +175,8 @@ static void attach_futures_prepare_input(parsec_taskpool_t *tp, const char *task
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_read_b_task;
     else if( strcmp(task_name, "SUMMA") == 0 )
         vf->super.prepare_input = (parsec_hook_t*)future_input_for_summa_task;
-    else if( strcmp(task_name, "ACCUMULATE_C") == 0 )
-        vf->super.prepare_input = (parsec_hook_t*)future_input_for_accumulate_c_task;
+    else if( strcmp(task_name, "ACC_C") == 0 )
+        vf->super.prepare_input = (parsec_hook_t*)future_input_for_acc_c_task;
     else exit(3);
     tp->destructor = vtp_destructor;
     tp->task_classes_array[fid] = (parsec_task_class_t*)vf;
@@ -327,6 +328,72 @@ static parsec_hook_return_t dplasma_zgemm_NN_bcast_cuda_cutoff(const parsec_task
     return PARSEC_HOOK_RETURN_DONE;
 }
 
+static parsec_key_fn_t gemm_plan_ht_fns = {
+    .key_equal = parsec_hash_table_generic_64bits_key_equal,
+    .key_print = parsec_hash_table_generic_64bits_key_print,
+    .key_hash = parsec_hash_table_generic_64bits_key_hash
+};
+
+static parsec_data_collection_t TrivDist;
+static int TrivDistInitialized = 0;
+
+static parsec_data_key_t TrivDist_data_key(parsec_data_collection_t *d, ...)
+{
+    va_list ap;
+    int r;
+    (void)d;
+    va_start(ap, d);
+    r = va_arg(ap, int);
+    va_end(ap);
+    return (parsec_data_key_t)r;
+}
+
+static uint32_t TrivDist_rank_of(parsec_data_collection_t *d, ...)
+{
+    va_list ap;
+    int r;
+    (void)d;
+    va_start(ap, d);
+    r = va_arg(ap, int);
+    va_end(ap);
+    return r;
+}
+
+static uint32_t TrivDist_rank_of_key(parsec_data_collection_t *d, parsec_data_key_t key)
+{
+    (void)d;
+    (void)key;
+    return (uint32_t)key;
+}
+
+static parsec_data_t *TrivDist_data_of(parsec_data_collection_t *d, ...)
+{
+    (void)d;
+    assert(0);
+    return NULL;
+}
+
+static parsec_data_t *TrivDist_data_of_key(parsec_data_collection_t *d, parsec_data_key_t key)
+{
+    (void)d;
+    (void)key;
+    assert(0);
+    return NULL;
+}
+
+static int32_t TrivDist_vpid_of(parsec_data_collection_t *d, ...)
+{
+    (void)d;
+    return 0;
+}
+
+static int32_t TrivDist_vpid_of_key(parsec_data_collection_t *d, parsec_data_key_t key)
+{
+    (void)d;
+    (void)key;
+    return 0;
+}
+
 parsec_taskpool_t*
 dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                          parsec_complex64_t alpha, const irregular_tiled_matrix_desc_t* A,
@@ -335,11 +402,26 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
 {
     parsec_taskpool_t* zgemm_handle;
     parsec_arena_t* arena;
-    int P, Q, m, n, i, j, k, rank, nb;
     gemm_plan_t *plan;
+    int m, n, k, nb, d, rank, *tmp_update_array;
+    gemm_plan_update_list_t *local_k_update;
+    int *dev_index;
     static char *cutoff_str = NULL;
-    int *dev_index = NULL;
 
+    if( TrivDistInitialized == 0 ) {
+        TrivDistInitialized = 1;
+        parsec_data_collection_init(&TrivDist, A->super.nodes, A->super.myrank);
+        TrivDist.data_key = TrivDist_data_key;
+        TrivDist.rank_of = TrivDist_rank_of;
+        TrivDist.rank_of_key = TrivDist_rank_of_key;
+        TrivDist.data_of = TrivDist_data_of;
+        TrivDist.data_of_key = TrivDist_data_of_key;
+        TrivDist.vpid_of = TrivDist_vpid_of;
+        TrivDist.vpid_of_key = TrivDist_vpid_of_key;
+        TrivDist.dc_name = "TrivDist";
+        TrivDist.dc_dim = "";
+    }
+    
     if( NULL == cutoff_str ) {
         parsec_mca_param_reg_string_name("dplasma", "zgemm_bcast_cutoff_ratio",
                                          "CUDA Cutoff ratio: any task with arithmetic intensity lower than this will never be scheduled on a GPU",
@@ -362,52 +444,49 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         return NULL;
     }
 
-    P = ((irregular_tiled_matrix_desc_t*)C)->grid.rows;
-    Q = ((irregular_tiled_matrix_desc_t*)C)->grid.cols;
+    if(0) {
+        printf("gdb -p %d\n", getpid());
+        volatile int loop = 1;
+        while(loop) {
+            sleep(1);
+        }
+    }
+    
     plan = (gemm_plan_t*)malloc(sizeof(gemm_plan_t));
-    plan->P = P*Q;
+    parsec_hash_table_init(&plan->local_k, offsetof(gemm_plan_update_list_t, ht_item), 16, gemm_plan_ht_fns, NULL);
     plan->mt = C->mt;
     plan->nt = C->nt;
     plan->kt = B->mt;
-    plan->ip   = malloc(C->mt * C->nt * plan->P * sizeof(int));
-    plan->prev = malloc(C->mt * C->nt * B->mt * sizeof(int));
-    plan->next = malloc(C->mt * C->nt * B->mt * sizeof(int));
-    int *lastk = malloc(plan->P * sizeof(int));
+    plan->descC = (irregular_tiled_matrix_desc_t*)C;
+
+    tmp_update_array = (int*)malloc(B->mt * sizeof(int));
+    
+    /* We assume that all matrices are distributed over the same communicator
+     * so, all myranks should be equal */
+    plan->myrank = A->super.myrank;
+    plan->worldsize = A->super.nodes;
+    assert( plan->myrank == (int)B->super.myrank );
+    assert( plan->myrank == (int)C->super.myrank );
+    assert( plan->worldsize == (int)B->super.nodes );
+    assert( plan->worldsize == (int)C->super.nodes );
+    
     for(m = 0; m < C->mt; m++) {
         for(n = 0; n < C->nt; n++) {
-            for(i = 0; i < plan->P; i++)
-                lastk[i] = -1;
+            nb = 0;
             for(k = 0; k < B->mt; k++) {
                 /* Cubic loop to determine, for each C(m, n),
                  * what are the local GEMM segments */
                 rank = B->super.rank_of((parsec_data_collection_t*)B, k, n);
-                plan->prev[(m*plan->nt+n)*plan->kt + k] = lastk[rank];
-                if( -1 != lastk[rank] )
-                    plan->next[(m*plan->nt+n)*plan->kt + lastk[rank]] = k;
-                lastk[rank] = k;
-            }
-            /* Mark the last ones as finals */
-            for(i = 0; i < plan->P; i++)
-                if( -1 != lastk[i] )
-                    plan->next[(m*plan->nt+n)*plan->kt + lastk[i]] = -1;
-            /* Now, compute the reduction indexes:
-             *  - Start with rank next to the host of C(m, n), so we can end on C(m, n)
-             *    This is used in an attempt to distribute the order of reductions
-             *  - Remember the last k used by each rank in the index/process array
-             */
-            rank = C->super.rank_of((parsec_data_collection_t*)C, m, n);
-            j = 0;
-            i = rank;
-            do {
-                i = (i+1)%plan->P;
-                if( lastk[i] != -1 ) {
-                    plan->ip[(m*plan->nt+n)*plan->P + j] = lastk[i];
-                    j++;
+                if( plan->myrank == rank ) {
+                    tmp_update_array[ nb++ ] = k;
                 }
-            } while(i != rank);
-            assert(j != 0);
-            for(; j < plan->P; j++)
-                plan->ip[(m*plan->nt+n)*plan->P + j] = -1;
+            }
+            local_k_update = (gemm_plan_update_list_t*)malloc(sizeof(gemm_plan_update_list_t) + (nb-1) * sizeof(int));
+            local_k_update->nb = nb;
+            if(nb > 0 )
+                memcpy(local_k_update->updates_order, tmp_update_array, nb*sizeof(int));
+            local_k_update->ht_item.key = gemm_plan_make_key(plan, m, n);
+            parsec_hash_table_insert(&plan->local_k, &local_k_update->ht_item);
         }
     }
 
@@ -457,19 +536,19 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         }
     }
 #endif
-    free(lastk);
+    free(tmp_update_array);
 
     nb = 0;
-    for(i = 0; i < (int)parsec_nb_devices; i++) {
-        parsec_device_t *dev = parsec_devices_get(i);
+    for(d = 0; d < (int)parsec_nb_devices; d++) {
+        parsec_device_t *dev = parsec_devices_get(d);
         if( PARSEC_DEV_CUDA == dev->type ) {
             nb++;
         }
     }
     dev_index = (int*)malloc(nb * sizeof(int));
     nb = 0;
-    for(i = 0; i < (int)parsec_nb_devices; i++) {
-        parsec_device_t *dev = parsec_devices_get(i);
+    for(d = 0; d < (int)parsec_nb_devices; d++) {
+        parsec_device_t *dev = parsec_devices_get(d);
         if( PARSEC_DEV_CUDA == dev->type ) {
             dev_index[nb++] = dev->device_index;
         }
@@ -484,18 +563,18 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
                                                (const irregular_tiled_matrix_desc_t *)A,
                                                (const irregular_tiled_matrix_desc_t *)B,
                                                (irregular_tiled_matrix_desc_t *)C,
-                                               (parsec_data_collection_t*)B,
+                                               (parsec_data_collection_t*)&TrivDist,
                                                plan,
                                                nb, dev_index);
             arena = handle->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA];
 
-            assert( 0 == strcmp(handle->super.task_classes_array[4]->name, "GEMM") );
-            gemm_tc = (parsec_task_class_t*)handle->super.task_classes_array[4];
-            for(i = 0; ; i++) {
-                if( PARSEC_DEV_NONE == gemm_tc->incarnations[i].type )
+            assert( 0 == strcmp(handle->super.task_classes_array[5]->name, "GEMM") );
+            gemm_tc = (parsec_task_class_t*)handle->super.task_classes_array[5];
+            for(d = 0; ; d++) {
+                if( PARSEC_DEV_NONE == gemm_tc->incarnations[d].type )
                     break;
-                if( PARSEC_DEV_CUDA == gemm_tc->incarnations[i].type ) {
-                    ((__parsec_chore_t *)&gemm_tc->incarnations[i])->evaluate = dplasma_zgemm_NN_bcast_cuda_cutoff;
+                if( PARSEC_DEV_CUDA == gemm_tc->incarnations[d].type ) {
+                    ((__parsec_chore_t *)&gemm_tc->incarnations[d])->evaluate = dplasma_zgemm_NN_bcast_cuda_cutoff;
                     break;
                 }
             }
@@ -513,7 +592,7 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         attach_futures_prepare_input(zgemm_handle, "READ_B", B->future_resolve_fct);
     }
     if( C->future_resolve_fct != NULL ) {
-        attach_futures_prepare_input(zgemm_handle, "ACCUMULATE_C", C->future_resolve_fct);
+        attach_futures_prepare_input(zgemm_handle, "ACC_C", C->future_resolve_fct);
     }
 
     parsec_datatype_t mtype;
@@ -706,6 +785,15 @@ dplasma_zsumma_New( PLASMA_enum transA, PLASMA_enum transB,
     return zsumma_taskpool;
 }
 
+static void free_update_array(void *item, void *cb_data)
+{
+    gemm_plan_update_list_t *up = (gemm_plan_update_list_t*)item;
+    parsec_hash_table_t *ht = (parsec_hash_table_t*)cb_data;
+    parsec_key_t key = up->ht_item.key;
+    up = parsec_hash_table_remove(ht, key);
+    free(up);
+}
+
 /**
  *******************************************************************************
  *
@@ -747,9 +835,8 @@ dplasma_zsumma_Destruct( parsec_taskpool_t *tp )
         parsec_zgemm_bcast_NN_taskpool_t *zgemm_bcast_NN_tp = (parsec_zgemm_bcast_NN_taskpool_t *)tp;
         if (zgemm_bcast_NN_tp->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA])
             parsec_matrix_del2arena( zgemm_bcast_NN_tp->arenas[PARSEC_zgemm_bcast_NN_DEFAULT_ARENA] );
-        free(zgemm_bcast_NN_tp->_g_plan->ip);
-        free(zgemm_bcast_NN_tp->_g_plan->prev);
-        free(zgemm_bcast_NN_tp->_g_plan->next);
+        parsec_hash_table_for_all(&zgemm_bcast_NN_tp->_g_plan->local_k, free_update_array, &zgemm_bcast_NN_tp->_g_plan->local_k);
+        parsec_hash_table_fini(&zgemm_bcast_NN_tp->_g_plan->local_k);
         free(zgemm_bcast_NN_tp->_g_plan);
     }
     parsec_taskpool_free(tp);

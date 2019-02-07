@@ -9,72 +9,89 @@
 
 #include "parsec.h"
 #include "dplasma.h"
+#include "parsec/class/parsec_hash_table.h"
+#include "parsec/data_dist/matrix/irregular_tiled_matrix.h"
 
 BEGIN_C_DECLS
 
 /* Helper structures and functions */
 
+typedef struct gemm_plan_update_list_s {
+    parsec_hash_table_item_t ht_item;
+    int              nb;
+    int              updates_order[1];
+} gemm_plan_update_list_t;
+
 struct gemm_plan_s {
+    int myrank;
+    int worldsize;
     int mt;
     int nt;
     int kt;
-    int P;
-    int *prev;  /* prev[m,n,k]: is the previous local GEMM to contribute to C(m ,n) */
-    int *next;  /* next[m,n,k]: next GEMM to do after GEMM on k for C(m,n) */
-    int *ip;    /* ip[m, n, x], 0 <= x <= P, 
-                 * defines the reduction index / last GEMM contribution pair.
-                 * if ip[m, n, x] == -1, then there are x-1 elements in this array
-                 * There cannot be more than P elements in this array.
-                 * Otherwise, ip[m, n, x] is the k such that GEMM(m, n, k) was
-                 * the last contribution of a node, and that contribution is at
-                 * index x in the reduction pipeline.
-                 */
+    irregular_tiled_matrix_desc_t *descC;
+    parsec_hash_table_t local_k; /* local_k(m, n) is a gemm_plan_update_list_t* */
 };
 
 /* This will define a GEMM execution plan for the bcast_gemm interface */
 typedef struct gemm_plan_s gemm_plan_t;
 
 /*
- * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and GEMM(m, n, k)
- * is the last GEMM applied on rank i
+ * Returns a key from the coordinate m, n in C
  */
-int gemm_plan_last_k_of_red_index(gemm_plan_t *plan, int m, int n, int i);
+parsec_key_t gemm_plan_make_key(gemm_plan_t *plan, int m, int n);
 
 /*
- * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and GEMM(m, n, k)
- * is the first GEMM applied on rank i
+ * Returns the highest rank that holds a B(k, n) that contributes to C(m, n)
  */
-int gemm_plan_first_k_of_red_index(gemm_plan_t *plan, int m, int n, int i);
+int gemm_plan_highest_rank(gemm_plan_t *plan, int m, int n);
 
 /*
- * Returns i such that gemm_plan_first_k_of_red_index(plan, m, n, i) == k and
- * k is the last gemm of node i
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; This function returns k_0 
  */
-int gemm_plan_i_for_k(gemm_plan_t *plan, int m, int n, int k);
+int gemm_plan_kfirst(gemm_plan_t *plan, int m, int n, int r);
 
 /*
- * Returns the position in the pipeline reduction of the
- * different node contributions to C(m, n), such that
- * k is the last local contribution to C(m, n) for the calling
- * node.
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; This function returns k_{K_{m,n}}
  */
-int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k);
+int gemm_plan_klast(gemm_plan_t *plan, int m, int n, int r);
+
 /*
- * Returns how many nodes contribute to C(m ,n) 
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; Assuming k = k_i, this function returns returns k_{i+1}
  */
-int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n);
+int gemm_plan_knext(gemm_plan_t *plan, int m, int n, int r, int k);
+
 /*
- * Returns k' such that gemm_plan_next(plan, m, n, k') = k
- * Return -1 if there is no such k'
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; Assuming k = k_i, this function returns returns k_{i-1}
  */
-int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k);
+int gemm_plan_kprev(gemm_plan_t *plan, int m, int n, int r, int k);
+
 /*
- * GEMM(m, n, k) was a previous local contribution to C(m, n)
- * This function returns k' such that GEMM(m, n, k') is the next
- * local GEMM to execute
- * Returns -1 if there is no such k'
+ * This function returns the first rank that has local contributions
+ * to C(m, n)
  */
-int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k);
+int gemm_plan_rank_first(gemm_plan_t *plan, int m, int n);
+    
+/*
+ * This function returns the last rank that has local contributions
+ * to C(m, n). The target should hold C(m, n).
+ */
+int gemm_plan_rank_last(gemm_plan_t *plan, int m, int n);
+
+/*
+ * This function returns the next rank that has local contributions
+ * to C(m, n), knowing that the current contribution happened on r.
+ */
+int gemm_plan_rank_next(gemm_plan_t *plan, int m, int n, int r);
+
+/*
+ * This function returns the previous rank that had local contributions
+ * to C(m, n), knowing that the current contribution happened on r.
+ */
+int gemm_plan_rank_prev(gemm_plan_t *plan, int m, int n, int r);
 
 END_C_DECLS
 

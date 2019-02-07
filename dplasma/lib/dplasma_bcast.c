@@ -9,112 +9,148 @@
 #include "dplasma_bcast.h"
 
 /*
- * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and
- * k is the last gemm on node i
+ * Returns a key from the coordinate m, n in C
  */
-int gemm_plan_last_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+parsec_key_t gemm_plan_make_key(gemm_plan_t *plan, int m, int n)
 {
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    assert( (i >= 0) && (i<plan->P));
-    return plan->ip[(m*plan->nt+n)*plan->P + i];
+    return (uint64_t)n * (uint64_t)plan->mt + (uint64_t)m;
 }
 
 /*
- * Returns k such that gemm_plan_red_index(plan, m, n, k) == i and
- * k is the first gemm of node i
+ * Returns the highest rank that holds a B(k, n) that contributes to C(m, n)
  */
-int gemm_plan_first_k_of_red_index(gemm_plan_t *plan, int m, int n, int i)
+int gemm_plan_highest_rank(gemm_plan_t *plan, int m, int n)
 {
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    assert( (i >= 0) && (i<plan->P));
-    int k = plan->ip[(m*plan->nt+n)*plan->P + i];
-    while( plan->prev[(m*plan->nt+n)*plan->kt + k] != -1 )
-        k = plan->prev[(m*plan->nt+n)*plan->kt + k];
-    return k;
+    (void)m;
+    (void)n;
+    return plan->worldsize;
 }
 
 /*
- * Returns i such that gemm_plan_first_k_of_red_index(plan, m, n, i) == k and
- * k is the last gemm of node i
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; This function returns k_0 
  */
-int gemm_plan_i_for_k(gemm_plan_t *plan, int m, int n, int k)
+int gemm_plan_kfirst(gemm_plan_t *plan, int m, int n, int r)
+{
+    parsec_key_t key = gemm_plan_make_key(plan, m, n);
+    gemm_plan_update_list_t *l;
+    if( plan->myrank != r ) return -1;
+    l = parsec_hash_table_find(&plan->local_k, key);
+    assert( NULL != l );
+    if( l->nb == 0 )
+        return -1;
+    return l->updates_order[0];
+}
+
+/*
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; This function returns k_{K_{m,n}}
+ */
+int gemm_plan_klast(gemm_plan_t *plan, int m, int n, int r)
+{
+    parsec_key_t key = gemm_plan_make_key(plan, m, n);
+    gemm_plan_update_list_t *l;
+    if( plan->myrank != r ) return -1;
+    l = parsec_hash_table_find(&plan->local_k, key);
+    assert( NULL != l );
+    if( l->nb == 0 )
+        return -1;
+    return l->updates_order[l->nb-1];
+}
+
+/*
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; Assuming k = k_i, this function returns returns k_{i+1}
+ */
+int gemm_plan_knext(gemm_plan_t *plan, int m, int n, int r, int k)
 {
     int i;
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    assert( (k >= 0) && (k<plan->nt));
-    for(i = 0; i < plan->P; i++)
-        if( gemm_plan_first_k_of_red_index(plan, m, n, i ) == k)
-            return i;
-    return -1;
-}
-
-/*
- * Returns the position in the pipeline reduction of the
- * different node contributions to C(m, n), such that
- * k is the last local contribution to C(m, n) for the calling
- * node.
- */
-int gemm_plan_red_index(gemm_plan_t *plan, int m, int n, int k)
-{
-    int i;
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    for(i = 0; i < plan->P; i++) {
-        if( plan->ip[(m*plan->nt+n)*plan->P + i] == k ) {
-            PARSEC_DEBUG_VERBOSE(parsec_debug_output, 20, "plan->ip[%d,%d,%d] == %d",
-                                 m, n, i, k);
-            return i;
+    parsec_key_t key = gemm_plan_make_key(plan, m, n);
+    gemm_plan_update_list_t *l;
+    if( plan->myrank != r ) return -1;
+    l = parsec_hash_table_find(&plan->local_k, key);
+    assert( NULL != l );
+    assert( l->nb != 0 );
+    for(i = 0; i < l->nb; i++) {
+        if( l->updates_order[i] == k ) {
+            if( i == l->nb - 1 ) {
+                return -1;
+            } else {
+                return l->updates_order[i+1];
+            }
         }
     }
-    PARSEC_DEBUG_VERBOSE(parsec_debug_output, 20, "Error in plan: could not find i such that plan->ip[%d,%d,i] == %d",
-                         m, n, k);
-    assert(0);
+    assert( 0 /* We should have found k in the updates_order list */ );
     return -1;
 }
 
 /*
- * Returns how many nodes contribute to C(m ,n) 
+ * Let k_i 0 <= i <= K_{m,n} be the set such that GEMM(m, n, k_i) runs on
+ * rank r; Assuming k = k_i, this function returns returns k_{i-1}
  */
-int gemm_plan_max_red_index(gemm_plan_t *plan, int m, int n)
+int gemm_plan_kprev(gemm_plan_t *plan, int m, int n, int r, int k)
 {
     int i;
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    for(i = 0; i < plan->P; i++) {
-        if( plan->ip[(m*plan->nt+n)*plan->P + i] == -1 )
-            break;
+    parsec_key_t key = gemm_plan_make_key(plan, m, n);
+    gemm_plan_update_list_t *l;
+    if( plan->myrank != r ) return -1;
+    l = parsec_hash_table_find(&plan->local_k, key);
+    assert( NULL != l );
+    assert( l->nb != 0 );
+    for(i = 0; i < l->nb; i++) {
+        if( l->updates_order[i] == k ) {
+            if( i == 0 ) {
+                return -1;
+            } else {
+                return l->updates_order[i-1];
+            }
+        }
     }
-    return i-1;
+    assert( 0 /* We should have found k in the updates_order list */ );
+    return -1;
 }
 
 /*
- * Returns k' such that gemm_plan_next(plan, m, n, k') = k
- * Return -1 if there is no such k'
+ * This function returns the first rank that has local contributions
+ * to C(m, n)
  */
-int gemm_plan_prev(gemm_plan_t *plan, int m, int n, int k)
+int gemm_plan_rank_first(gemm_plan_t *plan, int m, int n)
 {
-    int ret;
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    assert( (k >= 0) && (k<plan->kt));
-    ret = plan->prev[(m*plan->nt+n)*plan->kt + k];
-    return ret;
+    int r;
+    r = plan->descC->super.rank_of(&plan->descC->super, m, n);
+    return (r + 1) % plan->worldsize;
+}
+    
+/*
+ * This function returns the last rank that has local contributions
+ * to C(m, n). The target should hold C(m, n).
+ */
+int gemm_plan_rank_last(gemm_plan_t *plan, int m, int n)
+{
+    int r;
+    r = plan->descC->super.rank_of(&plan->descC->super, m, n);
+    return r;
 }
 
 /*
- * GEMM(m, n, k) was a previous local contribution to C(m, n)
- * This function returns k' such that GEMM(m, n, k') is the next
- * local GEMM to execute
- * Returns -1 if there is no such k'
+ * This function returns the next rank that has local contributions
+ * to C(m, n), knowing that the current contribution happened on r.
  */
-int gemm_plan_next(gemm_plan_t *plan, int m, int n, int k)
+int gemm_plan_rank_next(gemm_plan_t *plan, int m, int n, int r)
 {
-    assert( (m >= 0) && (m<plan->mt));
-    assert( (n >= 0) && (n<plan->nt));
-    assert( (k >= 0) && (k<plan->kt));
-    return plan->next[(m*plan->nt+n)*plan->kt + k];
+    (void)m;
+    (void)n;
+    return (r + 1) % plan->worldsize;
+}
+
+/*
+ * This function returns the previous rank that had local contributions
+ * to C(m, n), knowing that the current contribution happened on r.
+ */
+int gemm_plan_rank_prev(gemm_plan_t *plan, int m, int n, int r)
+{
+    (void)m;
+    (void)n;
+    return ( r + plan->worldsize - 1 ) % plan->worldsize;
 }
 
