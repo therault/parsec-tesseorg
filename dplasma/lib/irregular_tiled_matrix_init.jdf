@@ -1,0 +1,31 @@
+extern "C" %{
+/*
+ * Copyright (c) 2018      The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ *
+ */
+#include "dplasma/lib/dplasmajdf.h"
+#include "parsec/data_dist/matrix/matrix.h"
+#include "parsec/data_dist/matrix/irregular_tiled_matrix.h"
+
+%}
+
+/*
+ * Globals
+ */
+M        [type = "irregular_tiled_matrix_desc_t*"]
+operator [type = "irregular_tiled_matrix_init_op_t"]
+op_arg   [type = "void*"]
+
+INIT(m, n)
+  m = 0 .. M->mt-1
+  n = 0 .. M->nt-1
+
+: M(m, n)
+
+BODY
+{
+   operator(es, M, m, n, op_arg);
+}
+END
