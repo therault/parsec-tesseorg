@@ -1597,7 +1597,7 @@ static inline int parsec_cuda_data_advise(parsec_device_t *dev, parsec_data_t *d
         /* We continue on to the next case, as we want to also
          * prefetch the data on the target device, if it is the
          * preferred device */
-        __attribute__ ((fallthrough));
+        break; //__attribute__ ((fallthrough));
     case PARSEC_DEV_DATA_ADVICE_PREFETCH:
         {
             parsec_gpu_task_t* gpu_task = NULL;
