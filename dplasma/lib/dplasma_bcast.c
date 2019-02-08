@@ -17,6 +17,39 @@ parsec_key_t gemm_plan_make_key(gemm_plan_t *plan, int m, int n)
 }
 
 /*
+ * n is a local column; the returned value is the local column, knowing there are s between
+ * n and the returned one. Should work with s positive or negative.
+ */
+int gemm_plan_local_column_at_distance(gemm_plan_t *plan, int n, int s)
+{
+    int i, j;
+    int ssign;
+    ssign = (s < 0) ? -1 : 1;
+    for(i = 0; plan->local_col[i] != -1; i++) {
+        if( plan->local_col[i] == n ) {
+            j = i;
+            do {
+                j += ssign;
+                if( (j < 0) || (plan->local_col[j] == -1) ) {
+                    return -1;
+                }
+            } while( (j >= 0) && (plan->local_col[j] != -1) );
+            return plan->local_col[j];
+        }
+    }
+    return -1;
+}
+
+int gemm_plan_index_of_local_column(gemm_plan_t *plan, int n)
+{
+    int i;
+    for(i = 0; plan->local_col[i] != -1; i++)
+        if( plan->local_col[i] == n )
+            return i;
+    return -1;
+}
+
+/*
  * Returns the highest rank that holds a B(k, n) that contributes to C(m, n)
  */
 int gemm_plan_highest_rank(gemm_plan_t *plan, int m, int n)

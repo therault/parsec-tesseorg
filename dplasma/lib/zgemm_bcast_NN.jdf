@@ -121,11 +121,13 @@ CTL Z <- %{ return use_ctl(ctlmode); %} ? Z LOCAL_BARRIER(n, r)
 
 BODY
   memset(C, 0, sizeof(parsec_complex64_t) * get_tile_count(descC, m, n));
-  if( nb_cuda_devices > 0 ) {
+  if( nb_cuda_devices > 0 && kfirst != -1 ) {
+      int i = gemm_plan_index_of_local_column(plan, n);
+      assert(i != -1);
       /* Advise that all updates on this new C tile should go on device for that column */
       parsec_advise_data_on_device( _f_C->original,
-      				    n % nb_cuda_devices,
-				    PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE);
+                                    i % nb_cuda_devices,
+                                    PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE );
   }
 END
 
@@ -164,7 +166,8 @@ RW Cm <- (r == rlast) ? descC(m, n)
                       : NULL                   [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
       -> (r == rlast) ? descC(m, n)            [ type= DEFAULT layout=parsec_datatype_double_complex_t  count= %{ return get_tile_count(descC, m, n); %} ]
 
-CTL Z -> %{ return use_ctl(ctlmode) && (n + pipeline_step(nb_cuda_devices) < descC->nt); %} ? Z LOCAL_BARRIER(%{ return n + pipeline_step(nb_cuda_devices); %}, r)
+CTL Z -> %{ return use_ctl(ctlmode) && (gemm_plan_local_column_at_distance(plan, n, pipeline_step(nb_cuda_devices)) != -1); %}
+                  ? Z LOCAL_BARRIER( %{ return gemm_plan_local_column_at_distance(plan, n, pipeline_step(nb_cuda_devices)); %}, r)
 
 BODY
 {
@@ -187,38 +190,43 @@ END
 
 /* If use_ctl(ctlmode), LOCAL_BARRIER(n, r) is a barrier that prevents any
  * chain of GEMM at column n on rank r to be scheduled before it has triggered.
- * It is triggered by receiving a control gather from all local ACC_C for column n-pipeline_step(nb_cuda_devices).
+ * It is triggered by receiving a control gather from all local ACC_C for the previous
+ * local colum: gemm_plan_local_column_at_distance(n, -pipeline_step(nb_cuda_devices))
  * If use_prefetch(ctlmode), LOCAL_BARRIER(n, r) will also prefetch all local
- * contributions of B(m, n + pipeline_step(nb_cuda_devices)) on the gpu (n+pipeline_step(nb_cuda_devices)) % #gpus */
+ * contributions of B(m, nextn) on the 'right' gpu  */
 LOCAL_BARRIER(n, r)
   n = 0 .. descC->nt-1
   r = 0 .. %{ return descC->super.nodes - 1; %}
 
 : TrivDist(r)
 
-CTL Z <- %{ return use_ctl(ctlmode) && (n >= pipeline_step(nb_cuda_devices)); %} ? Z ACC_C(0 .. descC->mt-1, %{return n-pipeline_step(nb_cuda_devices);%}, r)
-      -> %{ return use_ctl(ctlmode); %}                                          ? Z MAKE_C(0 .. descC->mt-1, n, r)
+CTL Z <- %{ return use_ctl(ctlmode) && gemm_plan_local_column_at_distance(plan, n, -pipeline_step(nb_cuda_devices)) != -1; %}
+             ? Z ACC_C(0 .. descC->mt-1, %{ return gemm_plan_local_column_at_distance(plan, n, -pipeline_step(nb_cuda_devices)); %}, r)
+      -> %{ return use_ctl(ctlmode); %}                ? Z MAKE_C(0 .. descC->mt-1, n, r)
 
 BODY
 {
     if( use_prefetch(ctlmode) && nb_cuda_devices > 0 ) {
-        int i;
+        int i, nextn;
         /* If n < pipeline_step(nb_cuda_devices), then we want to prefetch the B for the current column before
          * we start prefetching the B for the future one */
-        if( n < pipeline_step(nb_cuda_devices) && n < descB->nt ) {
+        if( n < descB->nt && gemm_plan_index_of_local_column(plan, n) < pipeline_step(nb_cuda_devices) ) {
+            assert( -1 != gemm_plan_index_of_local_column(plan, n) );
             for(i = 0; i < descB->mt; i++) {
                 if( (int)descB->super.rank_of((parsec_data_collection_t *)descB, i, n) == r ) {
                     parsec_advise_data_on_device( descB->super.data_of((parsec_data_collection_t *)descB, i, n),
-                                                  cuda_device_index[ n % nb_cuda_devices ], PARSEC_DEV_DATA_ADVICE_PREFETCH);
+                                                  cuda_device_index[ gemm_plan_index_of_local_column(plan, n) % nb_cuda_devices ],
+                                                  PARSEC_DEV_DATA_ADVICE_PREFETCH);
                 }
             }
         }
         /* In the 'normal' case, prefetch all local B on column n + pipeline_step(nb_cuda_devices) in advance onto the GPU */
-        if( n + pipeline_step(nb_cuda_devices) < descB->nt ) {
+        if( (nextn = gemm_plan_local_column_at_distance(plan, n, pipeline_step(nb_cuda_devices))) != -1 ) {
             for(i = 0; i < descB->mt; i++) {
-                if( (int)descB->super.rank_of((parsec_data_collection_t *)descB, i, n+pipeline_step(nb_cuda_devices)) == r ) {
-                    parsec_advise_data_on_device( descB->super.data_of((parsec_data_collection_t *)descB, i, n + pipeline_step(nb_cuda_devices)),
-                                                  cuda_device_index[ (n+pipeline_step(nb_cuda_devices)) % nb_cuda_devices ], PARSEC_DEV_DATA_ADVICE_PREFETCH);
+                if( (int)descB->super.rank_of((parsec_data_collection_t *)descB, i, nextn) == r ) {
+                    parsec_advise_data_on_device( descB->super.data_of((parsec_data_collection_t *)descB, i, nextn),
+                                                  cuda_device_index[ gemm_plan_index_of_local_column(plan, nextn) % nb_cuda_devices ],
+                                                  PARSEC_DEV_DATA_ADVICE_PREFETCH);
                 }
             }
         }

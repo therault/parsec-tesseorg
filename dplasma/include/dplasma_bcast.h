@@ -29,6 +29,8 @@ struct gemm_plan_s {
     int nt;
     int kt;
     irregular_tiled_matrix_desc_t *descC;
+    int *local_col; /* local array, -1 terminated, of the map between local columns and global ones:
+                     * local_col[n] = n' means that the n-th local column is n' in the global matrix */
     parsec_hash_table_t local_k; /* local_k(m, n) is a gemm_plan_update_list_t* */
 };
 
@@ -39,6 +41,17 @@ typedef struct gemm_plan_s gemm_plan_t;
  * Returns a key from the coordinate m, n in C
  */
 parsec_key_t gemm_plan_make_key(gemm_plan_t *plan, int m, int n);
+
+/*
+ * n is a local column; the returned value is the local column, knowing there are s between
+ * n and the returned one. Should work with s positive or negative.
+ */
+int gemm_plan_local_column_at_distance(gemm_plan_t *plan, int n, int s);
+
+/*
+ * n is a local column; returns the index of that column in the space of local columns
+ */
+int gemm_plan_index_of_local_column(gemm_plan_t *plan, int n);
 
 /*
  * Returns the highest rank that holds a B(k, n) that contributes to C(m, n)

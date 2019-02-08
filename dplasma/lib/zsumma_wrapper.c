@@ -403,7 +403,7 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_taskpool_t* zgemm_handle;
     parsec_arena_t* arena;
     gemm_plan_t *plan;
-    int m, n, k, nb, d, rank, *tmp_update_array;
+    int m, n, k, nb, d, rank, *tmp_update_array, *local_cols, last_local_col;
     gemm_plan_update_list_t *local_k_update;
     int *dev_index;
     static char *cutoff_str = NULL;
@@ -444,14 +444,6 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         return NULL;
     }
 
-    if(0) {
-        printf("gdb -p %d\n", getpid());
-        volatile int loop = 1;
-        while(loop) {
-            sleep(1);
-        }
-    }
-    
     plan = (gemm_plan_t*)malloc(sizeof(gemm_plan_t));
     parsec_hash_table_init(&plan->local_k, offsetof(gemm_plan_update_list_t, ht_item), 16, gemm_plan_ht_fns, NULL);
     plan->mt = C->mt;
@@ -460,6 +452,8 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
     plan->descC = (irregular_tiled_matrix_desc_t*)C;
 
     tmp_update_array = (int*)malloc(B->mt * sizeof(int));
+    local_cols = (int*)malloc((B->nt+1) * sizeof(int));
+    last_local_col = 0;
     
     /* We assume that all matrices are distributed over the same communicator
      * so, all myranks should be equal */
@@ -489,6 +483,20 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
             parsec_hash_table_insert(&plan->local_k, &local_k_update->ht_item);
         }
     }
+    for(n = 0; n < C->nt; n++) {
+        for(k = 0; k < B->mt; k++) {
+            rank = B->super.rank_of((parsec_data_collection_t*)B, k, n);
+            if( plan->myrank == rank ) {
+                local_cols[ last_local_col++ ] = n;
+                break;
+            }
+        }
+    }
+    local_cols[ last_local_col++ ] = -1;
+    plan->local_col = (int*)malloc(last_local_col * sizeof(int));
+    memcpy(plan->local_col, local_cols, last_local_col * sizeof(int));
+    free(local_cols);
+    free(tmp_update_array);
 
 #if 0
     if( A->super.myrank == 0 ) {
@@ -536,7 +544,6 @@ dplasma_zgemm_bcast_New( PLASMA_enum transA, PLASMA_enum transB,
         }
     }
 #endif
-    free(tmp_update_array);
 
     nb = 0;
     for(d = 0; d < (int)parsec_nb_devices; d++) {
