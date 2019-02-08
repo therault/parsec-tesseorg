@@ -96,8 +96,9 @@ static int init_irregular_tile_op( struct parsec_execution_stream_s *es,
     int i, mb = M->Mtiling[m];
     int j, nb = M->Ntiling[n];
     int jump;
-    parsec_complex64_t *array = (parsec_complex64_t*)malloc(sizeof(parsec_complex64_t)*mb*nb);
+    parsec_complex64_t *array;
     (void)es;
+    posix_memalign(&array, PARSEC_ARENA_ALIGNMENT_CL1, sizeof(parsec_complex64_t)*mb*nb);
     if( arg->zero ) {
         memset(array, 0, sizeof(parsec_complex64_t)*mb*nb);        
     } else {
