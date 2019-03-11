@@ -245,9 +245,11 @@ void parsec_arena_release(parsec_data_copy_t* copy)
 
     data  = copy->original;
     chunk = copy->arena_chunk;
-    arena = chunk->origin;
+    assert(NULL != chunk);
 
+    arena = chunk->origin;
     assert(NULL != arena);
+    
     assert(0 == (((uintptr_t)arena)%sizeof(uintptr_t))); /* is it aligned */
 
     if( NULL != data )

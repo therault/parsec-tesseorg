@@ -1,0 +1,123 @@
+extern "C" %{
+/*
+ * Copyright (c) 2019      The University of Tennessee and The University
+ *                         of Tennessee Research Foundation. All rights
+ *                         reserved.
+ *
+ * @precisions normal z -> s d c
+ * $COPYRIGHT
+ *
+ */
+
+#include <math.h>
+
+#include "dplasma/lib/dplasmajdf.h"
+#include "dplasma/lib/dplasmaaux.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+
+#if defined(PARSEC_HAVE_CUDA)
+#include <cublas.h>
+#endif  /* defined(PARSEC_HAVE_CUDA) */
+
+static int do_gemm(int mode) {
+    return 0 != (mode & 0x1);
+}
+
+static int do_cpu_to_gpu(int mode) {
+    return 0 != (mode & 0x2);
+}
+
+static int do_gpu_to_cpu(int mode) {
+    return 0 != (mode & 0x4);
+}
+%}
+
+descA [ type = "const parsec_tiled_matrix_dc_t*" ]
+descB [ type = "const parsec_tiled_matrix_dc_t*" ]
+descC [ type = "parsec_tiled_matrix_dc_t*" ]
+MT    [ type = "int" ]
+NT    [ type = "int" ]
+
+mode  [ type = "int" hidden=on default="-1" ]
+
+GEMM(m, n)
+  m = 0 .. MT-1
+  n = 0 .. NT-1
+
+:descC(m % descC->mt, n % descC->nt)
+
+READ A <- n == 0   ? descA(m % descA->mt, 0) : A GEMM(m, n-1)
+       -> n < NT ? A GEMM(m, n+1)
+READ B <- n == 0 ? descB(m % descB->mt, 0) : B GEMM(m, n-1)
+       -> n < NT ? B GEMM(m, n+1)
+RW   C <- %{ return do_cpu_to_gpu(mode) || (n == 0); %}    ? descC(m % descC->mt, n % descC->nt)
+       <- %{ return !do_cpu_to_gpu(mode) && n > 0; %}      ? C GEMM(m, n-1)
+       -> %{ return do_gpu_to_cpu(mode) || (n == NT-1); %} ? descC(m % descC->mt, n % descC->nt)
+       -> %{ return !do_cpu_to_gpu(mode) && (n+1 < NT); %} ? C GEMM(m, n+1)
+
+BODY [type=CUDA
+      dyld=cublasZgemm dyldtype=cublas_zgemm_t
+      weight=1]
+{
+#if defined(PRECISION_z) || defined(PRECISION_c)
+    cuDoubleComplex lalpha = make_cuDoubleComplex(creal(1.0), cimag(1.0));
+    cuDoubleComplex lbeta  = make_cuDoubleComplex(1.0, 0.0);
+#else
+    double lalpha = 1.0;
+    double lbeta  = 1.0;
+#endif
+    int tempmm = descC->mb;
+    int tempnn = descC->nb;
+    int tempkk = descA->nb;
+    
+    int ldam = descC->mb;
+    int ldbk = descA->nb;
+    int ldcm = descC->mb;
+
+    if(do_gemm(mode)) {
+        cublasStatus_t status;
+    	cublasSetKernelStream( parsec_body.stream );
+    	parsec_body.dyld_fn( lapack_const(PlasmaNoTrans), lapack_const(PlasmaNoTrans),
+         		     tempmm, tempnn, tempkk,
+             		     lalpha, (cuDoubleComplex*)A, ldam,
+                      	       	     (cuDoubleComplex*)B, ldbk,
+             	             lbeta,  (cuDoubleComplex*)C, ldcm );
+        status = cublasGetError();
+    	PARSEC_CUDA_CHECK_ERROR( "cublasZgemm ", status,
+        			 {return -1;} );
+
+    }    
+    if( do_gpu_to_cpu(mode) || (n == NT-1) ) {
+    	gpu_task->pushout |= (1 << 0);
+    }
+}
+END
+
+BODY
+{
+    parsec_complex64_t lbeta = (parsec_complex64_t)1.0;
+
+    int tempmm = descC->mb;
+    int tempnn = descC->nb;
+    int tempkk = descA->nb;
+    
+    int ldam = descC->mb;
+    int ldbk = descA->nb;
+    int ldcm = descC->mb;
+
+    if( do_gemm(mode) ) {
+#if !defined(PARSEC_DRY_RUN)
+      CORE_zgemm(PlasmaNoTrans, PlasmaNoTrans,
+               tempmm, tempnn, tempkk,
+               1.0, A, ldam,
+                      B, ldbk,
+               lbeta, C, ldcm);
+#endif  /* !defined(PARSEC_DRY_RUN) */
+
+      printlog("gemm( %d )\n"
+             "    ( %s, %s, %d, %d, %d, %f, A(0, 0), %d, B(0, 0), %d, %f, C(0, 0), %d)\n",
+             n,
+             plasma_const( PlasmaNoTrans ), plasma_const( PlasmaNoTrans ), tempmm, tempnn, tempkk, creal(1.0), ldam, ldbk, creal(lbeta), ldcm );
+    }
+}
+END

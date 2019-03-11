@@ -293,6 +293,16 @@ int main(int argc, char ** argv)
     /* Initialize PaRSEC */
     parsec = setup_parsec(argc, argv, iparam);
 
+    if(0) {
+      volatile int loop = 1;
+      char hostname[64];
+      gethostname(hostname, 64);
+      fprintf(stderr, "on %s gdb -p %p\n", hostname, getpid());
+      while(loop) {
+        sleep(1);
+      }
+    }
+
     int rank  = iparam[IPARAM_RANK];
     int nodes = iparam[IPARAM_NNODES];
     int cores = iparam[IPARAM_NCORES];
@@ -552,7 +562,7 @@ int main(int argc, char ** argv)
     PASTE_MKL_WARMUP();
 
     /* Create Parsec taskpool */
-    for(int run = 0; run < 10; run++) {
+    for(int run = 0; run < 25; run++) {
         parsec_devices_release_memory();
         
         parsec_taskpool_t* PARSEC_zsumma = dplasma_zsumma_New(tA, tB, alpha,
@@ -581,7 +591,7 @@ int main(int argc, char ** argv)
 
         dplasma_zsumma_Destruct( PARSEC_zsumma );
 
-        parsec_devices_dump_and_reset_statistics(parsec);
+        //parsec_devices_dump_and_reset_statistics(parsec);
         parsec_devices_reset_load(parsec);
     }
 

@@ -70,6 +70,7 @@ set(TESTS
   testing_zgemm_dtd.c
   # TESSE
   testing_zsumma.c
+  benchmark_zgemm.c
 )
 if( DPLASMA_DEBUG_QR_PIVGEN )
   list(APPEND TESTS testing_zpivgen.c)
