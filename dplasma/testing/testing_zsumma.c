@@ -562,7 +562,7 @@ int main(int argc, char ** argv)
     PASTE_MKL_WARMUP();
 
     /* Create Parsec taskpool */
-    for(int run = 0; run < 25; run++) {
+    for(int run = 0; run < 20; run++) {
         parsec_devices_release_memory();
         
         parsec_taskpool_t* PARSEC_zsumma = dplasma_zsumma_New(tA, tB, alpha,

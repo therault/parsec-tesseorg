@@ -30,7 +30,7 @@ extern "C" %{
 static int pipeline_step(int nb_cuda_devices) {
     if(nb_cuda_devices == 0)
         return 1;
-    return nb_cuda_devices;
+    return 1*nb_cuda_devices;
 }
 
 static int use_ctl(int ctlmode) {
@@ -126,7 +126,7 @@ BODY
       assert(i != -1);
       /* Advise that all updates on this new C tile should go on device for that column */
       parsec_advise_data_on_device( _f_C->original,
-                                    i % nb_cuda_devices,
+                                    cuda_device_index[i % nb_cuda_devices],
                                     PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE );
   }
 END
