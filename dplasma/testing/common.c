@@ -236,6 +236,11 @@ static struct option long_options[] =
     {"butlvl",      required_argument,  0, 'y'},
     {"y",           required_argument,  0, 'y'},
 
+    /* DGEMM SUMMIT options */
+    {"sB",          required_argument,  0, 'G'},
+    {"sC",          required_argument,  0, 'G'},
+    {"sD",          required_argument,  0, 'G'},
+
     /* Auxiliary options */
     {"verbose",     optional_argument,  0, 'v'},
     {"v",           optional_argument,  0, 'v'},
@@ -308,6 +313,19 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
                 rc = asprintf(&value, "%d", iparam[IPARAM_NGPUS]);
                 parsec_setenv_mca_param( "device_cuda_enabled", value, &environ );
                 free(value);
+                break;
+
+            case 'G':
+                if( strcmp("sB", long_options[opt].name) == 0 ) {
+                    iparam[IPARAM_SUMMIT_B] = atoi(optarg);
+                } else if( strcmp("sC", long_options[opt].name) == 0 ) {
+                    iparam[IPARAM_SUMMIT_C] = atoi(optarg);
+                } else if( strcmp("sD", long_options[opt].name) == 0 ) {
+                    iparam[IPARAM_SUMMIT_D] = atoi(optarg);
+                } else {
+                    fprintf(stderr, "long_options[%d].name = %s\n", opt, long_options[opt].name);
+                    assert(0);
+                }                        
                 break;
 
             case 'p': case 'P': iparam[IPARAM_P] = atoi(optarg); break;
@@ -505,8 +523,10 @@ static void print_arguments(int* iparam)
 {
     int verbose = iparam[IPARAM_RANK] ? 0 : iparam[IPARAM_VERBOSE];
 
-    if(verbose)
+    if(verbose) {
         fprintf(stderr, "#+++++ cores detected       : %d\n", iparam[IPARAM_NCORES]);
+        fprintf(stderr, "#+++++ GEMM SUMMIT (BxCxD)  : %d x %d x %d\n", iparam[IPARAM_SUMMIT_B], iparam[IPARAM_SUMMIT_C], iparam[IPARAM_SUMMIT_D]);
+    }
 
     if(verbose > 1) fprintf(stderr, "#+++++ nodes x cores + gpu  : %d x %d + %d (%d+%d)\n"
                                     "#+++++ P x Q                : %d x %d (%d/%d)\n",
@@ -565,6 +585,9 @@ static void iparam_default(int* iparam)
     iparam[IPARAM_HIGHLVL_TREE] = -1;
     iparam[IPARAM_QR_TS_SZE]    = -1;
     iparam[IPARAM_QR_HLVL_SZE]  = -'P';
+    iparam[IPARAM_SUMMIT_B] = 1;
+    iparam[IPARAM_SUMMIT_C] = 1;
+    iparam[IPARAM_SUMMIT_D] = 1;    
 }
 
 void iparam_default_ibnbmb(int* iparam, int ib, int nb, int mb)

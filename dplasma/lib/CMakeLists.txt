@@ -37,6 +37,7 @@ set(JDF
   # BLAS Level 3
   #
   zgemm_benchmark.jdf
+  zgemm_summit_NN.jdf
   zgemm_NN.jdf zgemm_TN.jdf zgemm_NT.jdf zgemm_TT.jdf
   zgemm_NN_summa.jdf zgemm_TN_summa.jdf zgemm_NT_summa.jdf zgemm_TT_summa.jdf
   zhemm.jdf
@@ -150,6 +151,7 @@ set(SOURCES
   zsyrk_wrapper.c
   ztrmm_wrapper.c
   ztrsm_wrapper.c
+  zgemm_summit_wrapper.c
   # Level 2 Blas
   zger_wrapper.c
   #

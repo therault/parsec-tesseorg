@@ -69,6 +69,9 @@ enum iparam_t {
   IPARAM_QR_TSRR,      /* Enable/disable the round-robin on TS domain */
   IPARAM_BUT_LEVEL,    /* Butterfly level */
   IPARAM_SCHEDULER,    /* User-selected scheduler */
+  IPARAM_SUMMIT_B,     /* ... To remove ... */
+  IPARAM_SUMMIT_C,     /* ... To remove ... */
+  IPARAM_SUMMIT_D,     /* ... To remove ... */
   IPARAM_SIZEOF
 };
 
@@ -119,10 +122,14 @@ void iparam_default_ibnbmb(int* iparam, int ib, int nb, int mb);
     int matrix_init = iparam[IPARAM_MATRIX_INIT];                       \
     int butterfly_level = iparam[IPARAM_BUT_LEVEL];                     \
     int async = iparam[IPARAM_ASYNC];                                   \
+    int sB = iparam[IPARAM_SUMMIT_B];                                   \
+    int sC = iparam[IPARAM_SUMMIT_C];                                   \
+    int sD = iparam[IPARAM_SUMMIT_D];                                   \
     (void)rank;(void)nodes;(void)cores;(void)gpus;(void)P;(void)Q;(void)M;(void)N;(void)K;(void)NRHS; \
     (void)LDA;(void)LDB;(void)LDC;(void)IB;(void)MB;(void)NB;(void)MT;(void)NT;(void)KT; \
     (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async; \
-    (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;
+    (void)scheduler;(void)butterfly_level;(void)check_inv;(void)random_seed;(void)matrix_init;\
+    (void)sB; (void)sC; (void)sD;
 
 /* Define a double type which not pass through the precision generation process */
 typedef double DagDouble_t;

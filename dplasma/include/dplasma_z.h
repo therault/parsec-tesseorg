@@ -150,6 +150,9 @@ parsec_taskpool_t* dplasma_ztrmm_New( PLASMA_enum side, PLASMA_enum uplo, PLASMA
 parsec_taskpool_t* dplasma_ztrsm_New( PLASMA_enum side, PLASMA_enum uplo, PLASMA_enum trans, PLASMA_enum diag,
                                    const parsec_complex64_t alpha, const parsec_tiled_matrix_dc_t *A, parsec_tiled_matrix_dc_t *B);
 
+parsec_taskpool_t* dplasma_zgemm_summit_New(PLASMA_enum transA, PLASMA_enum transB, parsec_complex64_t alpha, const parsec_tiled_matrix_dc_t* A,
+                                            const parsec_tiled_matrix_dc_t* B, parsec_tiled_matrix_dc_t* C, int b, int c, int d, int p, int q);
+
 /* Level 3 Blas extensions */
 parsec_taskpool_t* dplasma_ztrsmpl_New(const parsec_tiled_matrix_dc_t *A, const parsec_tiled_matrix_dc_t *L,
                                     const parsec_tiled_matrix_dc_t *IPIV, parsec_tiled_matrix_dc_t *B);
@@ -216,6 +219,7 @@ void dplasma_zsyr2k_Destruct(parsec_taskpool_t *o );
 void dplasma_zsyrk_Destruct( parsec_taskpool_t *o );
 void dplasma_ztrmm_Destruct( parsec_taskpool_t *o );
 void dplasma_ztrsm_Destruct( parsec_taskpool_t *o );
+void dplasma_zgemm_summit_Destruct( parsec_taskpool_t *tp );
 
 /* Level 3 Blas extensions */
 void dplasma_ztrdsm_Destruct( parsec_taskpool_t *o );
@@ -330,6 +334,7 @@ void dplasma_zherbt_Destruct( parsec_taskpool_t *o );
 #define SUMMA_TT      3
 #define SUMMA_TN      4
 #define GEMM_BCAST_NN 5
+#define GEMM_SUMMIT_NN 6
 
 int dplasma_zsumma( parsec_context_t *parsec,
                     PLASMA_enum transA, PLASMA_enum transB,
