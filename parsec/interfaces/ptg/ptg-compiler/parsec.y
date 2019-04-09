@@ -34,6 +34,7 @@ struct yyscan_t;
 extern int current_lineno;
 
 static jdf_expr_t *inline_c_functions = NULL;
+static jdf_named_range_t *current_locally_bound_variables = NULL;
 
 /**
  *
@@ -157,6 +158,7 @@ static int key_from_type(char *type) {
     jdf_name_list_t      *name_list;
     jdf_def_list_t       *def_list;
     jdf_dataflow_t       *dataflow;
+    jdf_named_range_t    *named_range;
     jdf_dep_t            *dep;
     jdf_dep_flags_t       dep_type;
     jdf_guarded_call_t   *guarded_call;
@@ -165,12 +167,17 @@ static int key_from_type(char *type) {
     jdf_body_t           *body;
 };
 
+%glr-parser
+%expect 5
+
 %type <function>function
 %type <name_list>varlist
 %type <def_list>execution_space
 %type <call>partitioning
 %type <dataflow>dataflow_list
 %type <dataflow>dataflow
+%type <named_range>named_range
+%type <named_range>named_range_list
 %type <dep>dependencies
 %type <dep>dependency
 %type <guarded_call>guarded_call
@@ -557,6 +564,36 @@ dataflow:       optional_flow_flags VAR dependencies
                 }
         ;
 
+named_range: PROPERTIES_ON named_range_list PROPERTIES_OFF
+               {
+                   $$ = $2;
+               }
+        |
+               {
+                   $$ = NULL;
+               }
+        ;
+
+named_range_list: VAR ASSIGNMENT expr_range
+               {
+                   $$ = new(jdf_named_range_t);
+                   $$->next = NULL;
+                   $$->varname = $1;
+                   $$->range = $3;
+                   current_locally_bound_variables = $$;
+               }
+        |  named_range_list {
+            current_locally_bound_variables = $1;
+           } COMMA VAR ASSIGNMENT expr_range 
+           {
+               $$ = new(jdf_named_range_t);
+               $$->varname = $4;
+               $$->range = $6;
+               $$->next = $1;
+               current_locally_bound_variables = $$;
+           }
+       ;
+
 dependencies:  dependency dependencies
                {
                    $1->next = $2;
@@ -568,84 +605,86 @@ dependencies:  dependency dependencies
                }
        ;
 
-dependency:   ARROW guarded_call properties
+dependency:   ARROW named_range guarded_call properties
               {
                   struct jdf_name_list *g, *e, *prec;
                   jdf_dep_t *d = new(jdf_dep_t);
                   jdf_expr_t *expr;
-                  jdf_def_list_t* property = $3;
+                  jdf_def_list_t* property = $4;
 
+                  d->named_ranges = $2;
+                  
                   /* If neither is defined, we define the old simple DEFAULT arena */
-                  if( NULL == (expr = jdf_find_property($3, "type", &property)) ) {
+                  if( NULL == (expr = jdf_find_property($4, "type", &property)) ) {
                       property = jdf_create_properties_list( "type", 0, "DEFAULT", NULL );
                       expr = jdf_find_property( property, "type", &property );
-                      property->next = $3;
+                      property->next = $4;
                   }
 
                   /* Validate the datatype definition of WRITE only data */
-                  if( (JDF_GUARD_UNCONDITIONAL == $2->guard_type) &&
-                      (NULL == $2->guard) && (NULL == $2->callfalse) ) {
-                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $2->calltrue->func_or_mem) ) {
+                  if( (JDF_GUARD_UNCONDITIONAL == $3->guard_type) &&
+                      (NULL == $3->guard) && (NULL == $3->callfalse) ) {
+                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $3->calltrue->func_or_mem) ) {
                           if($1 != JDF_DEP_FLOW_IN) {
-                              jdf_fatal(JDF_OBJECT_LINENO($2), PARSEC_ERR_NEW_AS_OUTPUT);
+                              jdf_fatal(JDF_OBJECT_LINENO($3), PARSEC_ERR_NEW_AS_OUTPUT);
                               YYERROR;
                           }
                       }
                   }
 
                   /* Validate the WRITE only data allocation, and the unused data */
-                  if( JDF_IS_CALL_WITH_NO_INPUT($2->calltrue) ) {
-                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $2->calltrue->func_or_mem) ) {
+                  if( JDF_IS_CALL_WITH_NO_INPUT($3->calltrue) ) {
+                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $3->calltrue->func_or_mem) ) {
                           if($1 != JDF_DEP_FLOW_IN) {
-                              jdf_fatal(JDF_OBJECT_LINENO($2), PARSEC_ERR_NEW_AS_OUTPUT);
+                              jdf_fatal(JDF_OBJECT_LINENO($3), PARSEC_ERR_NEW_AS_OUTPUT);
                               YYERROR;
                           }
                       }
-                      else if( 0 == strcmp(PARSEC_NULL_MAGIC_NAME, $2->calltrue->func_or_mem) ) {
+                      else if( 0 == strcmp(PARSEC_NULL_MAGIC_NAME, $3->calltrue->func_or_mem) ) {
                           if($1 != JDF_DEP_FLOW_IN) {
-                              jdf_fatal(JDF_OBJECT_LINENO($2), PARSEC_ERR_NULL_AS_OUTPUT);
+                              jdf_fatal(JDF_OBJECT_LINENO($3), PARSEC_ERR_NULL_AS_OUTPUT);
                               YYERROR;
                           }
                       } else {
-                          jdf_fatal(JDF_OBJECT_LINENO($2),
+                          jdf_fatal(JDF_OBJECT_LINENO($3),
                                     "%s is not a supported keyword to describe a data (Only NEW and NULL are supported by themselves)\n",
-                                    $2->calltrue->func_or_mem );
+                                    $3->calltrue->func_or_mem );
                           YYERROR;
                       }
                   }
 
                   /* Validate the WRITE only data allocation, and the unused data */
-                  if( $2->callfalse && JDF_IS_CALL_WITH_NO_INPUT($2->callfalse) ) {
-                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $2->callfalse->func_or_mem) ) {
+                  if( $3->callfalse && JDF_IS_CALL_WITH_NO_INPUT($3->callfalse) ) {
+                      if( 0 == strcmp(PARSEC_WRITE_MAGIC_NAME, $3->callfalse->func_or_mem) ) {
                           if($1 != JDF_DEP_FLOW_IN) {
-                              jdf_fatal(JDF_OBJECT_LINENO($2), PARSEC_ERR_NEW_AS_OUTPUT);
+                              jdf_fatal(JDF_OBJECT_LINENO($3), PARSEC_ERR_NEW_AS_OUTPUT);
                               YYERROR;
                           }
                       }
-                      else if( 0 == strcmp(PARSEC_NULL_MAGIC_NAME, $2->callfalse->func_or_mem) ) {
+                      else if( 0 == strcmp(PARSEC_NULL_MAGIC_NAME, $3->callfalse->func_or_mem) ) {
                           if($1 != JDF_DEP_FLOW_IN) {
-                              jdf_fatal(JDF_OBJECT_LINENO($2), PARSEC_ERR_NULL_AS_OUTPUT);
+                              jdf_fatal(JDF_OBJECT_LINENO($3), PARSEC_ERR_NULL_AS_OUTPUT);
                               YYERROR;
                           }
                       } else {
-                          jdf_fatal(JDF_OBJECT_LINENO($2),
+                          jdf_fatal(JDF_OBJECT_LINENO($3),
                                     "%s is not a supported keyword to describe a data (Only NEW and NULL are supported by themselves)\n",
-                                    $2->callfalse->func_or_mem );
+                                    $3->callfalse->func_or_mem );
                           YYERROR;
                       }
                   }
 
-                  $2->properties   = property;
+                  $3->properties   = property;
                   d->dep_flags     = $1;
-                  d->guard         = $2;
+                  d->guard         = $3;
                   d->datatype.type = expr;
                   JDF_OBJECT_LINENO(&d->datatype) = current_lineno;
 
-                  if( NULL != jdf_find_property( $3, "arena_index", &property ) ) {
+                  if( NULL != jdf_find_property( $4, "arena_index", &property ) ) {
                       jdf_fatal(current_lineno, "Old construct arena_index used. Please update the code to use type instead.\n");
                       YYERROR;
                   }
-                  if( NULL != jdf_find_property( $3, "nb_elt", &property ) ) {
+                  if( NULL != jdf_find_property( $4, "nb_elt", &property ) ) {
                       jdf_fatal(current_lineno, "Old construct nb_elt used. Please update the code to use count instead.\n");
                       YYERROR;
                   }
@@ -701,9 +740,11 @@ dependency:   ARROW guarded_call properties
                   }
                   d->datatype.displ = expr;
 
-                  JDF_OBJECT_LINENO(d) = JDF_OBJECT_LINENO($2);
-                  assert( 0 != JDF_OBJECT_LINENO($2) );
+                  JDF_OBJECT_LINENO(d) = JDF_OBJECT_LINENO($3);
+                  assert( 0 != JDF_OBJECT_LINENO($3) );
                   $$ = d;
+
+                  current_locally_bound_variables = NULL;
               }
        ;
 
@@ -742,14 +783,15 @@ guarded_call: call
               }
        ;
 
-call:         VAR VAR OPEN_PAR expr_list_range CLOSE_PAR
+call:         named_range VAR VAR OPEN_PAR expr_list_range CLOSE_PAR
               {
                   jdf_call_t *c = new(jdf_call_t);
-                  c->var = $1;
-                  c->func_or_mem = $2;
-                  c->parameters = $4;
+                  c->var = $2;
+                  c->named_ranges = $1;
+                  c->func_or_mem = $3;
+                  c->parameters = $5;
                   $$ = c;
-                  JDF_OBJECT_LINENO($$) = JDF_OBJECT_LINENO($4);
+                  JDF_OBJECT_LINENO($$) = JDF_OBJECT_LINENO($5);
                   assert( 0 != JDF_OBJECT_LINENO($$) );
               }
        |      VAR OPEN_PAR expr_list_range CLOSE_PAR
@@ -761,6 +803,7 @@ call:         VAR VAR OPEN_PAR expr_list_range CLOSE_PAR
                   c->var = NULL;
                   c->func_or_mem = $1;
                   c->parameters = $3;
+                  c->named_ranges = NULL;
                   JDF_OBJECT_LINENO(c) = JDF_OBJECT_LINENO($3);
                   $$ = c;
                   assert( 0 != JDF_OBJECT_LINENO($$) );
@@ -781,6 +824,7 @@ call:         VAR VAR OPEN_PAR expr_list_range CLOSE_PAR
               {
                   jdf_call_t *c = new(jdf_call_t);
                   c->var = NULL;
+                  c->named_ranges = NULL;
                   c->func_or_mem = strdup(PARSEC_WRITE_MAGIC_NAME);
                   c->parameters = NULL;
                   JDF_OBJECT_LINENO(c) = current_lineno;
@@ -788,12 +832,13 @@ call:         VAR VAR OPEN_PAR expr_list_range CLOSE_PAR
              }
        |     DATA_NULL
              {
-                 jdf_call_t *c = new(jdf_call_t);
-                 c->var = NULL;
-                 c->func_or_mem = strdup(PARSEC_NULL_MAGIC_NAME);
-                 c->parameters = NULL;
-                 JDF_OBJECT_LINENO(c) = current_lineno;
-                 $$ = c;
+                  jdf_call_t *c = new(jdf_call_t);
+                  c->var = NULL;
+                  c->named_ranges = NULL;
+                  c->func_or_mem = strdup(PARSEC_NULL_MAGIC_NAME);
+                  c->parameters = NULL;
+                  JDF_OBJECT_LINENO(c) = current_lineno;
+                  $$ = c;
              }
        ;
 
@@ -867,6 +912,7 @@ variable: VAR
             {
                  jdf_expr_t *e = new(jdf_expr_t);
                  e->op = JDF_VAR;
+                 e->local_variables = current_locally_bound_variables;
                  e->jdf_var = strdup($1);
                  $$ = e;
                  JDF_OBJECT_LINENO($$) = current_lineno;
@@ -885,6 +931,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_EQUAL;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -894,6 +941,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_NOTEQUAL;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -903,6 +951,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_LESS;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -912,6 +961,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_LEQ;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -921,6 +971,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_MORE;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -930,6 +981,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_MEQ;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -939,6 +991,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_AND;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -948,6 +1001,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_OR;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -957,6 +1011,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_XOR;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -966,6 +1021,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_NOT;
+                  e->local_variables = NULL;
                   e->jdf_ua = $2;
                   $$ = e;
                   JDF_OBJECT_LINENO($$) = current_lineno;
@@ -979,6 +1035,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_PLUS;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -988,6 +1045,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_MINUS;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -997,6 +1055,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_TIMES;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -1006,6 +1065,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_DIV;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -1015,6 +1075,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_MODULO;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -1024,6 +1085,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_SHL;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -1033,6 +1095,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_SHR;
+                  e->local_variables = NULL;
                   e->jdf_ba1 = $1;
                   e->jdf_ba2 = $3;
                   $$ = e;
@@ -1042,6 +1105,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_TERNARY;
+                  e->local_variables = NULL;
                   e->jdf_tat = $1;
                   e->jdf_ta1 = $3;
                   e->jdf_ta2 = $5;
@@ -1056,6 +1120,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_CST;
+                  e->local_variables = NULL;
                   e->jdf_cst = $1;
                   e->jdf_type = 0;
                   $$ = e;
@@ -1065,6 +1130,7 @@ expr_simple:  expr_simple EQUAL expr_simple
               {
                   jdf_expr_t *e = new(jdf_expr_t);
                   e->op = JDF_CST;
+                  e->local_variables = NULL;
                   e->jdf_cst = -$2;
                   e->jdf_type = 0;
                   $$ = e;
@@ -1073,6 +1139,7 @@ expr_simple:  expr_simple EQUAL expr_simple
        |      STRING
               {
                   jdf_expr_t *e = new(jdf_expr_t);
+                  e->local_variables = NULL;
                   e->op = JDF_STRING;
                   e->jdf_var = strdup($1);
                   $$ = e;
@@ -1085,6 +1152,7 @@ expr_simple:  expr_simple EQUAL expr_simple
                   $$->op = JDF_C_CODE;
                   $$->jdf_c_code.code = $1;
                   $$->jdf_type = 0;
+                  $$->local_variables = current_locally_bound_variables;
                   $$->jdf_c_code.lineno = current_lineno;
                   /* This will be set by the upper level parsing if necessary */
                   $$->jdf_c_code.function_context = NULL;

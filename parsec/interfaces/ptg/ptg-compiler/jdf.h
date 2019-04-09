@@ -270,9 +270,16 @@ typedef struct jdf_datatransfer_type {
                                             *< the dependency */
 } jdf_datatransfer_type_t;
 
+typedef struct jdf_named_range {
+    struct jdf_named_range *next;
+    char                   *varname;
+    struct jdf_expr        *range;
+} jdf_named_range_t;
+
 struct jdf_dep {
     struct jdf_object_t      super;
     jdf_dep_t               *next;
+    jdf_named_range_t       *named_ranges;
     struct jdf_guarded_call *guard;
     jdf_datatransfer_type_t  datatype;
     jdf_dep_flags_t          dep_flags;
@@ -296,6 +303,7 @@ typedef struct jdf_guarded_call {
 
 typedef struct jdf_call {
     struct jdf_object_t       super;
+    jdf_named_range_t        *named_ranges;
     char                     *var;
     char                     *func_or_mem;
     struct jdf_expr          *parameters;
@@ -361,6 +369,7 @@ typedef struct jdf_expr {
     struct jdf_object_t           super;
     struct jdf_expr              *next;
     struct jdf_expr              *next_inline;
+    jdf_named_range_t            *local_variables;
     jdf_expr_operand_t            op;
     union {
         struct {

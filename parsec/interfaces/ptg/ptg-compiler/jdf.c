@@ -129,6 +129,7 @@ static int jdf_sanity_check_expr_bound_before_global(jdf_expr_t *e, jdf_global_e
 {
     jdf_global_entry_t *g2;
     char *vc, *dot;
+    jdf_named_range_t *nr;
     int rc = 0;
     switch( e->op ) {
     case JDF_VAR:
@@ -144,9 +145,15 @@ static int jdf_sanity_check_expr_bound_before_global(jdf_expr_t *e, jdf_global_e
             }
         }
         if( g2 == g1 ) {
-            jdf_fatal(JDF_OBJECT_LINENO(g1), "Global %s is defined using variable %s (in %s) which is unbound at this time\n",
-                      g1->name, vc, e->jdf_var);
-            rc = -1;
+            for(nr = e->local_variables; NULL != nr; nr = nr->next) {
+                if( !strcmp(nr->varname, vc) )
+                    break;
+            }
+            if(NULL == nr) {
+                jdf_fatal(JDF_OBJECT_LINENO(g1), "Global %s is defined using variable %s (in %s) which is unbound at this time\n",
+                          g1->name, vc, e->jdf_var);
+                rc = -1;
+            }
         }
         free(vc);
         return rc;
@@ -267,6 +274,7 @@ static int jdf_sanity_check_expr_bound_before_definition(jdf_expr_t *e, jdf_func
 {
     jdf_global_entry_t *g;
     jdf_def_list_t *d2;
+    jdf_named_range_t *nr;
     char *vc, *dot;
     int rc = 0;
 
@@ -283,15 +291,21 @@ static int jdf_sanity_check_expr_bound_before_definition(jdf_expr_t *e, jdf_func
             }
         }
         if( g == NULL ) {
-            for(d2 = f->locals; d2 != d; d2 = d2->next) {
-                if( !strcmp( vc, d2->name ) ) {
+            for(nr = e->local_variables; NULL != nr; nr = nr->next) {
+                if( !strcmp(nr->varname, vc) )
                     break;
-                }
             }
-            if( d2 == d ) {
-                jdf_fatal(JDF_OBJECT_LINENO(d), "Local %s is defined using variable %s (in %s) which is unbound at this time\n",
-                          d->name,  vc, e->jdf_var);
-                rc = -1;
+            if(NULL == nr) {
+                for(d2 = f->locals; d2 != d; d2 = d2->next) {
+                    if( !strcmp( vc, d2->name ) ) {
+                        break;
+                    }
+                }
+                if( d2 == d ) {
+                    jdf_fatal(JDF_OBJECT_LINENO(d), "Local %s is defined using variable %s (in %s) which is unbound at this time\n",
+                              d->name,  vc, e->jdf_var);
+                    rc = -1;
+                }
             }
         }
         free(vc);
@@ -340,6 +354,7 @@ static int jdf_sanity_check_expr_bound(jdf_expr_t *e, const char *kind, jdf_func
 {
     jdf_global_entry_t *g;
     jdf_def_list_t *d;
+    jdf_named_range_t *nr;
     char *vc, *dot;
     int rc = 0;
 
@@ -362,9 +377,15 @@ static int jdf_sanity_check_expr_bound(jdf_expr_t *e, const char *kind, jdf_func
                 }
             }
             if( d == NULL ) {
-                jdf_fatal(JDF_OBJECT_LINENO(f), "%s of function %s is defined using variable %s (in %s) which is unbound at this time\n",
-                          kind, f->fname, vc, e->jdf_var);
-                rc = -1;
+                for(nr = e->local_variables; NULL != nr; nr = nr->next) {
+                    if( !strcmp(nr->varname, vc) )
+                        break;
+                }
+                if(NULL == nr) {
+                    jdf_fatal(JDF_OBJECT_LINENO(f), "%s of function %s is defined using variable %s (in %s) which is unbound at this time\n",
+                              kind, f->fname, vc, e->jdf_var);
+                    rc = -1;
+                }
             }
         }
         free(vc);

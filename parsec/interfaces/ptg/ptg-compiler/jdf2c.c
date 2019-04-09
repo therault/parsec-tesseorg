@@ -326,7 +326,7 @@ static char* dump_rank(void** elem, void *arg)
 char * dump_expr(void **elem, void *arg)
 {
     expr_info_t* expr_info = (expr_info_t*)arg;
-    expr_info_t li, ri;
+    expr_info_t li = EMPTY_EXPR_INFO, ri = EMPTY_EXPR_INFO;
     jdf_expr_t *e = (jdf_expr_t*)elem;
     string_arena_t *sa = expr_info->sa;
     string_arena_t *la, *ra;
@@ -456,7 +456,7 @@ char * dump_expr(void **elem, void *arg)
     case JDF_RANGE:
         break;
     case JDF_TERNARY: {
-        expr_info_t ti;
+        expr_info_t ti = EMPTY_EXPR_INFO;
         string_arena_t *ta;
         ta = string_arena_new(8);
         ti.sa = ta;
@@ -528,7 +528,7 @@ static char* dump_predicate(void** elem, void *arg)
     string_arena_t *sa = (string_arena_t*)arg;
     string_arena_t *sa2 = string_arena_new(64);
     string_arena_t *sa3 = string_arena_new(64);
-    expr_info_t expr_info;
+    expr_info_t expr_info = EMPTY_EXPR_INFO;
 
     /* Prepare the assignment field for the complex calls (where we have inline_C functions) */
     string_arena_init(sa);
@@ -814,7 +814,7 @@ static char *dump_globals_init(void **elem, void *arg)
         if( NULL == hidden ) /* Hidden variable or not ? */
             string_arena_add_string(sa, TASKPOOL_GLOBAL_PREFIX"_g_%s = %s;", global->name, global->name);
     } else {
-        expr_info_t info;
+        expr_info_t info = EMPTY_EXPR_INFO;
         info.sa = string_arena_new(8);
         info.prefix = "";
         info.suffix = "";
@@ -865,7 +865,7 @@ static char* dump_typed_globals(void **elem, void *arg)
     jdf_expr_t* type_str = jdf_find_property( global->properties, "type", NULL );
     jdf_expr_t *size_str = jdf_find_property( global->properties, "size", NULL );
     jdf_expr_t *prop_str;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     if( NULL != prop->include ) {
         prop_str = jdf_find_property( global->properties, prop->include, NULL );
@@ -916,7 +916,7 @@ static char *dump_hidden_globals_init(void **elem, void *arg)
         if( NULL == prop )  /* Do we have a default value or expression? */
             if( NULL == (prop = global_var->expression) ) return NULL;
 
-        expr_info_t info;
+        expr_info_t info = EMPTY_EXPR_INFO;
         jdf_expr_t* type_str = jdf_find_property( global_var->properties, "type",   NULL );
 
         info.sa = string_arena_new(8);
@@ -1488,7 +1488,7 @@ jdf_generate_function_without_expression(const jdf_t *jdf,
 {
     string_arena_t *sa = string_arena_new(64);
     string_arena_t *sa2 = string_arena_new(64);
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     assignment_info_t ai;
 
     (void)jdf;
@@ -1595,7 +1595,7 @@ static void jdf_generate_affinity( const jdf_t *jdf, const jdf_function_entry_t 
     string_arena_t *sa4 = string_arena_new(64);
     string_arena_t *sa5 = string_arena_new(64);
     assignment_info_t ai;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     const jdf_call_t *data_affinity = f->predicate;
 
     (void)jdf;
@@ -1651,7 +1651,7 @@ static void jdf_generate_initfinal_data_for_call(const jdf_call_t *call,
 {
     string_arena_t *sa1 = string_arena_new(64);
     string_arena_t *sa2 = string_arena_new(64);
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     info.sa = sa2;
     info.prefix = "";
@@ -1689,7 +1689,7 @@ static int jdf_generate_initfinal_data_for_dep(const jdf_dep_t *dep,
                                                string_arena_t* sa)
 {
     string_arena_t *sa1 = string_arena_new(64);
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     int ret = 0;
 
     info.sa = sa1;
@@ -1882,12 +1882,13 @@ static void jdf_generate_symbols( const jdf_t *jdf, const jdf_function_entry_t *
 
 static void jdf_generate_ctl_gather_compute(const jdf_t *jdf, const jdf_function_entry_t* of,
                                             const char *tname, const char *fname,
-                                            const jdf_expr_t *params)
+                                            const jdf_expr_t *params,
+                                            jdf_named_range_t *nr)
 {
     string_arena_t *sa1 = string_arena_new(64);
     string_arena_t *sa2 = string_arena_new(64);
     string_arena_t *sa3 = string_arena_new(64);
-    expr_info_t info1, info2, info3;
+    expr_info_t info1 = EMPTY_EXPR_INFO, info2 = EMPTY_EXPR_INFO, info3 = EMPTY_EXPR_INFO;
     const jdf_expr_t *le;
     const jdf_function_entry_t *targetf;
     const jdf_name_list_t *pl;
@@ -1929,6 +1930,19 @@ static void jdf_generate_ctl_gather_compute(const jdf_t *jdf, const jdf_function
                                   "  ", "(void)", "; ", ";"));
 
     i = 0;
+    for(; nr != NULL; nr = nr->next) {
+        coutput("%s  {\n"
+                "%s    int %s;\n"
+                "%s    for(%s  = %s;\n"
+                "%s        %s <= %s;\n"
+                "%s        %s += %s) {\n",
+                indent(i),
+                indent(i), nr->varname,
+                indent(i), nr->varname, dump_expr( (void**)nr->range->jdf_ta1, &info1 ),
+                indent(i), nr->varname, dump_expr( (void**)nr->range->jdf_ta2, &info2 ),
+                indent(i), nr->varname, dump_expr( (void**)nr->range->jdf_ta3, &info3 ));
+        i+=2;
+    }
     for(pl = targetf->parameters, le = params; NULL != le; pl = pl->next, le = le->next) {
         if( le->op == JDF_RANGE ) {
             coutput("%s  {\n"
@@ -1942,7 +1956,9 @@ static void jdf_generate_ctl_gather_compute(const jdf_t *jdf, const jdf_function
                     indent(i), targetf->fname, pl->name, dump_expr( (void**)le->jdf_ta2, &info2 ),
                     indent(i), targetf->fname, pl->name, dump_expr( (void**)le->jdf_ta3, &info3 ));
             i+=2;
-        }
+        } else {
+            coutput("%s  int %s_%s = %s;\n", indent(i), targetf->fname, pl->name, dump_expr( (void**)le, &info1 ));
+        }                    
     }
     coutput("%s  __nb_found++;\n", indent(i));
     i--;
@@ -1970,7 +1986,7 @@ static void jdf_generate_direct_data_function(const jdf_t *jdf, const char *mem,
                                               const char *function_name)
 {
     assignment_info_t ai;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa1 = string_arena_new(64);
     string_arena_t *sa2 = string_arena_new(64);
     string_arena_t *sa3 = string_arena_new(64);
@@ -2033,16 +2049,16 @@ static int jdf_generate_dependency( const jdf_t *jdf, jdf_dataflow_t *flow, jdf_
                 break;
             }
         }
-        if( NULL != le ) {
+        if( (NULL != le) || (NULL != call->named_ranges) ) {
             /* At least one range in input: must be a control gather */
             if( !(flow->flow_flags & JDF_FLOW_TYPE_CTL) ) {
                 jdf_fatal(JDF_OBJECT_LINENO(dep), "This dependency features a range as input but is not a Control dependency\n");
                 exit(1);
             }
             string_arena_add_string(sa2, "&ctl_gather_compute_for_dep_%s", depname);
-            /* skip the & at the beginning */
+            /* skip the & at the beginning THOMAS */
             jdf_generate_ctl_gather_compute(jdf, f, call->func_or_mem,
-                                            string_arena_get_string(sa2)+1, call->parameters);
+                                            string_arena_get_string(sa2)+1, call->parameters, call->named_ranges);
             ret = 0;
         } else {
             string_arena_add_string(sa2, "NULL");
@@ -2052,7 +2068,7 @@ static int jdf_generate_dependency( const jdf_t *jdf, jdf_dataflow_t *flow, jdf_
     }
 
     if( NULL != dep->guard->guard ) {  /* Dump a comment with the dep condition */
-        expr_info_t info = { .prefix = "", .suffix = "", .assignments = "assignments"};
+        expr_info_t info = { .prefix = "", .suffix = "", .assignments = "assignments", .nb_bound_locals = 0, .bound_locals = NULL};
         string_arena_init(sa3);
         info.sa = sa3;
         dump_expr((void**)dep->guard->guard, &info);
@@ -2317,7 +2333,7 @@ static char* dump_direct_input_conditions(void **elt, void *arg)
     jdf_dataflow_t* flow = (jdf_dataflow_t*)elt;
     jdf_dep_t* dep = flow->deps;
     int already_added = 0;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     string_arena_init(sa);
     sa1 = string_arena_new(64);
@@ -2414,7 +2430,7 @@ static void jdf_generate_startup_tasks(const jdf_t *jdf, const jdf_function_entr
     string_arena_t *sa1, *sa2;
     jdf_def_list_t *dl;
     int nesting = 0, idx, nbdefinitions;
-    expr_info_t info1;
+    expr_info_t info1 = EMPTY_EXPR_INFO;
 
     assert( f->flags & JDF_FUNCTION_FLAG_CAN_BE_STARTUP );
     if( f->user_defines & JDF_FUNCTION_HAS_UD_STARTUP_TASKS_FUN )
@@ -2673,7 +2689,7 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
     string_arena_t *sa1, *sa2, *sa_end;
     const jdf_def_list_t *dl;
     const jdf_name_list_t *pl;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     int need_to_iterate, need_min_max, need_to_count_tasks;
     int nesting = 0, idx;
     jdf_l2p_t *l2p = build_l2p(f), *l2p_item;
@@ -2977,7 +2993,7 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
 static void jdf_generate_simulation_cost_fct(const jdf_t *jdf, const jdf_function_entry_t *f, const char *prefix)
 {
     assignment_info_t ai;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa = string_arena_new(64);
     string_arena_t *sa1 = string_arena_new(64);
 
@@ -3764,7 +3780,7 @@ static void jdf_generate_constructor( const jdf_t* jdf )
         }
         arena_strut = jdf_find_property(jdf->global_properties, "PARSEC_ARENA_STRUT", &prop);
         if( NULL != arena_strut ) {
-            expr_info_t info;
+            expr_info_t info = EMPTY_EXPR_INFO;
 
             coutput("  /* and add to that the ARENA_STRUT */\n");
 
@@ -3856,7 +3872,7 @@ static void jdf_generate_hashfunction_for(const jdf_t *jdf, const jdf_function_e
     string_arena_t *sa_range_multiplier = string_arena_new(64);
     jdf_name_list_t *nl;
     jdf_def_list_t *dl;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     int idx;
 
     coutput("static inline parsec_key_t %s(const parsec_taskpool_t *tp, const assignment_t *as)\n"
@@ -3980,7 +3996,7 @@ char *malloc_and_dump_jdf_expr_list(const jdf_expr_t *el)
     char *res;
     string_arena_t *sa = string_arena_new(64);
     string_arena_t *sa2 = string_arena_new(64);
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     info.sa = sa2;
     info.prefix = "";
@@ -4002,7 +4018,7 @@ static char *jdf_create_code_assignments_calls(string_arena_t *sa, int spaces,
                                                const jdf_t *jdf, const char *name, const jdf_call_t *call)
 {
   const jdf_expr_t *el;
-  expr_info_t infodst, infosrc;
+  expr_info_t infodst = EMPTY_EXPR_INFO, infosrc = EMPTY_EXPR_INFO;
   string_arena_t *sa2;
   jdf_expr_t *params = call->parameters;
   jdf_def_list_t *dl;
@@ -4031,7 +4047,7 @@ static char *jdf_create_code_assignments_calls(string_arena_t *sa, int spaces,
       for(el = params, pl = f->parameters; pl != NULL; el = el->next, pl = pl->next) {
           if( NULL == el ) {  /* Badly formulated call */
               string_arena_t *sa_caller, *sa_callee;
-              expr_info_t caller;
+              expr_info_t caller = EMPTY_EXPR_INFO;
 
               sa_caller = string_arena_new(64);
               sa_callee = string_arena_new(64);
@@ -4090,7 +4106,7 @@ static void
 jdf_generate_arena_string_from_datatype(string_arena_t *sa,
                                         jdf_datatransfer_type_t datatype)
 {
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa2 = string_arena_new(64);
 
     info.sa = sa2;
@@ -4116,7 +4132,7 @@ jdf_generate_code_call_initialization(const jdf_t *jdf, const jdf_call_t *call,
                                       const jdf_dep_t *dl, const char *spaces)
 {
     string_arena_t *sa, *sa2;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     const jdf_dataflow_t* tflow;
     const jdf_function_entry_t* targetf;
 
@@ -4251,7 +4267,7 @@ static void jdf_generate_code_flow_initialization(const jdf_t *jdf,
                                                   const jdf_dataflow_t *flow)
 {
     jdf_dep_t *dl;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa, *sa2 = NULL, *sa_count = NULL;
     int cond_index = 0;
     char* condition[] = {"    if( %s ) {\n", "    else if( %s ) {\n"};
@@ -4408,7 +4424,7 @@ static void jdf_generate_code_call_final_write(const jdf_t *jdf, const jdf_call_
                                                const jdf_dataflow_t *flow)
 {
     string_arena_t *sa, *sa2, *sa3, *sa4;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     (void)jdf;
 
@@ -4472,7 +4488,7 @@ jdf_generate_code_flow_final_writes(const jdf_t *jdf,
                                     const jdf_dataflow_t *flow)
 {
     jdf_dep_t *dl;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa;
 
     (void)f;
@@ -4651,7 +4667,7 @@ jdf_generate_code_datatype_lookup(const jdf_t *jdf,
     string_arena_t *sa_cond       = string_arena_new(256);
     int last_datatype_idx, continue_dependencies, type, skip_condition, generate_exit_label = 0;
     uint32_t mask_in = 0, mask_out = 0, current_mask = 0;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     sa  = string_arena_new(64);
     sa2 = string_arena_new(64);
@@ -4878,7 +4894,7 @@ jdf_generate_code_data_lookup(const jdf_t *jdf,
     /* If the function has the property profile turned off do not generate the profiling code */
     if( profile_enabled(f->properties) ) {
         string_arena_t *sa3 = string_arena_new(64);
-        expr_info_t linfo;
+        expr_info_t linfo = EMPTY_EXPR_INFO;
 
         linfo.prefix = "";
         linfo.suffix = "";
@@ -4925,7 +4941,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
     assignment_info_t ai;
     init_from_data_info_t ai2;
     jdf_dataflow_t *fl;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     int di;
     int profile_on;
     char* output;
@@ -5224,7 +5240,7 @@ static void jdf_generate_code_hook(const jdf_t *jdf,
     jdf_find_property(body->properties, "type", &type_property);
     if(NULL != type_property) {
         if(JDF_VAR != type_property->expr->op) {
-            expr_info_t ei;
+            expr_info_t ei = EMPTY_EXPR_INFO;
 
             ei.sa = string_arena_new(64);
             ei.prefix = "";
@@ -5396,7 +5412,9 @@ jdf_generate_code_complete_hook(const jdf_t *jdf,
              * The data_out might be NULL if we don't forward anything.
              */
             coutput("  if ( NULL != this_task->data._f_%s.data_out ) {\n"
+                    "#if defined(PARSEC_DEBUG_NOISIER)\n"
                     "     char tmp[128];\n"
+                    "#endif\n"
                     "     this_task->data._f_%s.data_out->version++;  /* %s */\n"
                     "     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output,\n"
                     "                          \"Complete hook of %%s: change Data copy %%p to version %%d at %%s:%%d\",\n"
@@ -5452,7 +5470,7 @@ static void jdf_generate_code_free_hash_table_entry(const jdf_t *jdf, const jdf_
 {
     jdf_dataflow_t *dl;
     jdf_dep_t *dep;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
     string_arena_t *sa = string_arena_new(64);
     string_arena_t *sa1 = string_arena_new(64);
     string_arena_t *sa_local = string_arena_new(64);
@@ -5632,7 +5650,7 @@ static char *jdf_dump_context_assignment(string_arena_t *sa_open,
     const jdf_function_entry_t *targetf;
     jdf_expr_t *el;
     jdf_name_list_t *nl;
-    expr_info_t local_info, dest_info;
+    expr_info_t local_info = EMPTY_EXPR_INFO, dest_info = EMPTY_EXPR_INFO;
     string_arena_t *sa2, *sa1, *sa_close;
     int i, nbopen;
     int nbparam_given, nbparam_required;
@@ -5688,6 +5706,24 @@ static char *jdf_dump_context_assignment(string_arena_t *sa_open,
         assert( nbparam_given == nbparam_required );
     }
 
+    if( NULL != call->named_ranges ) {
+        jdf_named_range_t *nr;
+        for(i = 1, nr = call->named_ranges; nr != NULL; nr = nr->next, i++) {
+            string_arena_add_string(sa_open, "%s%s  int %s;\n", prefix, indent(nbopen), nr->varname);
+            assert(JDF_RANGE == nr->range->op);
+            string_arena_add_string(sa_open,
+                                    "%s%sfor( %s = %s;",
+                                    prefix, indent(nbopen), nr->varname, dump_expr((void**)nr->range->jdf_ta1, &local_info));
+            string_arena_add_string(sa_open, "%s <= %s; %s+=",
+                                    nr->varname, dump_expr((void**)nr->range->jdf_ta2, &local_info), nr->varname);
+            string_arena_add_string(sa_open, "%s) {\n"
+                                    "%s%s  nc.locals[MAX_LOCAL_COUNT - %d].value = %s;\n",
+                                    dump_expr((void**)nr->range->jdf_ta3, &local_info),
+                                    prefix, indent(nbopen), i, nr->varname);
+            nbopen++; /* thomas */
+        }
+    }
+    
     for(def = targetf->locals, i = 0;
         def != NULL;
         def = def->next, i++) {
@@ -5887,7 +5923,7 @@ jdf_generate_code_iterate_successors_or_predecessors(const jdf_t *jdf,
     string_arena_t *sa_temp       = string_arena_new(1024);
     int depnb, last_datatype_idx;
     assignment_info_t ai;
-    expr_info_t info;
+    expr_info_t info = EMPTY_EXPR_INFO;
 
     info.sa = sa2;
     info.prefix = "";
@@ -6161,6 +6197,8 @@ static void jdf_generate_inline_c_function(jdf_expr_t *expr)
     string_arena_t *sa1, *sa2;
     assignment_info_t ai;
     int rc;
+    jdf_named_range_t *lbv;
+    int i;
 
     /* Make sure we generate an inline only once (this allows for shortcuts while identifying identical expr_t */
     if( NULL != expr->jdf_c_code.fname )
@@ -6188,9 +6226,16 @@ static void jdf_generate_inline_c_function(jdf_expr_t *expr)
         ai.sa = sa1;
         ai.holder = "assignments->";
         ai.expr = NULL;
+        for( lbv = expr->local_variables, i = 1; NULL != lbv; lbv = lbv->next, i++) {
+             coutput("  const int %s = ((const assignment_t *)assignments)[MAX_LOCAL_COUNT - %d].value;\n", lbv->varname, i);
+         }
         coutput("%s\n",
                 UTIL_DUMP_LIST(sa2, expr->jdf_c_code.function_context->locals, next,
                                dump_local_assignments, &ai, "", "  ", "\n", "\n"));
+
+         for( lbv = expr->local_variables, i = 1; NULL != lbv; lbv = lbv->next, i++) {
+             coutput("  (void)%s;\n", lbv->varname);
+         }
          coutput("%s\n",
                 UTIL_DUMP_LIST_FIELD(sa2, expr->jdf_c_code.function_context->locals, next, name,
                                      dump_string, NULL, "", "  (void)", ";", ";\n"));
@@ -6206,6 +6251,7 @@ static void jdf_generate_inline_c_function(jdf_expr_t *expr)
                 expr->jdf_c_code.fname, jdf_basename);
     }
 
+    
     string_arena_free(sa1);
     string_arena_free(sa2);
 
