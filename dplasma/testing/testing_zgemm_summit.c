@@ -27,6 +27,16 @@ int main(int argc, char ** argv)
     beta  += I * 0.21;
 #endif
 
+    if(0){
+        volatile int loop = 1;
+        char hostname[512];
+        gethostname(hostname, 512);
+        fprintf(stderr, "ssh -t %s gdb -p %d\n", hostname, getpid());
+        while(loop) {
+            sleep(1);
+        }
+    }
+    
     /* Set defaults for non argv iparams */
     iparam_default_gemm(iparam);
     iparam_default_ibnbmb(iparam, 0, 200, 200);

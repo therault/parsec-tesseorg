@@ -97,43 +97,40 @@ END
  *                      LOCAL_BARRIER                    *
  *      This is the task that controls the progress      *
  *********************************************************/
-LOCAL_BARRIER(x, y, z, r)
+LOCAL_BARRIER(x, y, z, u, v)
   x = 0 .. xMax
   y = 0 .. yMax
   z = 0 .. zMax
-  r = 0 .. (tP*tQ)-1
-  m = r/tP
-  n = r%tP
-  ir = %{ return ((x < xMax) ? tB : ( (descA->mt % (tB*tP)) == 0 ? (tB) : (descA->mt % (tB*tP)))) - 1; %}
-  jr = %{ return ((y < yMax) ? tC : ( (descB->nt % (tC*tQ)) == 0 ? (tC) : (descB->nt % (tC*tQ)))) - 1; %}
-  px = %{ if(z == 0) { if(x == 0) return xMax; else return x-1; } else return x; %}
-  py = %{ if(z == 0) { if(x == 0) { if(y == 0) return -1; else return y-1; } else return y; } else return y; %}
-  ipr = %{ return ((px < xMax) ? tB : ( (descA->mt % (tB*tP)) == 0 ? (tB) : (descA->mt % (tB*tP)))) - 1; %}
-  jpr = %{ return ((py < yMax) ? tC : ( (descB->nt % (tC*tQ)) == 0 ? (tC) : (descB->nt % (tC*tQ)))) - 1; %}
-      
-: descB(m, n)
+  u = 0 .. tP - 1
+  v = 0 .. tQ - 1
 
-CTL Z -> (z == 0) ?                        [ i = 0 .. ir,  j = 0 .. jr ]  Z MAKE_C( (i+x*tB)*tP,                   (j+y*tC)*tQ,       r)
-      -> (z != 0) ?                        [ i = 0 .. ir,  j = 0 .. jr ]  Z GEMM( (i+x*tB)*tP,                     (j+y*tC)*tQ,       z*tD*tP)
-      <- (z != 0) ?                        [ i = 0 .. ipr, j = 0 .. jpr ] Z GEMM( (i+x*tB)*tP,                     (j+y*tC)*tQ,       (z-1)*tD*tP)
-      <- (z == 0 ) & (x != 0) ?            [ i = 0 .. ipr, j = 0 .. jpr ] Z GEMM( (i+(x-1)*tB)*tP,                 (j+y*tC)*tQ,       (descC->mt/(tD*tP)-1)*tD*tP)
-      <- (z == 0 ) & (x == 0) & (y != 0) ? [ i = 0 .. ipr, j = 0 .. jpr ] Z GEMM( (i+(descA->mt/(tB*tP)-1)*tB)*tP, (j + (y-1)*tC)*tQ, (descC->mt/(tD*tP)-1)*tD*tP)
+  zp = z != 0 ? z-1 : zMax
+  xp = %{ if(z == 0) { if(x == 0) return xMax; else return x-1; } else return x; %}
+  yp = %{ if(z == 0) { if(x == 0) { if(y == 0) return -1; else return y-1; } else return y; } else return y; %}
+
+  imax = %{ int xb1 = tP * tB - 1; int xb2 = descC->mt - 1 - tB*tP*x; return xb1 < xb2 ? xb1 : xb2; %}
+  jmax = %{ int yb1 = tC - 1; int yb2 = (descC->nt - 1 - tC*tQ*y - v)/tQ; return yb1 < yb2 ? yb1 : yb2; %}
+  ipmax = %{ int xb1 = tP * tB - 1;
+             int xb2 = descC->mt - 1 - tB*tP*xp;
+             return xb1 < xb2 ? xb1 : xb2; %}
+  jpmax = %{ int yb1 = tC - 1;
+             int yb2 = (descC->nt - 1 - tC*tQ*yp - v)/tQ;
+             return yb1 < yb2 ? yb1 : yb2; %}
+  kpmax = %{ int kb1 = descB->mt-1;
+             int kb2 = (tD*tP)*(zp+1)+u-1;
+             int kb = kb1 < kb2 ? kb1 : kb2;
+             int T = (kb - u - tD*tP*zp) / tP;
+             return (tD*tP*zp) + T * tP + u; %}
+
+: descB(u, v)
+
+CTL Z -> (z == 0) ?                        [ i = 0 .. imax,  j = 0 .. jmax ]  Z MAKE_C(tB*tP*x + i, tQ*tC*y + j*tQ + v, u, v)
+      -> (z != 0) ?                        [ i = 0 .. imax,  j = 0 .. jmax ]  Z GEMM(  tB*tP*x + i, tQ*tC*y + j*tQ + v, tD*tP*z + u)
+      <- (z != 0) | (x != 0) | (y != 0) ?  [ i = 0 .. ipmax, j = 0 .. jpmax ] Z GEMM(  tB*tP*x + i, tQ*tC*y + j*tQ + v, kpmax)
 
 BODY
-  printf("LOCAL_BARRIER(%d, %d, %d, %d): range(x) = %d, range(y) = %d;\n"
-         "                               px = %d, py = %d;\n"
-         "                               range(px) = %d, range(py) = %d;\n"
-         "                               m = %d, n = %d;\n"
-         "                               b = %d, c = %d, d = %d, p = %d, q = %d;\n"
-         "                               xMax = %d, yMax = %d, zMax = %d;\n"
-         "                               M = %d, N = %d, K = %d\n",
-         x, y, z, r, ir, jr,
-         px, py,
-         ipr, jpr,
-         m, n,
-         tB, tC, tD, tP, tQ,
-         xMax, yMax, zMax,
-         descA->mt, descC->nt, descB->mt);
+    printf("LOCAL_BARRIER(%d, %d, %d, %d, %d): 0 <= i <= %d, 0 <= j <= %d, 0 <= iprev <= %d, 0 <= jprev <= %d, kpmax = %d;\n",
+           x, y, z, u, v, imax, jmax, ipmax, jpmax, kpmax);
   /* nothing */
 END
 
@@ -141,19 +138,20 @@ END
  *                       MAKE_C                   *
  **************************************************/
 
-/* MAKE_C(m, n, r) represents the beginning of the chain of local
- * contributions for the C(m, n) on rank r.  */
-MAKE_C(m, n, r)
+/* MAKE_C(m, n, u) represents the beginning of the chain of local
+ * contributions for the C(m, n) on rank u*tQ+v.  */
+MAKE_C(m, n, u, v)
   m = 0 .. descC->mt-1
   n = 0 .. descC->nt-1
-  r = 0 .. tP*tQ-1
+  u = 0 .. tP-1
+  v = (n%tQ) .. (n%tQ)
 
-: TrivDist(r)
+: descB(u, v)
 
 WRITE C <- NEW
-        -> C GEMM(m, n, 0)
+        -> C GEMM(m, n, u)
 
-CTL Z <- Z LOCAL_BARRIER( (m)/(tB*tP), (n)/(tC*tQ), 0, r )
+CTL Z <- Z LOCAL_BARRIER( m/(tB*tP), n/(tC*tQ), 0, u, v )
 
 BODY
   memset(C, 0, sizeof(parsec_complex64_t) * descC->bsiz);
@@ -163,22 +161,20 @@ END
  *                       ACC_C                    *
  **************************************************/
  
- /* ACC_C(m, n, r) represents the end of the chain of local
- * contributions for the C(m, n) on rank r */
-ACC_C(m, n, r)
+ /* ACC_C(m, n, u) represents the end of the chain of local
+ * contributions for the C(m, n) on rank u*tQ + v where v is n%tQ */
+ACC_C(m, n, u, v)
   m = 0 .. descC->mt-1
   n = 0 .. descC->nt-1
-  r = 0 .. tP*tQ-1
-  t_p = %{ return descC->super.rank_of(&descC->super, m, n) / tP; %}
-  t_q = %{ return descC->super.rank_of(&descC->super, m, n) % tP; %}
-  p_p = %{ return r / tP; %}
-  p_q = %{ return r % tP; %}
-  rfirst = (t_p + 1) % tP + t_q * tP
-  rlast  = t_p + t_q * tP
-  rnext  = (p_p + 1) % tP + p_q * tP
-  rprev  = (p_p + tP - 1) % tP + p_q * tP
-
-: TrivDist(r)
+  u = 0 .. tP-1
+  v = n%tQ .. n%tQ
+  ud = m%tP
+  us = (ud + tP-1) % tP
+  un = (u+tP-1)%tP
+  up = (u+1)%tP
+  klast = %{ return ((descB->mt-u-1)/tP)*tP+u; %}
+    
+: descB(u, v)
 
 /* Cl: local contribution for C(m, n). This task adds the remote
        contribution (if any) and sends it to the next accumulate task
@@ -186,15 +182,15 @@ ACC_C(m, n, r)
    Cm: if the last node, pointer to the user data, otherwise NULL
    Cr: remote contribution for C(m, n) */
 
-RW Cl <- C GEMM(m, n, descC->mt-1)
-      -> (r != rlast) ? Cr ACC_C(m, n, rnext)
+RW Cl <- C GEMM(m, n, klast)
+      -> u != ud ? Cr ACC_C(m, n, un, v)
 
-READ Cr <- (r == rfirst) ? NULL                  
-                         : Cl ACC_C(m, n, rprev)
+READ Cr <- u == us ? NULL
+                   : Cl ACC_C(m, n, up, v)
 
-RW Cm <- (r == rlast) ? descC(m, n)            
-                      : NULL
-      -> (r == rlast) ? descC(m, n)
+RW Cm <- (u == ud) ? descC(m, n)            
+                   : NULL
+      -> (u == ud) ? descC(m, n)
 
 BODY
 {
@@ -202,10 +198,15 @@ BODY
     int cCmb = descC->mb;
     int cCnb = descC->nb;
 
-    if( r != rfirst ) {
+    printf("ACC_C(%d, %d, %d):\n"
+           "   v = %d, ud = %d, us = %d, un = %d, up = %d, klast = %d\n",
+           m, n, u,
+           v, ud, us, un, up, klast);
+    
+    if( u != us ) {
     	CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Cr, cCmb, za, Cl, cCmb);
     }
-    if( r == rlast ) {
+    if( u == ud ) {
         CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Cl, cCmb, za, Cm, cCmb);
     }    
 }
@@ -220,24 +221,28 @@ GEMM(m, n, k)
   n = 0 .. descC->nt-1
   k = 0 .. descB->mt-1
   r = %{ return descB->super.rank_of((parsec_data_collection_t *)descB, k, n); %}
+  u = r / tQ
+  v = r % tQ
 
-  x = (m)/(tB*tP)
-  y = (n)/(tC*tQ)
-  z = (k)/(tD*tP)
+  x = m/(tB*tP)
+  y = n/(tC*tQ)
+  z = k/(tD*tP)
+
+  firstk = z*tP*tD + tP*(tD-1) + u
 
 : descB(k, n)
 
 READ A <- A READ_A(m ,k)
 READ B <- B READ_B(k, n)
-RW C <- k == 0 ? C MAKE_C(m, n, r)    
-               : C GEMM(m, n, k-1 )
-     -> k == descB->mt-1 ? Cl ACC_C(m, n, r)
-                         : C  GEMM(m, n, k+1)
+RW   C <- k < tP ? C MAKE_C(m, n, u, v)
+                 : C GEMM(m, n, k-tP )
+       -> k + tP >= descB->mt ? Cl ACC_C(m, n, u, v)
+                              : C  GEMM(m, n, k+tP)
 
-CTL Z <- (k > 0) & ((k % (tD*tP)) == 0) ? Z LOCAL_BARRIER(x, y, z, r)
-      -> ((k == descB->mt-1) | ((k % (tP * tD)) == ((tD-1)*tP))) & (z+1 <= zMax)                                 ? Z LOCAL_BARRIER(x, y, z+1, r)
-      -> ((k == descB->mt-1) | ((k % (tP * tD)) == ((tD-1)*tP))) & (z+1 >  zMax) & (x+1 <= xMax)                 ? Z LOCAL_BARRIER(x+1, y, 0, r)
-      -> ((k == descB->mt-1) | ((k % (tP * tD)) == ((tD-1)*tP))) & (z+1 >  zMax) & (x+1  > xMax) & (y+1 <= yMax) ? Z LOCAL_BARRIER(0, y+1, 0, r)
+CTL Z <- ( k >= tP ) & ((k % (tD*tP)) == u) ? Z LOCAL_BARRIER(x, y, z, u, v)
+      ->                          (k == firstk)  & (z <  zMax)                            ? Z LOCAL_BARRIER(x, y, z+1, u, v)
+      -> ((k + tP >= descB->mt) | (k == firstk)) & (z == zMax) & (x <  xMax)              ? Z LOCAL_BARRIER(x+1, y, 0, u, v)
+      -> ((k + tP >= descB->mt) | (k == firstk)) & (z == zMax) & (x == xMax) & (y < yMax) ? Z LOCAL_BARRIER(0, y+1, 0, u, v)
     
 BODY [type=CUDA
       dyld=cublasZgemm dyldtype=cublas_zgemm_t
@@ -317,9 +322,9 @@ BODY
     int ldbk = cBmb;
     int ldcm = cCmb;
 
-    printf("%s GEMM(%d, %d, %d): x = %d, y = %d, z = %d, xMax = %d, yMax = %d, zMax = %d, tD*tP = %d\n",
-    	   ((k > 0) && ((k % (tD*tP)) == 0)) || (k == descB->mt-1) ? "*** " : "    ",
-           m, n, k, x, y, z, xMax, yMax, zMax, tD*tP);
+    printf("%s GEMM(%d, %d, %d): x = %d, y = %d, z = %d, r = %d, u = %d, v = %d, firstk = %d\n",
+    	   (k + tP >= descB->mt) || (k == firstk) ? "***" : "   ",
+           m, n, k, x, y, z, r, u, v, firstk);
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
