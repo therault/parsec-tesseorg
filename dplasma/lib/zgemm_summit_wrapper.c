@@ -177,18 +177,18 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
             int u, v;
             parsec_zgemm_summit_NN_taskpool_t* handle;
 
-            if( d*p < B->mt ) {
-                fprintf(stderr, "Condition not met: d(%d) * p(%d) >= K(%d)\n",
+            if( d*p > B->mt ) {
+                fprintf(stderr, "Condition not met: d(%d) * p(%d) < K(%d)\n",
                         d, p, B->mt);
                 return NULL;
             }
-            if( b*p < A->mt ) {
-                fprintf(stderr, "Condition not met: b(%d) * p(%d) >= M(%d)\n",
+            if( b*p > A->mt ) {
+                fprintf(stderr, "Condition not met: b(%d) * p(%d) < M(%d)\n",
                         b, p, A->mt);
                 return NULL;
             }
-            if( c*q < C->nt ) {
-                fprintf(stderr, "Condition not met: c(%d) * q(%d) >= N(%d)\n",
+            if( c*q > C->nt ) {
+                fprintf(stderr, "Condition not met: c(%d) * q(%d) < N(%d)\n",
                         c, q, C->nt);
                 return NULL;
             }
@@ -209,7 +209,9 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                 int Mbound = M/(p*b);
                 int Mlim = p*b*Mbound + u;
                 handle->_g_xMax = Mbound + (Mlim < M) - 1;
+#if 0
                 printf("For rank (%d, %d): xMax = %d (M = %d, d=%d, MBound = %d, Mlim = %d)\n", u, v, handle->_g_xMax, M, b, Mbound, Mlim);
+#endif
             }
             
             {
@@ -217,7 +219,9 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                 int Nbound = N/(c*q);
                 int Nlim = c*q*Nbound + v;
                 handle->_g_yMax = Nbound + (Nlim < N) - 1;
+#if 0
                 printf("For rank (%d, %d): yMax = %d (N = %d, q=%d, c=%d, NBound = %d, Nlim = %d)\n", u, v, handle->_g_yMax, N, q, c, Nbound, Nlim);
+#endif
             }
             
             {
@@ -225,7 +229,9 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                 int Kbound = K/(d*p);
                 int Klim = d*p*Kbound + u;
                 handle->_g_zMax = Kbound + (Klim < K) - 1;
+#if 0
                 printf("For rank (%d, %d): zMax = %d (K = %d, p=%d, d=%d, KBound = %d, Klim = %d)\n", u, v, handle->_g_zMax, K, p, b, Kbound, Klim);
+#endif
             }
             
             zgemm_handle = (parsec_taskpool_t*)handle;

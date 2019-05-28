@@ -129,8 +129,10 @@ CTL Z -> (z == 0) ?                        [ i = 0 .. imax,  j = 0 .. jmax ]  Z 
       <- (z != 0) | (x != 0) | (y != 0) ?  [ i = 0 .. ipmax, j = 0 .. jpmax ] Z GEMM(  tB*tP*x + i, tQ*tC*y + j*tQ + v, kpmax)
 
 BODY
-    printf("LOCAL_BARRIER(%d, %d, %d, %d, %d): 0 <= i <= %d, 0 <= j <= %d, 0 <= iprev <= %d, 0 <= jprev <= %d, kpmax = %d;\n",
+#if 0
+printf("LOCAL_BARRIER(%d, %d, %d, %d, %d): 0 <= i <= %d, 0 <= j <= %d, 0 <= iprev <= %d, 0 <= jprev <= %d, kpmax = %d;\n",
            x, y, z, u, v, imax, jmax, ipmax, jpmax, kpmax);
+#endif
   /* nothing */
 END
 
@@ -198,11 +200,13 @@ BODY
     int cCmb = descC->mb;
     int cCnb = descC->nb;
 
-    printf("ACC_C(%d, %d, %d):\n"
+#if 0
+printf("ACC_C(%d, %d, %d):\n"
            "   v = %d, ud = %d, us = %d, un = %d, up = %d, klast = %d\n",
            m, n, u,
            v, ud, us, un, up, klast);
-    
+#endif
+
     if( u != us ) {
     	CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Cr, cCmb, za, Cl, cCmb);
     }
@@ -322,9 +326,11 @@ BODY
     int ldbk = cBmb;
     int ldcm = cCmb;
 
-    printf("%s GEMM(%d, %d, %d): x = %d, y = %d, z = %d, r = %d, u = %d, v = %d, firstk = %d\n",
+#if 0
+printf("%s GEMM(%d, %d, %d): x = %d, y = %d, z = %d, r = %d, u = %d, v = %d, firstk = %d\n",
     	   (k + tP >= descB->mt) || (k == firstk) ? "***" : "   ",
            m, n, k, x, y, z, r, u, v, firstk);
+#endif
 
 #if !defined(PARSEC_DRY_RUN)
     CORE_zgemm(transA, transB,
