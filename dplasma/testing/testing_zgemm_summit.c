@@ -91,6 +91,7 @@ int main(int argc, char ** argv)
             PASTE_CODE_PROGRESS_KERNEL(parsec, zgemm);
 
             dplasma_zgemm_summit_Destruct( PARSEC_zgemm_summit );
+            parsec_devices_reset_load(parsec);
         }
 
         parsec_data_free(dcA.mat);

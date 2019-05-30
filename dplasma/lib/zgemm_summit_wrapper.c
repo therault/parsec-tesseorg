@@ -147,6 +147,7 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
 {
     parsec_taskpool_t* zgemm_handle = NULL;
     parsec_arena_t* arena;
+    int *dev_index, nb, dev;
 
     if( TrivDistInitialized == 0 ) {
         TrivDistInitialized = 1;
@@ -192,13 +193,30 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                         c, q, C->nt);
                 return NULL;
             }
+
+            nb = 0;
+            for(dev = 0; dev < (int)parsec_nb_devices; dev++) {
+                parsec_device_t *device = parsec_devices_get(dev);
+                if( PARSEC_DEV_CUDA == device->type ) {
+                    nb++;
+                }
+            }
+            dev_index = (int*)malloc(nb * sizeof(int));
+            nb = 0;
+            for(dev = 0; dev < (int)parsec_nb_devices; dev++) {
+                parsec_device_t *device = parsec_devices_get(dev);
+                if( PARSEC_DEV_CUDA == device->type ) {
+                    dev_index[nb++] = device->device_index;
+                }
+            }
             
             handle = parsec_zgemm_summit_NN_new(GEMM_SUMMIT_NN, transA, transB, alpha,
                                                 A,
                                                 B,
                                                 C,
                                                 &TrivDist,
-                                                b, c, d, p, q);
+                                                b, c, d, p, q,
+                                                nb, dev_index);
             arena = handle->arenas[PARSEC_zgemm_summit_NN_DEFAULT_ARENA];
 
             u = B->super.myrank / q;
