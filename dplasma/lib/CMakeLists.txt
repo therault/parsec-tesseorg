@@ -37,7 +37,7 @@ set(JDF
   # BLAS Level 3
   #
   zgemm_benchmark.jdf
-  zgemm_summit_NN.jdf
+  zgemm_summit_NN_B.jdf  zgemm_summit_NN_C.jdf
   zgemm_NN.jdf zgemm_TN.jdf zgemm_NT.jdf zgemm_TT.jdf
   zgemm_NN_summa.jdf zgemm_TN_summa.jdf zgemm_NT_summa.jdf zgemm_TT_summa.jdf
   zhemm.jdf

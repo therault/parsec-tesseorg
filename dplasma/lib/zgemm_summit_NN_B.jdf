@@ -1,0 +1,361 @@
+extern "C" %{
+/*
+ * Copyright (c) 2017-2017 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation. All rights
+ *                         reserved.
+ *
+ * @precisions normal z -> s d c
+ * $COPYRIGHT
+ *
+ */
+
+#include <math.h>
+
+#include "dplasma/lib/dplasmajdf.h"
+#include "dplasma/lib/dplasmaaux.h"
+#include "dplasma_bcast.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+#include "flops.h"
+
+#if defined(PARSEC_HAVE_CUDA)
+#include <cublas.h>
+#endif  /* defined(PARSEC_HAVE_CUDA) */
+
+%}
+
+/* Keep this first, as in all jdf in this directory, to
+ * enable switching between SUMMA implementations.
+ * This is the JDF-like CRTP ;)
+ */
+summa_type [ type = int ]
+
+transA     [ type = int ]
+transB     [ type = int ]
+alpha      [ type = parsec_complex64_t ]
+
+/*
+ * A is MT x KT
+ * B is KT x NT
+ * C is MT x NT
+ */
+descA      [ type = "const parsec_tiled_matrix_dc_t *" ]
+descB      [ type = "const parsec_tiled_matrix_dc_t *" ]
+descC      [ type = "parsec_tiled_matrix_dc_t *"       ]
+TrivDist   [ type = "parsec_data_collection_t *"       ]
+
+/*
+ * The process grid is tP x tQ
+ * A compute block is tB.tP x tC.tQ += tB.tP x tD.tP * tD.tP x tC.tQ
+ */
+tB         [ type = int ]
+tC         [ type = int ]
+tD         [ type = int ]
+tP         [ type = int ]
+tQ         [ type = int ]
+
+nb_cuda_devices   [ type = "int"   ]
+cuda_device_index [ type = "int *" ]
+
+xMax       [ type = int default = "-1" hidden=on ]
+yMax       [ type = int default = "-1" hidden=on ]
+zMax       [ type = int default = "-1" hidden=on ]
+
+/*********************************************************
+ *                           READ_A                      *
+ * A is broadcast to all target GEMMs from the beginning *
+ *********************************************************/
+READ_A(m, k)
+  m = 0 .. descA->mt-1
+  k = 0 .. descA->nt-1
+
+:descA(m, k)
+
+READ A <- descA(m, k)
+       -> A GEMM(m, 0 .. descC->nt-1, k)
+
+BODY
+ /* Nothing */
+END
+
+/*********************************************************
+ *                         READ_B                        *
+ * B is broadcast to all target GEMMs from the beginning *
+ *    This code assumes that B << A ~ C, and that this   *
+ *        broadcast is in fact a local operation         *
+ *********************************************************/
+READ_B(k, n)
+  k = 0 .. descB->mt-1
+  n = 0 .. descB->nt-1
+
+: descB(k, n)
+
+READ B <- descB(k, n)
+       -> B GEMM(0 .. descC->mt-1, n, k)
+
+BODY
+  /* Nothing */
+END
+
+/*********************************************************
+ *                      LOCAL_BARRIER                    *
+ *      This is the task that controls the progress      *
+ *********************************************************/
+LOCAL_BARRIER(x, y, z, u, v)
+  x = 0 .. xMax
+  y = 0 .. yMax
+  z = 0 .. zMax
+  u = 0 .. tP - 1
+  v = 0 .. tQ - 1
+
+  zp = z != 0 ? z-1 : zMax
+  xp = %{ if(z == 0) { if(x == 0) return xMax; else return x-1; } else return x; %}
+  yp = %{ if(z == 0) { if(x == 0) { if(y == 0) return -1; else return y-1; } else return y; } else return y; %}
+
+  imax = %{ int xb1 = tP * tB - 1; int xb2 = descC->mt - 1 - tB*tP*x; return xb1 < xb2 ? xb1 : xb2; %}
+  jmax = %{ int yb1 = tC - 1; int yb2 = (descC->nt - 1 - tC*tQ*y - v)/tQ; return yb1 < yb2 ? yb1 : yb2; %}
+  ipmax = %{ int xb1 = tP * tB - 1;
+             int xb2 = descC->mt - 1 - tB*tP*xp;
+             return xb1 < xb2 ? xb1 : xb2; %}
+  jpmax = %{ int yb1 = tC - 1;
+             int yb2 = (descC->nt - 1 - tC*tQ*yp - v)/tQ;
+             return yb1 < yb2 ? yb1 : yb2; %}
+  kpmax = %{ int kb1 = descB->mt-1;
+             int kb2 = (tD*tP)*(zp+1)+u-1;
+             int kb = kb1 < kb2 ? kb1 : kb2;
+             int T = (kb - u - tD*tP*zp) / tP;
+             return (tD*tP*zp) + T * tP + u; %}
+
+: descB(u, v)
+
+CTL Z -> (z == 0) ?                        [ i = 0 .. imax,  j = 0 .. jmax ]  Z MAKE_C(tB*tP*x + i, tQ*tC*y + j*tQ + v, u, v)
+      -> (z != 0) ?                        [ i = 0 .. imax,  j = 0 .. jmax ]  Z GEMM(  tB*tP*x + i, tQ*tC*y + j*tQ + v, tD*tP*z + u)
+      <- (z != 0) | (x != 0) | (y != 0) ?  [ i = 0 .. ipmax, j = 0 .. jpmax ] Z GEMM(  tB*tP*xp + i, tQ*tC*yp + j*tQ + v, kpmax)
+
+BODY
+#if 0
+printf("LOCAL_BARRIER(%d, %d, %d, %d, %d): 0 <= i <= %d, 0 <= j <= %d, 0 <= iprev <= %d, 0 <= jprev <= %d, kpmax = %d;\n",
+           x, y, z, u, v, imax, jmax, ipmax, jpmax, kpmax);
+#endif
+  /* nothing */
+END
+
+/**************************************************
+ *                       MAKE_C                   *
+ **************************************************/
+
+/* MAKE_C(m, n, u) represents the beginning of the chain of local
+ * contributions for the C(m, n) on rank u*tQ+v.  */
+MAKE_C(m, n, u, v)
+  m = 0 .. descC->mt-1
+  n = 0 .. descC->nt-1
+  u = 0 .. tP-1
+  v = (n%tQ) .. (n%tQ)
+
+: descB(u, v)
+
+WRITE C <- NEW
+        -> C GEMM(m, n, u)
+
+CTL Z <- Z LOCAL_BARRIER( m/(tB*tP), n/(tC*tQ), 0, u, v )
+
+BODY
+  memset(C, 0, sizeof(parsec_complex64_t) * descC->bsiz);
+  if( nb_cuda_devices > 0 ) {
+      int g = (n / tQ) % nb_cuda_devices;
+      parsec_advise_data_on_device( _f_C->original,
+                                    cuda_device_index[g],
+                                    PARSEC_DEV_DATA_ADVICE_PREFERRED_DEVICE );
+  }
+END
+
+/**************************************************
+ *                       ACC_C                    *
+ **************************************************/
+ 
+ /* ACC_C(m, n, u) represents the end of the chain of local
+ * contributions for the C(m, n) on rank u*tQ + v where v is n%tQ */
+ACC_C(m, n, u, v)
+  m = 0 .. descC->mt-1
+  n = 0 .. descC->nt-1
+  u = 0 .. tP-1
+  v = n%tQ .. n%tQ
+  ud = m%tP
+  us = (ud + tP-1) % tP
+  un = (u+tP-1)%tP
+  up = (u+1)%tP
+  klast = %{ return ((descB->mt-u-1)/tP)*tP+u; %}
+    
+: descB(u, v)
+
+/* Cl: local contribution for C(m, n). This task adds the remote
+       contribution (if any) and sends it to the next accumulate task
+       (if any), or it adds the computed sum to the user memory
+   Cm: if the last node, pointer to the user data, otherwise NULL
+   Cr: remote contribution for C(m, n) */
+
+RW Cl <- C GEMM(m, n, klast)
+      -> u != ud ? Cr ACC_C(m, n, un, v)
+
+READ Cr <- u == us ? NULL
+                   : Cl ACC_C(m, n, up, v)
+
+RW Cm <- (u == ud) ? descC(m, n)            
+                   : NULL
+      -> (u == ud) ? descC(m, n)
+
+BODY
+{
+    parsec_complex64_t za = (parsec_complex64_t)1.0;
+    int cCmb = descC->mb;
+    int cCnb = descC->nb;
+
+#if 0
+printf("ACC_C(%d, %d, %d):\n"
+           "   v = %d, ud = %d, us = %d, un = %d, up = %d, klast = %d\n",
+           m, n, u,
+           v, ud, us, un, up, klast);
+#endif
+
+    if( u != us ) {
+    	CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Cr, cCmb, za, Cl, cCmb);
+    }
+    if( u == ud ) {
+        CORE_zgeadd(PlasmaNoTrans, cCmb, cCnb, za, Cl, cCmb, za, Cm, cCmb);
+    }    
+}
+END
+
+/**************************************************
+ *                       GEMM                     *
+ **************************************************/
+
+GEMM(m, n, k)
+  m = 0 .. descC->mt-1
+  n = 0 .. descC->nt-1
+  k = 0 .. descB->mt-1
+  r = %{ return descB->super.rank_of((parsec_data_collection_t *)descB, k, n); %}
+  u = r / tQ
+  v = r % tQ
+
+  x = m/(tB*tP)
+  y = n/(tC*tQ)
+  z = k/(tD*tP)
+
+  firstk = z*tP*tD + tP*(tD-1) + u
+
+: descB(k, n)
+
+READ A <- A READ_A(m ,k)
+READ B <- B READ_B(k, n)
+RW   C <- k < tP ? C MAKE_C(m, n, u, v)
+                 : C GEMM(m, n, k-tP )
+       -> k + tP >= descB->mt ? Cl ACC_C(m, n, u, v)
+                              : C  GEMM(m, n, k+tP)
+
+CTL Z <- ( k >= tP ) & ((k % (tD*tP)) == u) ? Z LOCAL_BARRIER(x, y, z, u, v)
+      ->                          (k == firstk)  & (z <  zMax)                            ? Z LOCAL_BARRIER(x, y, z+1, u, v)
+      -> ((k + tP >= descB->mt) | (k == firstk)) & (z == zMax) & (x <  xMax)              ? Z LOCAL_BARRIER(x+1, y, 0, u, v)
+      -> ((k + tP >= descB->mt) | (k == firstk)) & (z == zMax) & (x == xMax) & (y < yMax) ? Z LOCAL_BARRIER(0, y+1, 0, u, v)
+    
+BODY [type=CUDA
+      dyld=cublasZgemm dyldtype=cublas_zgemm_t
+      weight=(descA->nt-k)]
+{
+#if defined(PRECISION_z) || defined(PRECISION_c)
+    cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
+    cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
+#else
+    double lalpha = alpha;
+    double lbeta  = (k==0) ? 0.0:1.0;
+#endif
+    int cAmb = descA->mb;
+    int cAnb = descA->nb;
+    int cBmb = descB->mb;
+    int cBnb = descB->nb;
+    int cCmb = cAmb;
+    int cCnb = cBnb;
+
+    int tempmm = cCmb;
+    int tempnn = cCnb;
+    int tempkk = cAnb;
+    int ldam = cAmb;
+    int ldbk = cBmb;
+    int ldcm = cCmb;
+
+#if defined(PARSEC_DEBUG_NOISIER)
+    /* fprintf(stdout, */
+    /*         "CUDA: gemm( %d, %d, %d ) > A(%d,%d) * B(%d,%d) C(%d,%d)\n", */
+    /*         m, n, k, cAmb, cAnb, cBmb, cBnb, cCmb, cCnb); */
+#endif
+
+    cublasStatus_t status;
+    cublasSetKernelStream( parsec_body.stream );
+    parsec_body.dyld_fn( lapack_const(transA), lapack_const(transB),
+             tempmm, tempnn, tempkk,
+             lalpha, (cuDoubleComplex*)A, ldam,
+                     (cuDoubleComplex*)B, ldbk,
+             lbeta,  (cuDoubleComplex*)C, ldcm );
+    status = cublasGetError();
+    PARSEC_CUDA_CHECK_ERROR( "cublasZgemm ", status,
+                            {return -1;} );
+
+    /* Quick and dirty emulation of the next GEMM */
+    if( k == descC->mt -1 ) {
+        __parsec_zgemm_summit_NN_B_GEMM_task_t next_gemm;
+        memcpy(&next_gemm, this_task, sizeof(__parsec_zgemm_summit_NN_B_GEMM_task_t));
+        next_gemm.locals.k.value = descC->mt -1;
+        assert( PARSEC_DEV_CUDA == next_gemm.task_class->incarnations[this_task->chore_id].type );
+        if(NULL != next_gemm.task_class->incarnations[this_task->chore_id].evaluate) {
+            if( next_gemm.task_class->incarnations[this_task->chore_id].evaluate((parsec_task_t*)&next_gemm) ==
+                PARSEC_HOOK_RETURN_NEXT ) {
+                    /* The next GEMM wants to run on the CPUs... */
+                    gpu_task->pushout |= (1 << 0);
+            }
+        }
+    }
+    
+}
+END
+
+BODY
+{
+    parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
+
+    int cAmb = descA->mb;
+    int cAnb = descA->nb;
+    int cBmb = descB->mb;
+    int cBnb = descB->nb;
+    int cCmb = cAmb;
+    int cCnb = cBnb;
+
+    int tempmm = cCmb;
+    int tempnn = cCnb;
+    int tempkk = cAnb;
+    int ldam = cAmb;
+    int ldbk = cBmb;
+    int ldcm = cCmb;
+
+#if 0
+printf("%s GEMM(%d, %d, %d): x = %d, y = %d, z = %d, r = %d, u = %d, v = %d, firstk = %d\n",
+    	   (k + tP >= descB->mt) || (k == firstk) ? "***" : "   ",
+           m, n, k, x, y, z, r, u, v, firstk);
+#endif
+
+#if !defined(PARSEC_DRY_RUN)
+    CORE_zgemm(transA, transB,
+               tempmm, tempnn, tempkk,
+               alpha, A /*A(m, k)*/, ldam,
+                      B /*B(k, n)*/, ldbk,
+               lbeta, C /*C(m, n)*/, ldcm);
+#endif  /* !defined(PARSEC_DRY_RUN) */
+
+    printlog("gemm( %d, %d, %d )\n"
+             "    ( %s, %s, %d, %d, %d, %f, A(%d,%d), %d, B(%d,%d), %d, %f, C(%d,%d), %d)\n",
+             m, n, k,
+             plasma_const( transA ), plasma_const( transB ),
+             tempmm, tempnn, tempkk,
+             creal(alpha), m, k, ldam,
+                           k, n, ldbk,
+             creal(lbeta), m, n, ldcm );
+}
+END

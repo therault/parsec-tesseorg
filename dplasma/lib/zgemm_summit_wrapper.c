@@ -15,7 +15,8 @@
 #include "dplasma/include/dplasmatypes.h"
 #include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "dplasma_z.h"
-#include "zgemm_summit_NN.h"
+#include "zgemm_summit_NN_B.h"
+#include "zgemm_summit_NN_C.h"
 
 #include "parsec/utils/mca_param.h"
 static parsec_data_collection_t TrivDist;
@@ -148,6 +149,8 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
     parsec_taskpool_t* zgemm_handle = NULL;
     parsec_arena_t* arena;
     int *dev_index, nb, dev;
+    int Asize, Bsize, Csize;
+    int u, v;
 
     if( TrivDistInitialized == 0 ) {
         TrivDistInitialized = 1;
@@ -172,28 +175,14 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
         dplasma_error("zgemm_summit_New", "illegal value of transB");
         return NULL /*-2*/;
     }
+
+    Asize = A->mt * A->nt;
+    Bsize = B->mt * B->nt;
+    Csize = C->mt * C->nt;
     
     if( PlasmaNoTrans == transA ) {
         if( PlasmaNoTrans == transB ) {
-            int u, v;
-            parsec_zgemm_summit_NN_taskpool_t* handle;
-
-            if( d*p > B->mt ) {
-                fprintf(stderr, "Condition not met: d(%d) * p(%d) < K(%d)\n",
-                        d, p, B->mt);
-                return NULL;
-            }
-            if( b*p > A->mt ) {
-                fprintf(stderr, "Condition not met: b(%d) * p(%d) < M(%d)\n",
-                        b, p, A->mt);
-                return NULL;
-            }
-            if( c*q > C->nt ) {
-                fprintf(stderr, "Condition not met: c(%d) * q(%d) < N(%d)\n",
-                        c, q, C->nt);
-                return NULL;
-            }
-
+            
             nb = 0;
             for(dev = 0; dev < (int)parsec_nb_devices; dev++) {
                 parsec_device_t *device = parsec_devices_get(dev);
@@ -210,52 +199,126 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                 }
             }
             
-            handle = parsec_zgemm_summit_NN_new(GEMM_SUMMIT_NN, transA, transB, alpha,
-                                                A,
-                                                B,
-                                                C,
-                                                &TrivDist,
-                                                b, c, d, p, q,
-                                                nb, dev_index);
-            arena = handle->arenas[PARSEC_zgemm_summit_NN_DEFAULT_ARENA];
+            if( Bsize > Asize && Bsize > Csize) {
+                parsec_zgemm_summit_NN_B_taskpool_t* handle;
 
-            u = B->super.myrank / q;
-            v = B->super.myrank % q;
+                if( d*p > B->mt ) {
+                    fprintf(stderr, "Condition not met: d(%d) * p(%d) < K(%d)\n",
+                            d, p, B->mt);
+                    return NULL;
+                }
+                if( b*p > A->mt ) {
+                    fprintf(stderr, "Condition not met: b(%d) * p(%d) < M(%d)\n",
+                            b, p, A->mt);
+                    return NULL;
+                }
+                if( c*q > C->nt ) {
+                    fprintf(stderr, "Condition not met: c(%d) * q(%d) < N(%d)\n",
+                            c, q, C->nt);
+                    return NULL;
+                }
 
-            {
-                int M = A->mt;
-                int Mbound = M/(p*b);
-                int Mlim = p*b*Mbound + u;
-                handle->_g_xMax = Mbound + (Mlim < M) - 1;
+                handle = parsec_zgemm_summit_NN_B_new(GEMM_SUMMIT_NN_B, transA, transB, alpha,
+                                                      A,
+                                                      B,
+                                                      C,
+                                                      &TrivDist,
+                                                      b, c, d, p, q,
+                                                      nb, dev_index);
+                u = B->super.myrank / q;
+                v = B->super.myrank % q;
+                {
+                    int M = A->mt;
+                    int Mbound = M/(p*b);
+                    int Mlim = p*b*Mbound + u;
+                    handle->_g_xMax = Mbound + (Mlim < M) - 1;
 #if 0
-                printf("For rank (%d, %d): xMax = %d (M = %d, d=%d, MBound = %d, Mlim = %d)\n", u, v, handle->_g_xMax, M, b, Mbound, Mlim);
+                    printf("For rank (%d, %d): xMax = %d (M = %d, d=%d, MBound = %d, Mlim = %d)\n", u, v, handle->_g_xMax, M, b, Mbound, Mlim);
 #endif
-            }
+                }
             
-            {
-                int N = C->nt;
-                int Nbound = N/(c*q);
-                int Nlim = c*q*Nbound + v;
-                handle->_g_yMax = Nbound + (Nlim < N) - 1;
+                {
+                    int N = C->nt;
+                    int Nbound = N/(c*q);
+                    int Nlim = c*q*Nbound + v;
+                    handle->_g_yMax = Nbound + (Nlim < N) - 1;
 #if 0
-                printf("For rank (%d, %d): yMax = %d (N = %d, q=%d, c=%d, NBound = %d, Nlim = %d)\n", u, v, handle->_g_yMax, N, q, c, Nbound, Nlim);
+                    printf("For rank (%d, %d): yMax = %d (N = %d, q=%d, c=%d, NBound = %d, Nlim = %d)\n", u, v, handle->_g_yMax, N, q, c, Nbound, Nlim);
 #endif
-            }
-            
-            {
-                int K = B->mt;
-                int Kbound = K/(d*p);
-                int Klim = d*p*Kbound + u;
-                handle->_g_zMax = Kbound + (Klim < K) - 1;
+                }
+                
+                {
+                    int K = B->mt;
+                    int Kbound = K/(d*p);
+                    int Klim = d*p*Kbound + u;
+                    handle->_g_zMax = Kbound + (Klim < K) - 1;
 #if 0
-                printf("For rank (%d, %d): zMax = %d (K = %d, p=%d, d=%d, KBound = %d, Klim = %d)\n", u, v, handle->_g_zMax, K, p, b, Kbound, Klim);
+                    printf("For rank (%d, %d): zMax = %d (K = %d, p=%d, d=%d, KBound = %d, Klim = %d)\n", u, v, handle->_g_zMax, K, p, b, Kbound, Klim);
 #endif
-            }
+                }
+                arena = handle->arenas[PARSEC_zgemm_summit_NN_B_DEFAULT_ARENA];
+                zgemm_handle = (parsec_taskpool_t*)handle;
+            } else {
+                parsec_zgemm_summit_NN_B_taskpool_t* handle;
+                
+                if( d > B->mt ) {
+                    fprintf(stderr, "Condition not met: d(%d) < K(%d)\n",
+                            d, B->mt);
+                    return NULL;
+                }
+                if( b*p > A->mt ) {
+                    fprintf(stderr, "Condition not met: b(%d) * p(%d) < M(%d)\n",
+                            b, p, A->mt);
+                    return NULL;
+                }
+                if( c*q > C->nt ) {
+                    fprintf(stderr, "Condition not met: c(%d) * q(%d) < N(%d)\n",
+                            c, q, C->nt);
+                    return NULL;
+                }
+
+                handle = parsec_zgemm_summit_NN_C_new(GEMM_SUMMIT_NN_C, transA, transB, alpha,
+                                                      A,
+                                                      B,
+                                                      C,
+                                                      &TrivDist,
+                                                      b, c, d, p, q,
+                                                      nb, dev_index);
+                u = C->super.myrank / q;
+                v = C->super.myrank % q;
+                {
+                    int M = A->mt;
+                    int Mbound = M/(p*b);
+                    int Mlim = p*b*Mbound + u;
+                    handle->_g_xMax = Mbound + (Mlim < M) - 1;
+#if 0
+                    printf("For rank (%d, %d): xMax = %d (M = %d, d=%d, MBound = %d, Mlim = %d)\n", u, v, handle->_g_xMax, M, b, Mbound, Mlim);
+#endif
+                }
             
-            zgemm_handle = (parsec_taskpool_t*)handle;
-        } 
+                {
+                    int N = C->nt;
+                    int Nbound = N/(c*q);
+                    int Nlim = c*q*Nbound + v;
+                    handle->_g_yMax = Nbound + (Nlim < N) - 1;
+#if 0
+                    printf("For rank (%d, %d): yMax = %d (N = %d, q=%d, c=%d, NBound = %d, Nlim = %d)\n", u, v, handle->_g_yMax, N, q, c, Nbound, Nlim);
+#endif
+                }
+                
+                {
+                    int K = B->mt;
+                    handle->_g_zMax = (K+d-1)/d - 1;
+#if 0
+                    printf("For rank (%d, %d): zMax = %d (K = %d, p=%d, d=%d, KBound = %d, Klim = %d)\n", u, v, handle->_g_zMax, K, p, b, Kbound, Klim);
+#endif
+                }
+                arena = handle->arenas[PARSEC_zgemm_summit_NN_C_DEFAULT_ARENA];
+                zgemm_handle = (parsec_taskpool_t*)handle;           
+            }
+        }
     }
-
+    
     dplasma_add2arena_tile(arena,
                            A->bsiz*sizeof(parsec_complex64_t),
                            PARSEC_ARENA_ALIGNMENT_SSE,
@@ -287,10 +350,10 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
 void
 dplasma_zgemm_summit_Destruct( parsec_taskpool_t *tp )
 {
-    parsec_zgemm_summit_NN_taskpool_t *zgemm_taskpool = (parsec_zgemm_summit_NN_taskpool_t *)tp;
-    if( zgemm_taskpool->_g_summa_type == GEMM_SUMMIT_NN ) {
-        if (zgemm_taskpool->arenas[PARSEC_zgemm_summit_NN_DEFAULT_ARENA])
-            parsec_matrix_del2arena( zgemm_taskpool->arenas[PARSEC_zgemm_summit_NN_DEFAULT_ARENA] );
+    parsec_zgemm_summit_NN_B_taskpool_t *zgemm_taskpool = (parsec_zgemm_summit_NN_B_taskpool_t *)tp;
+    if( zgemm_taskpool->_g_summa_type == GEMM_SUMMIT_NN_B ) {
+        if (zgemm_taskpool->arenas[PARSEC_zgemm_summit_NN_B_DEFAULT_ARENA])
+            parsec_matrix_del2arena( zgemm_taskpool->arenas[PARSEC_zgemm_summit_NN_B_DEFAULT_ARENA] );
     }
     parsec_taskpool_free(tp);
 }

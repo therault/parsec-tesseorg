@@ -329,12 +329,13 @@ void dplasma_zherbt_Destruct( parsec_taskpool_t *o );
  *               Tesse project functions
  */
 
-#define SUMMA_NN      1
-#define SUMMA_NT      2
-#define SUMMA_TT      3
-#define SUMMA_TN      4
-#define GEMM_BCAST_NN 5
-#define GEMM_SUMMIT_NN 6
+#define SUMMA_NN         1
+#define SUMMA_NT         2
+#define SUMMA_TT         3
+#define SUMMA_TN         4
+#define GEMM_BCAST_NN    5
+#define GEMM_SUMMIT_NN_B 6
+#define GEMM_SUMMIT_NN_C 7
 
 int dplasma_zsumma( parsec_context_t *parsec,
                     PLASMA_enum transA, PLASMA_enum transB,
