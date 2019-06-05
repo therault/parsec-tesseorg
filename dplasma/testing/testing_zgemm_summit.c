@@ -85,7 +85,7 @@ int main(int argc, char ** argv)
                                        (parsec_tiled_matrix_dc_t *)&dcA,
                                        (parsec_tiled_matrix_dc_t *)&dcB,
                                        (parsec_tiled_matrix_dc_t *)&dcC,
-                                       sB, sC, sD, P, Q));
+                                       sB, sC, sD, P, Q, look_ahead));
 
             /* lets rock! */
             PASTE_CODE_PROGRESS_KERNEL(parsec, zgemm);

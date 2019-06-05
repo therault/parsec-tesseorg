@@ -151,7 +151,7 @@ parsec_taskpool_t* dplasma_ztrsm_New( PLASMA_enum side, PLASMA_enum uplo, PLASMA
                                    const parsec_complex64_t alpha, const parsec_tiled_matrix_dc_t *A, parsec_tiled_matrix_dc_t *B);
 
 parsec_taskpool_t* dplasma_zgemm_summit_New(PLASMA_enum transA, PLASMA_enum transB, parsec_complex64_t alpha, const parsec_tiled_matrix_dc_t* A,
-                                            const parsec_tiled_matrix_dc_t* B, parsec_tiled_matrix_dc_t* C, int b, int c, int d, int p, int q);
+                                            const parsec_tiled_matrix_dc_t* B, parsec_tiled_matrix_dc_t* C, int b, int c, int d, int p, int q, int l);
 
 /* Level 3 Blas extensions */
 parsec_taskpool_t* dplasma_ztrsmpl_New(const parsec_tiled_matrix_dc_t *A, const parsec_tiled_matrix_dc_t *L,

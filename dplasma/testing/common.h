@@ -72,6 +72,7 @@ enum iparam_t {
   IPARAM_SUMMIT_B,     /* ... To remove ... */
   IPARAM_SUMMIT_C,     /* ... To remove ... */
   IPARAM_SUMMIT_D,     /* ... To remove ... */
+  IPARAM_SUMMIT_LOOKAHEAD, /* ... To remove ... */
   IPARAM_SIZEOF
 };
 
@@ -125,6 +126,7 @@ void iparam_default_ibnbmb(int* iparam, int ib, int nb, int mb);
     int sB = iparam[IPARAM_SUMMIT_B];                                   \
     int sC = iparam[IPARAM_SUMMIT_C];                                   \
     int sD = iparam[IPARAM_SUMMIT_D];                                   \
+    int look_ahead = iparam[IPARAM_SUMMIT_LOOKAHEAD];                   \
     (void)rank;(void)nodes;(void)cores;(void)gpus;(void)P;(void)Q;(void)M;(void)N;(void)K;(void)NRHS; \
     (void)LDA;(void)LDB;(void)LDC;(void)IB;(void)MB;(void)NB;(void)MT;(void)NT;(void)KT; \
     (void)SMB;(void)SNB;(void)HMB;(void)HNB;(void)check;(void)loud;(void)async; \

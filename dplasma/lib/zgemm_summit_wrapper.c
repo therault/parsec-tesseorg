@@ -144,7 +144,8 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                           const parsec_tiled_matrix_dc_t* B,
                           parsec_tiled_matrix_dc_t* C,
                           int b, int c, int d,
-                          int p, int q)
+                          int p, int q,
+                          int look_ahead)
 {
     parsec_taskpool_t* zgemm_handle = NULL;
     parsec_arena_t* arena;
@@ -282,7 +283,7 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                                                       B,
                                                       C,
                                                       &TrivDist,
-                                                      b, c, d, p, q,
+                                                      b, c, d, p, q, look_ahead,
                                                       nb, dev_index);
                 u = C->super.myrank / q;
                 v = C->super.myrank % q;

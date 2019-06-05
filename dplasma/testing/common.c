@@ -240,6 +240,7 @@ static struct option long_options[] =
     {"sB",          required_argument,  0, 'G'},
     {"sC",          required_argument,  0, 'G'},
     {"sD",          required_argument,  0, 'G'},
+    {"sL",          required_argument,  0, 'G'},
 
     /* Auxiliary options */
     {"verbose",     optional_argument,  0, 'v'},
@@ -322,6 +323,8 @@ static void parse_arguments(int *_argc, char*** _argv, int* iparam)
                     iparam[IPARAM_SUMMIT_C] = atoi(optarg);
                 } else if( strcmp("sD", long_options[opt].name) == 0 ) {
                     iparam[IPARAM_SUMMIT_D] = atoi(optarg);
+                } else if( strcmp("sL", long_options[opt].name) == 0 ) {
+                    iparam[IPARAM_SUMMIT_LOOKAHEAD] = atoi(optarg);
                 } else {
                     fprintf(stderr, "long_options[%d].name = %s\n", opt, long_options[opt].name);
                     assert(0);
@@ -587,7 +590,8 @@ static void iparam_default(int* iparam)
     iparam[IPARAM_QR_HLVL_SZE]  = -'P';
     iparam[IPARAM_SUMMIT_B] = 1;
     iparam[IPARAM_SUMMIT_C] = 1;
-    iparam[IPARAM_SUMMIT_D] = 1;    
+    iparam[IPARAM_SUMMIT_D] = 1;
+    iparam[IPARAM_SUMMIT_LOOKAHEAD] = 1;
 }
 
 void iparam_default_ibnbmb(int* iparam, int ib, int nb, int mb)
