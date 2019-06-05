@@ -260,7 +260,7 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                 arena = handle->arenas[PARSEC_zgemm_summit_NN_B_DEFAULT_ARENA];
                 zgemm_handle = (parsec_taskpool_t*)handle;
             } else {
-                parsec_zgemm_summit_NN_B_taskpool_t* handle;
+                parsec_zgemm_summit_NN_C_taskpool_t* handle;
                 
                 if( d > B->mt ) {
                     fprintf(stderr, "Condition not met: d(%d) < K(%d)\n",
