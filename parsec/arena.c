@@ -253,7 +253,7 @@ void parsec_arena_release(parsec_data_copy_t* copy)
     assert(0 == (((uintptr_t)arena)%sizeof(uintptr_t))); /* is it aligned */
 
     if( NULL != data )
-        parsec_data_copy_detach( data, copy, 0 );
+        parsec_data_copy_detach( data, copy, copy->device_index );
 
     parsec_arena_release_chunk(arena, chunk);
 }

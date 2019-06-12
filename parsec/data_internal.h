@@ -34,6 +34,8 @@ extern uint32_t parsec_supported_number_of_devices;
 struct parsec_data_s {
     parsec_object_t            super;
 
+    parsec_atomic_lock_t       lock;
+
     parsec_data_key_t          key;
     int8_t                     owner_device;
     int8_t                     preferred_device;

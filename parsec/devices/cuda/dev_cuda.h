@@ -44,10 +44,11 @@ extern int parsec_cuda_own_GPU_key_start;
 extern int parsec_cuda_own_GPU_key_end;
 #endif  /* defined(PROFILING) */
 
-#define GPU_TASK_TYPE_KERNEL      000
-#define GPU_TASK_TYPE_D2HTRANSFER 111
-#define GPU_TASK_TYPE_PREFETCH    222
-#define GPU_TASK_TYPE_WARMUP      333
+#define GPU_TASK_TYPE_KERNEL       000
+#define GPU_TASK_TYPE_D2HTRANSFER  111
+#define GPU_TASK_TYPE_PREFETCH     222
+#define GPU_TASK_TYPE_WARMUP       333
+#define GPU_TASK_TYPE_D2D_COMPLETE 444
 
 typedef struct __parsec_gpu_workspace {
     void* workspace[PARSEC_GPU_MAX_WORKSPACE];

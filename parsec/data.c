@@ -12,6 +12,7 @@
 #include "parsec/data_internal.h"
 #include "parsec/arena.h"
 #include "parsec/parsec_description_structures.h"
+#include "parsec/sys/atomic.h"
 
 static parsec_lifo_t parsec_data_lifo;
 static parsec_lifo_t parsec_data_copies_lifo;
@@ -45,7 +46,7 @@ static void parsec_data_copy_destruct(parsec_data_copy_t* obj)
     if( obj->flags & PARSEC_DATA_FLAG_ARENA ) {
         /* It is an arena that is now unused.
          * give the chunk back to the arena memory management.
-         * This detaches obj from obj->original, and frees everything */
+         * obj is already detached from obj->original, but this frees the arena chunk */
         parsec_arena_release(obj);
     }
 }
@@ -56,6 +57,7 @@ OBJ_CLASS_INSTANCE(parsec_data_copy_t, parsec_list_item_t,
 
 static void parsec_data_construct(parsec_data_t* obj )
 {
+    parsec_atomic_lock_t unlocked = PARSEC_ATOMIC_UNLOCKED;
     obj->owner_device     = -1;
     obj->preferred_device = -1;
     obj->key              = 0;
@@ -63,6 +65,7 @@ static void parsec_data_construct(parsec_data_t* obj )
     for( uint32_t i = 0; i < parsec_nb_devices;
          obj->device_copies[i] = NULL, i++ );
     obj->dc               = NULL;
+    obj->lock             = unlocked;
     PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Allocate data %p", obj);
 }
 
@@ -171,17 +174,25 @@ int parsec_data_copy_detach(parsec_data_t* data,
                            parsec_data_copy_t* copy,
                            uint8_t device)
 {
-    parsec_data_copy_t* obj = data->device_copies[device];
+    parsec_data_copy_t* obj;
 
-    if( obj != copy )
+    parsec_atomic_lock(&data->lock);
+    obj = data->device_copies[device];
+    if( obj != copy ) {
+        parsec_atomic_unlock(&data->lock);
         return PARSEC_ERR_NOT_FOUND;
-    /* Atomically set the device copy */
-    if( !parsec_atomic_cas_ptr(&data->device_copies[device], copy, copy->older) ) {
-        return PARSEC_ERROR;
     }
+    if( copy->readers > 0 ) {
+        parsec_atomic_unlock(&data->lock);
+        return PARSEC_ERR_VALUE_OUT_OF_BOUNDS;
+    }
+    data->device_copies[device] = copy->older;
+    parsec_atomic_unlock(&data->lock);
+
     copy->original     = NULL;
     copy->older        = NULL;
     OBJ_RELEASE(data);
+
     return PARSEC_SUCCESS;
 }
 
