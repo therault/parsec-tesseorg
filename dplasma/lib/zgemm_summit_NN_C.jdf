@@ -127,6 +127,7 @@ summa_type [ type = int ]
 transA     [ type = int ]
 transB     [ type = int ]
 alpha      [ type = parsec_complex64_t ]
+beta       [type = parsec_complex64_t]
 
 /*
  * A is MT x KT
@@ -374,10 +375,11 @@ BODY [type=CUDA
 {
 #if defined(PRECISION_z) || defined(PRECISION_c)
     cuDoubleComplex lalpha = make_cuDoubleComplex(creal(alpha), cimag(alpha));
-    cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(0.0, 0.0) : make_cuDoubleComplex(1.0, 0.0);
+    cuDoubleComplex lbeta  = (k == 0) ? make_cuDoubleComplex(creal(beta), cimag(beta))
+                                      : make_cuDoubleComplex(1.0, 0.0);
 #else
     double lalpha = alpha;
-    double lbeta  = (k==0) ? 0.0:1.0;
+    double lbeta  = (k == 0) ? beta : 1.0;
 #endif
     int cAmb = descA->mb;
     int cAnb = descA->nb;
@@ -430,7 +432,7 @@ END
 
 BODY
 {
-    parsec_complex64_t lbeta = (k==0) ? (parsec_complex64_t)0.0 : (parsec_complex64_t)1.0;
+    parsec_complex64_t lbeta = (k == 0) ? beta : (parsec_complex64_t)1.0;
 
     int cAmb = descA->mb;
     int cAnb = descA->nb;

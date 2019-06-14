@@ -87,7 +87,7 @@ static int32_t TrivDist_vpid_of_key(parsec_data_collection_t *d, parsec_data_key
  *  dplasma_zgemm_summit_New - Generates the taskpool that performs one of the following
  *  matrix-matrix operations. WARNING: The computations are not done by this call.
  *
- *    \f[ C = \alpha [op( A )\times op( B )],
+ *    \f[ C = \alpha [op( A )\times op( B )] + \beta C,
  *
  *  where op( X ) is one of
  *
@@ -115,6 +115,8 @@ static int32_t TrivDist_vpid_of_key(parsec_data_collection_t *d, parsec_data_key
  * @param[in] B
  *          Descriptor of the distributed matrix B.
  *
+ * @param[in] beta
+ *          beta specifies the scalar beta
  *
  * @param[out] C
  *          Descriptor of the distributed matrix C.
@@ -142,6 +144,7 @@ parsec_taskpool_t*
 dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                           parsec_complex64_t alpha, const parsec_tiled_matrix_dc_t* A,
                           const parsec_tiled_matrix_dc_t* B,
+                          parsec_complex64_t beta,
                           parsec_tiled_matrix_dc_t* C,
                           int b, int c, int d,
                           int p, int q,
@@ -219,7 +222,7 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                     return NULL;
                 }
 
-                handle = parsec_zgemm_summit_NN_B_new(GEMM_SUMMIT_NN_B, transA, transB, alpha,
+                handle = parsec_zgemm_summit_NN_B_new(GEMM_SUMMIT_NN_B, transA, transB, alpha, beta,
                                                       A,
                                                       B,
                                                       C,
@@ -278,7 +281,7 @@ dplasma_zgemm_summit_New( PLASMA_enum transA, PLASMA_enum transB,
                     return NULL;
                 }
 
-                handle = parsec_zgemm_summit_NN_C_new(GEMM_SUMMIT_NN_C, transA, transB, alpha,
+                handle = parsec_zgemm_summit_NN_C_new(GEMM_SUMMIT_NN_C, transA, transB, alpha, beta,
                                                       A,
                                                       B,
                                                       C,
