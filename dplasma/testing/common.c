@@ -527,8 +527,8 @@ static void print_arguments(int* iparam)
     int verbose = iparam[IPARAM_RANK] ? 0 : iparam[IPARAM_VERBOSE];
 
     if(verbose) {
-        fprintf(stderr, "#+++++ cores detected       : %d\n", iparam[IPARAM_NCORES]);
-        fprintf(stderr, "#+++++ GEMM SUMMIT (BxCxD)  : %d x %d x %d\n", iparam[IPARAM_SUMMIT_B], iparam[IPARAM_SUMMIT_C], iparam[IPARAM_SUMMIT_D]);
+        fprintf(stderr, "#+++++ cores detected         : %d\n", iparam[IPARAM_NCORES]);
+        fprintf(stderr, "#+++++ GEMM SUMMIT (BxCxDxL)  : %d x %d x %d x %d\n", iparam[IPARAM_SUMMIT_B], iparam[IPARAM_SUMMIT_C], iparam[IPARAM_SUMMIT_D], iparam[IPARAM_SUMMIT_LOOKAHEAD]);
     }
 
     if(verbose > 1) fprintf(stderr, "#+++++ nodes x cores + gpu  : %d x %d + %d (%d+%d)\n"

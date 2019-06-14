@@ -78,7 +78,7 @@ int main(int argc, char ** argv)
         if(loud > 2) printf("Done\n");
 
         int t;
-        for ( t = 0; t < 1; ++t) {
+        for ( t = 0; t < 5; ++t) {
             /* Create PaRSEC */
             PASTE_CODE_ENQUEUE_KERNEL(parsec, zgemm_summit,
                                       (tA, tB, alpha,

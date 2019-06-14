@@ -55,6 +55,7 @@ struct parsec_device_s {
     char* name;  /**< Simple identified for the device */
     uint64_t transferred_data_in;
     uint64_t transferred_data_out;
+    uint64_t d2d_transfer;
     uint64_t required_data_in;
     uint64_t required_data_out;
     uint64_t executed_tasks;

@@ -176,18 +176,12 @@ int parsec_data_copy_detach(parsec_data_t* data,
 {
     parsec_data_copy_t* obj;
 
-    parsec_atomic_lock(&data->lock);
     obj = data->device_copies[device];
     if( obj != copy ) {
         parsec_atomic_unlock(&data->lock);
         return PARSEC_ERR_NOT_FOUND;
     }
-    if( copy->readers > 0 ) {
-        parsec_atomic_unlock(&data->lock);
-        return PARSEC_ERR_VALUE_OUT_OF_BOUNDS;
-    }
     data->device_copies[device] = copy->older;
-    parsec_atomic_unlock(&data->lock);
 
     copy->original     = NULL;
     copy->older        = NULL;

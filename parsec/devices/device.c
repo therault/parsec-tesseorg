@@ -98,26 +98,27 @@ void parsec_compute_best_unit( uint64_t length, float* updated_value, char** bes
 void parsec_devices_dump_and_reset_statistics(parsec_context_t* parsec_context)
 {
     int *device_counter, total = 0;
-    uint64_t total_data_in = 0,     total_data_out = 0;
+    uint64_t total_data_in = 0,  total_d2d = 0,   total_data_out = 0;
     uint64_t total_required_in = 0, total_required_out = 0;
     uint64_t total_fault = 0;
-    uint64_t *transferred_in, *transferred_out;
+    uint64_t *transferred_in, *transferred_d2d, *transferred_out;
     uint64_t *required_in,    *required_out;
     uint64_t *fault;
     float gtotal = 0.0;
-    float best_data_in, best_data_out;
+    float best_data_in, best_d2d, best_data_out;
     float best_required_in, best_required_out;
     float best_fault;
-    char *data_in_unit, *data_out_unit;
+    char *data_in_unit, *d2d_unit, *data_out_unit;
     char *required_in_unit, *required_out_unit;
     char *fault_unit;
-    char percent1[64], percent2[64];
+    char percent1[64], percent2[64], percent3[64];
     parsec_device_t *device;
     uint32_t i;
 
     /* GPU counter for GEMM / each */
     device_counter  = (int*)     calloc(parsec_nb_devices, sizeof(int)     );
     transferred_in  = (uint64_t*)calloc(parsec_nb_devices, sizeof(uint64_t));
+    transferred_d2d = (uint64_t*)calloc(parsec_nb_devices, sizeof(uint64_t));
     transferred_out = (uint64_t*)calloc(parsec_nb_devices, sizeof(uint64_t));
     required_in     = (uint64_t*)calloc(parsec_nb_devices, sizeof(uint64_t));
     required_out    = (uint64_t*)calloc(parsec_nb_devices, sizeof(uint64_t));
@@ -132,6 +133,7 @@ void parsec_devices_dump_and_reset_statistics(parsec_context_t* parsec_context)
         /* Save the statistics */
         device_counter[device->device_index]  += device->executed_tasks;
         transferred_in[device->device_index]  += device->transferred_data_in;
+        transferred_d2d[device->device_index] += device->d2d_transfer;
         transferred_out[device->device_index] += device->transferred_data_out;
         required_in[device->device_index]     += device->required_data_in;
         required_out[device->device_index]    += device->required_data_out;
@@ -139,6 +141,7 @@ void parsec_devices_dump_and_reset_statistics(parsec_context_t* parsec_context)
         /* Update the context-level statistics */
         total              += device->executed_tasks;
         total_data_in      += device->transferred_data_in;
+        total_d2d          += device->d2d_transfer;
         total_data_out     += device->transferred_data_out;
         total_required_in  += device->required_data_in;
         total_required_out += device->required_data_out;
@@ -146,6 +149,7 @@ void parsec_devices_dump_and_reset_statistics(parsec_context_t* parsec_context)
         
         device->executed_tasks       = 0;
         device->transferred_data_in  = 0;
+        device->d2d_transfer         = 0;
         device->transferred_data_out = 0;
         device->required_data_in     = 0;
         device->required_data_out    = 0;
@@ -154,61 +158,69 @@ void parsec_devices_dump_and_reset_statistics(parsec_context_t* parsec_context)
 
     /* Print statistics */
     if( 0 == total_data_in )  total_data_in  = 1;
+    if( 0 == total_d2d )      total_d2d      = 1;
     if( 0 == total_data_out ) total_data_out = 1;
     gtotal = (float)total;
 
-    printf("-------------------------------------------------------------------------------------------------------------------------------\n");
-    printf("|         |                    |         Data In                |         Data Out               |         Data Faults        |\n");
-    printf("|Rank %3d |  # KERNEL |    %%   |  Required  |   Transfered(%%)   |  Required  |   Transfered(%%)   | Transferred | %% of Data In |\n",
+    printf("------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+    printf("|         |                    |         Data In                                       |         Data Out               |         Data Faults        |\n");
+    printf("|Rank %3d |  # KERNEL |    %%   |  Required  |   Transfered(%%) Host |    Transfered(%%) D2D |  Required  |   Transfered(%%)   | Transferred | %% of Data In |\n",
            parsec_context->my_rank);
-    printf("|---------|-----------|--------|------------|-------------------|------------|-------------------|-------------|--------------|\n");
+    printf("|---------|-----------|--------|------------|---------------------|-----------------------|------------|-------------------|-------------|--------------|\n");
     for( i = 0; i < parsec_nb_devices; i++ ) {
         if( NULL == (device = parsec_devices[i]) ) continue;
 
         parsec_compute_best_unit( required_in[i],     &best_required_in,  &required_in_unit  );
         parsec_compute_best_unit( required_out[i],    &best_required_out, &required_out_unit );
         parsec_compute_best_unit( transferred_in[i],  &best_data_in,      &data_in_unit      );
+        parsec_compute_best_unit( transferred_d2d[i],  &best_d2d,      &d2d_unit      );
         parsec_compute_best_unit( transferred_out[i], &best_data_out,     &data_out_unit     );
         parsec_compute_best_unit( fault[i],           &best_fault,        &fault_unit        );
-        printf("|  Dev %2d |%10d | %6.2f | %8.2f%2s | %8.2f%2s(%5.2f) | %8.2f%2s | %8.2f%2s(%5.2f) |  %8.2f%2s |     %5.2f    | %s\n",
+        printf("|  Dev %2d |%10d | %6.2f | %8.2f%2s | %8.2f%2s(%5.2f)  | %8.2f%2s(%5.2f)    | %8.2f%2s | %8.2f%2s(%5.2f) |  %8.2f%2s |     %5.2f    | %s\n",
                device->device_index, device_counter[i], (device_counter[i]/gtotal)*100.00,
-               best_required_in,  required_in_unit,  best_data_in,  data_in_unit,
+               best_required_in,  required_in_unit,  best_data_in,  data_in_unit, 
                (((double)transferred_in[i])  / (double)required_in[i] ) * 100.0,
+               best_d2d, d2d_unit, (((double)transferred_d2d[i])  / (double)required_in[i] ) * 100.0,
                best_required_out, required_out_unit, best_data_out, data_out_unit,
                (((double)transferred_out[i]) / (double)required_out[i]) * 100.0,
                best_fault, fault_unit, ((double)fault[i] / (double)transferred_in[i]) * 100.0,
                device->name );
     }
 
-    printf("|---------|-----------|--------|------------|-------------------|------------|-------------------|-------------|--------------|\n");
+    printf("|---------|-----------|--------|------------|---------------------|-----------------------|------------|-------------------|-------------|--------------|\n");
 
     parsec_compute_best_unit( total_required_in,  &best_required_in,  &required_in_unit  );
     parsec_compute_best_unit( total_required_out, &best_required_out, &required_out_unit );
     parsec_compute_best_unit( total_data_in,      &best_data_in,      &data_in_unit      );
+    parsec_compute_best_unit( total_d2d,          &best_d2d,          &d2d_unit      );
     parsec_compute_best_unit( total_data_out,     &best_data_out,     &data_out_unit     );
     parsec_compute_best_unit( total_fault,        &best_fault,        &fault_unit        );
 
     if( 0 == total_required_in ) {
         snprintf(percent1, 64, "nan");
+        snprintf(percent3, 64, "nan");
     } else {
         snprintf(percent1, 64, "%5.2f",  ((double)total_data_in  / (double)total_required_in ) * 100.0);
+        snprintf(percent3, 64, "%5.2f",  ((double)total_d2d  / (double)total_required_in ) * 100.0);
     }
     if( 0 == total_required_out ) {
         snprintf(percent2, 64, "nan");
     } else {
         snprintf(percent2, 64, "%5.2f", ((double)total_data_out / (double)total_required_out) * 100.0);
     }
-    printf("|All Devs |%10d | %5.2f | %8.2f%2s | %8.2f%2s(%s) | %8.2f%2s | %8.2f%2s(%s) |  %8.2f%2s |     %5.2f    |\n",
+    printf("|All Devs |%10d | %5.2f | %8.2f%2s | %8.2f%2s(%s)  | %8.2f%2s(%s)    | %8.2f%2s | %8.2f%2s(%s) |  %8.2f%2s |     %5.2f    |\n",
            total, (total/gtotal)*100.00,
            best_required_in,  required_in_unit,  best_data_in,  data_in_unit,
            percent1,
+           best_d2d, d2d_unit, percent3,
            best_required_out, required_out_unit, best_data_out, data_out_unit,
            percent2,
            best_fault, fault_unit, 100.0*(double)total_fault/(double)total_data_in);
-    printf("-------------------------------------------------------------------------------------------------------------------------------\n");
+    printf("----------------------------------------------------------------------------------------------------------------------------------------------------\n");
 
     free(device_counter);
     free(transferred_in);
+    free(transferred_d2d);
     free(transferred_out);
     free(required_in);
     free(required_out);
