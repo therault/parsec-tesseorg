@@ -6,6 +6,7 @@
 
 #include "parsec/parsec_config.h"
 #include "parsec/utils/zone_malloc.h"
+#include "parsec/utils/debug.h"
 
 #include <stdio.h>
 
@@ -173,3 +174,32 @@ void zone_free(zone_malloc_t *gdata, void *add)
     }
 }
 
+size_t zone_debug(zone_malloc_t *gdata, int level, int output_id, const char *prefix)
+{
+    segment_t *current_segment, *next_segment;
+    int next_tid, current_tid;
+    size_t ret = 0;
+
+    for(current_tid = 0;
+        (current_segment = SEGMENT_AT_TID(gdata, current_tid)) != NULL;
+        current_tid += current_segment->nb_units) {
+        if( current_segment->status == SEGMENT_EMPTY ) {
+            ret += gdata->unit_size * current_segment->nb_units;
+            if( NULL != prefix )
+                parsec_debug_verbose(level, output_id, "%sfree: %d units (%d bytes) from %p to %p",
+                                     prefix,
+                                     current_segment->nb_units, gdata->unit_size*current_segment->nb_units,
+                                     gdata->base + current_tid * gdata->unit_size,
+                                     gdata->base + (current_tid+current_segment->nb_units) * gdata->unit_size - 1);
+        } else {
+            if( NULL != prefix )
+                parsec_debug_verbose(level, output_id, "%sused: %d units (%d bytes) from %p to %p",
+                                     prefix,
+                                     current_segment->nb_units, gdata->unit_size*current_segment->nb_units,
+                                     gdata->base + current_tid * gdata->unit_size,
+                                     gdata->base + (current_tid+current_segment->nb_units) * gdata->unit_size - 1);
+        }
+    }
+
+    return ret;
+}

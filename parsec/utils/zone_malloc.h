@@ -57,6 +57,12 @@ void *zone_malloc(zone_malloc_t *gdata, size_t size);
  */
 void zone_free(zone_malloc_t *gdata, void *add);
 
+/**
+ * Prints information on the amount of available blocks
+ * Do not print anything if prefix is NULL
+ */
+size_t zone_debug(zone_malloc_t *gdata, int level, int output_id, const char *prefix);
+
 END_C_DECLS
 
 #endif /* _ZONE_MALLOC_H_ */

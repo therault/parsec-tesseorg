@@ -95,6 +95,14 @@ PARSEC_DECLSPEC int
 parsec_data_transfer_ownership_to_copy(parsec_data_t* map,
                                       uint8_t device,
                                       uint8_t access_mode);
+PARSEC_DECLSPEC int
+parsec_data_start_transfer_ownership_to_copy(parsec_data_t* data,
+                                             uint8_t device,
+                                             uint8_t access_mode);
+PARSEC_DECLSPEC void
+parsec_data_end_transfer_ownership_to_copy(parsec_data_t* data,
+                                                uint8_t device,
+                                                uint8_t access_mode);
 PARSEC_DECLSPEC void parsec_dump_data_copy(parsec_data_copy_t* copy);
 PARSEC_DECLSPEC void parsec_dump_data(parsec_data_t* copy);
 

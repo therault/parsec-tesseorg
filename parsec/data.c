@@ -270,15 +270,55 @@ int parsec_data_get_device_copy(parsec_data_copy_t* source,
  * version of the data is lost.
  */
 int parsec_data_transfer_ownership_to_copy(parsec_data_t* data,
-                                          uint8_t device,
-                                          uint8_t access_mode)
+                                           uint8_t device,
+                                           uint8_t access_mode)
+{
+    int transfer_required;
+    parsec_atomic_lock(&data->lock);
+    transfer_required = parsec_data_start_transfer_ownership_to_copy(data, device, access_mode);
+    parsec_data_end_transfer_ownership_to_copy(data, device, access_mode);
+    parsec_atomic_unlock(&data->lock);
+    return transfer_required;
+}
+
+void parsec_data_end_transfer_ownership_to_copy(parsec_data_t* data,
+                                                uint8_t device,
+                                                uint8_t access_mode)
+{
+    parsec_data_copy_t* copy;
+
+    assert(NULL != data);
+    copy = data->device_copies[device];
+    PARSEC_DEBUG_VERBOSE(2, parsec_debug_output,
+                         "DEV[%d]: end transfer ownership of data %p to copy %p in mode %d",
+                         device, data, copy, access_mode);
+    assert( NULL != copy );
+    if( FLOW_ACCESS_READ & access_mode ) {
+        copy->coherency_state = DATA_COHERENCY_SHARED;
+    }
+    if( FLOW_ACCESS_WRITE & access_mode ) {
+        copy->coherency_state = DATA_COHERENCY_OWNED;
+    }
+}
+
+int parsec_data_start_transfer_ownership_to_copy(parsec_data_t* data,
+                                                 uint8_t device,
+                                                 uint8_t access_mode)
 {
     uint32_t i;
     int transfer_required = 0;
     int valid_copy = data->owner_device;
-    parsec_data_copy_t* copy = data->device_copies[device];
-    assert( NULL != copy );
+    parsec_data_copy_t* copy;
 
+    assert(NULL != data);
+
+    copy = data->device_copies[device];
+    assert( NULL != copy );
+    
+    PARSEC_DEBUG_VERBOSE(2, parsec_debug_output,
+                         "DEV[%d]: start transfer ownership of data %p to copy %p in mode %d",
+                         device, data, copy, access_mode);
+    
     switch( copy->coherency_state ) {
     case DATA_COHERENCY_INVALID:
         transfer_required = 1;
@@ -349,8 +389,6 @@ int parsec_data_transfer_ownership_to_copy(parsec_data_t* data,
                 data->device_copies[i]->coherency_state = DATA_COHERENCY_SHARED;
             }
         }
-        copy->readers++;
-        copy->coherency_state = DATA_COHERENCY_SHARED;
     }
     else transfer_required = 0; /* finally we'll just overwrite w/o read */
 
@@ -360,15 +398,22 @@ int parsec_data_transfer_ownership_to_copy(parsec_data_t* data,
             if( DATA_COHERENCY_INVALID == data->device_copies[i]->coherency_state ) continue;
             data->device_copies[i]->coherency_state = DATA_COHERENCY_SHARED;
         }
+    }
+
+    assert( (!transfer_required) || (data->device_copies[valid_copy]->version >= copy->version) );
+
+    if( FLOW_ACCESS_READ & access_mode ) {
+        copy->readers++;
+    }
+    if( FLOW_ACCESS_WRITE & access_mode ) {
         data->owner_device = (uint8_t)device;
-        copy->coherency_state = DATA_COHERENCY_OWNED;
     }
 
     if( !transfer_required ) {
         return -1;
     }
+
     assert( -1 != valid_copy );
-    assert( data->device_copies[valid_copy]->version >= copy->version );
     return valid_copy;
 }
 

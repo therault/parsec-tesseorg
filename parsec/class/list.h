@@ -104,6 +104,8 @@ static inline int parsec_list_nolock_is_empty( parsec_list_t* list );
  */
 static inline int parsec_list_nolock_contains( parsec_list_t *list, parsec_list_item_t *item );
 
+static inline int parsec_list_contains( parsec_list_t *list, parsec_list_item_t *item );
+
 /**
  * @brief List iterator macro
  *
@@ -236,6 +238,10 @@ parsec_list_nolock_add_before( parsec_list_t* list,
  */
 static inline void
 parsec_list_nolock_add_after( parsec_list_t* list,
+                      parsec_list_item_t* position,
+                      parsec_list_item_t* item );
+static inline void
+parsec_list_add_after( parsec_list_t* list,
                       parsec_list_item_t* position,
                       parsec_list_item_t* item );
 
@@ -748,6 +754,18 @@ parsec_list_nolock_contains( parsec_list_t *list, parsec_list_item_t *item )
     return item == litem;
 }
 
+static inline int
+parsec_list_contains( parsec_list_t *list, parsec_list_item_t *item )
+{
+    parsec_list_item_t* litem;
+    litem = PARSEC_LIST_ITERATOR(list, ITEM,
+        {
+            if( item == ITEM )
+                break;
+        });
+    return item == litem;
+}
+
 static inline void
 parsec_list_nolock_add_before( parsec_list_t* list,
                               parsec_list_item_t* position,
@@ -776,6 +794,17 @@ parsec_list_nolock_add_after( parsec_list_t* list,
     newel->list_next = position->list_next;
     position->list_next->list_prev = newel;
     position->list_next = newel;
+}
+
+
+static inline void
+parsec_list_add_after( parsec_list_t* list,
+                             parsec_list_item_t* position,
+                             parsec_list_item_t* newel )
+{
+    parsec_list_lock(list);
+    parsec_list_nolock_add_after(list, position, newel);
+    parsec_list_unlock(list);
 }
 
 
