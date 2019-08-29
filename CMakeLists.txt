@@ -130,6 +130,8 @@ else()
 endif()
 option(PARSEC_DEBUG_PARANOID
   "Enable extra paranoid checks (may impact performance)." OFF)
+option(PARSEC_DEBUG_MEMORY
+  "Enable parsec object memory protection (will impact behavior and performance)" OFF)
 option(PARSEC_DEBUG_NOISIER
   "Enable chatterbox-like verbose debugging (may impact performance)." OFF)
 option(PARSEC_DEBUG_HISTORY

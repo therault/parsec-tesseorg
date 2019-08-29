@@ -295,6 +295,39 @@ static inline parsec_object_t *parsec_obj_new_debug(parsec_class_t* type, const 
 #define OBJ_SET_MAGIC_ID( OBJECT, VALUE )
 #endif  /* defined(PARSEC_DEBUG_PARANOID) */
 
+#if defined(PARSEC_DEBUG_MEMORY)
+#include <sys/mman.h>
+#include <unistd.h>
+#include <errno.h>
+#define PARSEC_DEBUG_MEMORY_KEYWORD 0x0123456789abcdef
+typedef struct {
+    unsigned long long keyword1;
+    unsigned long long size;
+    unsigned long long keyword2;
+    unsigned long long allocated_line;
+    char               allocated_file[512];
+    unsigned long long freed_line;
+    char               freed_file[512];
+} parsec_debug_memory_t;
+static inline void parsec_obj_free_real(void*obj, const char *file, int line)
+{
+    int rc;
+    void *real_addr = (void*)((uintptr_t)obj - getpagesize());
+    parsec_debug_memory_t *hdr = (parsec_debug_memory_t*)real_addr;
+    assert( hdr->keyword1 == PARSEC_DEBUG_MEMORY_KEYWORD );
+    assert( hdr->keyword2 == PARSEC_DEBUG_MEMORY_KEYWORD );
+    int error;
+    hdr->freed_line = line;
+    strncpy(hdr->freed_file, file, 512);
+    rc = mprotect(real_addr, hdr->size, PROT_NONE);
+    error = errno;
+    assert(rc == 0);
+}
+#define parsec_obj_free(obj) parsec_obj_free_real(obj, __FILE__, __LINE__)
+#else
+#define parsec_obj_free(obj) free(obj)
+#endif
+
 /**
  * Release an object (by decrementing its reference count).  If the
  * reference count reaches zero, destruct (finalize) the object and
@@ -306,26 +339,26 @@ static inline parsec_object_t *parsec_obj_new_debug(parsec_class_t* type, const 
  * @param object        Pointer to the object
  */
 #if defined(PARSEC_DEBUG_PARANOID)
-#define OBJ_RELEASE(object)                                     \
-    do {                                                        \
-        assert(NULL != ((parsec_object_t *) (object))->obj_class);        \
+#define OBJ_RELEASE(object)                                             \
+    do {                                                                \
+        assert(NULL != ((parsec_object_t *) (object))->obj_class);      \
         assert(PARSEC_OBJ_MAGIC_ID == ((parsec_object_t *) (object))->obj_magic_id); \
-        if (0 == parsec_obj_update((parsec_object_t *) (object), -1)) {     \
-            parsec_obj_run_destructors((parsec_object_t *) (object));       \
-            OBJ_SET_MAGIC_ID((object), 0);                      \
+        if (0 == parsec_obj_update((parsec_object_t *) (object), -1)) { \
+            parsec_obj_run_destructors((parsec_object_t *) (object));   \
+            OBJ_SET_MAGIC_ID((object), 0);                              \
             OBJ_REMEMBER_FILE_AND_LINENO( object, __FILE__, __LINE__ ); \
-            free(object);                                       \
-            object = NULL;                                      \
-        }                                                       \
+            parsec_obj_free(object);                                    \
+            object = NULL;                                              \
+        }                                                               \
     } while (0)
 #else
-#define OBJ_RELEASE(object)                                     \
-    do {                                                        \
-        if (0 == parsec_obj_update((parsec_object_t *) (object), -1)) {     \
-            parsec_obj_run_destructors((parsec_object_t *) (object));       \
-            free(object);                                       \
-            object = NULL;                                      \
-        }                                                       \
+#define OBJ_RELEASE(object)                                             \
+    do {                                                                \
+        if (0 == parsec_obj_update((parsec_object_t *) (object), -1)) { \
+            parsec_obj_run_destructors((parsec_object_t *) (object));   \
+            parsec_obj_free(object);                                    \
+            object = NULL;                                              \
+        }                                                               \
     } while (0)
 #endif
 
@@ -458,12 +491,25 @@ static inline void parsec_obj_run_destructors(parsec_object_t * object)
  * @param cls           Pointer to the class descriptor of this object
  * @return              Pointer to the object
  */
-static inline parsec_object_t *parsec_obj_new(parsec_class_t * cls)
+static inline parsec_object_t *parsec_obj_new_real(parsec_class_t * cls, const char *file, int line)
 {
     parsec_object_t *object;
     assert(cls->cls_sizeof >= sizeof(parsec_object_t));
-
+#if defined(PARSEC_DEBUG_MEMORY)
+    size_t allocated_size = (1 + (cls->cls_sizeof + (getpagesize()-1)) / getpagesize())*getpagesize();
+    void *real_addr;
+    int rc = posix_memalign(&real_addr, getpagesize(), allocated_size);
+    assert(rc == 0);
+    parsec_debug_memory_t *hdr = (parsec_debug_memory_t*)real_addr;
+    hdr->keyword1 = PARSEC_DEBUG_MEMORY_KEYWORD;
+    hdr->size = allocated_size;
+    hdr->keyword2 = PARSEC_DEBUG_MEMORY_KEYWORD;
+    hdr->allocated_line = line;
+    strncpy(hdr->allocated_file, file, 512);
+    object = (parsec_object_t *)( (uintptr_t)real_addr + getpagesize() );
+#else
     object = (parsec_object_t *) malloc(cls->cls_sizeof);
+#endif
     if (0 == cls->cls_initialized) {
         parsec_class_initialize(cls);
     }
@@ -474,6 +520,7 @@ static inline parsec_object_t *parsec_obj_new(parsec_class_t * cls)
     }
     return object;
 }
+#define parsec_obj_new(obj) parsec_obj_new_real(obj, __FILE__, __LINE__)
 
 #if defined(BUILD_PARSEC)
 #include "parsec/sys/atomic.h"
