@@ -58,6 +58,11 @@ void *zone_malloc(zone_malloc_t *gdata, size_t size);
 void zone_free(zone_malloc_t *gdata, void *add);
 
 /**
+ * Computes how much memory is in use
+ */
+size_t zone_in_use(zone_malloc_t *gdata);
+
+/**
  * Prints information on the amount of available blocks
  * Do not print anything if prefix is NULL
  */

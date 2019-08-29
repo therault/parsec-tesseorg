@@ -95,6 +95,7 @@ void *zone_malloc(zone_malloc_t *gdata, size_t size)
             current_segment->status = SEGMENT_FULL;
             if( current_segment->nb_units > nb_units ) {
                 next_tid = current_tid + current_segment->nb_units;
+
                 next_segment = SEGMENT_AT_TID(gdata, next_tid);
                 if( NULL != next_segment )
                     next_segment->nb_prev -= nb_units;
@@ -173,6 +174,22 @@ void zone_free(zone_malloc_t *gdata, void *add)
         }
     }
 }
+
+size_t zone_in_use(zone_malloc_t *gdata)
+{
+    size_t ret = 0;
+    segment_t *current_segment, *next_segment;
+    int next_tid, current_tid;
+    for(current_tid = 0;
+        (current_segment = SEGMENT_AT_TID(gdata, current_tid)) != NULL;
+        current_tid += current_segment->nb_units) {
+        if( current_segment->status == SEGMENT_FULL ) {
+            ret += gdata->unit_size * current_segment->nb_units;
+        }
+    }
+    return ret;
+}
+
 
 size_t zone_debug(zone_malloc_t *gdata, int level, int output_id, const char *prefix)
 {
