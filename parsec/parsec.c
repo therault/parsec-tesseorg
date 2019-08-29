@@ -117,7 +117,7 @@ static void parsec_mpi_exit(int status) {
 OBJ_CLASS_INSTANCE(parsec_task_t, parsec_list_item_t,
                    NULL, NULL);
 
-static void parsec_rusage(bool print)
+static void parsec_rusage(bool print, int rank)
 {
     struct rusage current;
     getrusage(RUSAGE_SELF, &current);
@@ -129,33 +129,42 @@ static void parsec_rusage(bool print)
         sys = ((current.ru_stime.tv_sec - _parsec_rusage.ru_stime.tv_sec) +
                (current.ru_stime.tv_usec - _parsec_rusage.ru_stime.tv_usec) / 1000000.0);
 
-        parsec_inform("==== Resource Usage Data...\n"
-                     "-------------------------------------------------------------\n"
-                     "User Time   (secs)          : %10.3f\n"
-                     "System Time (secs)          : %10.3f\n"
-                     "Total Time  (secs)          : %10.3f\n"
-                     "Minor Page Faults           : %10ld\n"
-                     "Major Page Faults           : %10ld\n"
-                     "Swap Count                  : %10ld\n"
-                     "Voluntary Context Switches  : %10ld\n"
-                     "Involuntary Context Switches: %10ld\n"
-                     "Block Input Operations      : %10ld\n"
-                     "Block Output Operations     : %10ld\n"
-                     "Maximum Resident set size   : %10ld\n"
-                     "=============================================================\n",
-                     usr, sys, usr + sys,
-                     current.ru_minflt  - _parsec_rusage.ru_minflt, current.ru_majflt  - _parsec_rusage.ru_majflt,
-                     current.ru_nswap   - _parsec_rusage.ru_nswap,
-                     current.ru_nvcsw   - _parsec_rusage.ru_nvcsw, current.ru_nivcsw  - _parsec_rusage.ru_nivcsw,
-                     current.ru_inblock - _parsec_rusage.ru_inblock, current.ru_oublock - _parsec_rusage.ru_oublock,
-                     current.ru_maxrss);
+        parsec_inform("[%d] ==== Resource Usage Data...\n"
+                      "[%d] -------------------------------------------------------------\n"
+                      "[%d] User Time   (secs)          : %10.3f\n"
+                      "[%d] System Time (secs)          : %10.3f\n"
+                      "[%d] Total Time  (secs)          : %10.3f\n"
+                      "[%d] Minor Page Faults           : %10ld\n"
+                      "[%d] Major Page Faults           : %10ld\n"
+                      "[%d] Swap Count                  : %10ld\n"
+                      "[%d] Voluntary Context Switches  : %10ld\n"
+                      "[%d] Involuntary Context Switches: %10ld\n"
+                      "[%d] Block Input Operations      : %10ld\n"
+                      "[%d] Block Output Operations     : %10ld\n"
+                      "[%d] Maximum Resident set size   : %10ld\n"
+                      "[%d] =============================================================\n"
+                      "[%d] PARSEC_ARENA_ALLOCATED      : %10ld (bytes)\n",
+                      rank,
+                      rank,
+                      rank, usr,
+                      rank, sys,
+                      rank, usr + sys,
+                      rank, current.ru_minflt  - _parsec_rusage.ru_minflt,
+                      rank, current.ru_majflt  - _parsec_rusage.ru_majflt,
+                      rank, current.ru_nswap   - _parsec_rusage.ru_nswap,
+                      rank, current.ru_nvcsw   - _parsec_rusage.ru_nvcsw,
+                      rank, current.ru_nivcsw  - _parsec_rusage.ru_nivcsw,
+                      rank, current.ru_inblock - _parsec_rusage.ru_inblock,
+                      rank, current.ru_oublock - _parsec_rusage.ru_oublock,
+                      rank, current.ru_maxrss,
+                      rank);
     }
     _parsec_rusage = current;
     return;
 }
-#define parsec_rusage(b) do { if(parsec_want_rusage > 0) parsec_rusage(b); } while(0)
+#define parsec_rusage(b, r) do { if(parsec_want_rusage > 0) parsec_rusage(b, r); } while(0)
 #else
-#define parsec_rusage(b) do {} while(0)
+#define parsec_rusage(b, r) do {} while(0)
 #endif /* defined(PARSEC_HAVE_GETRUSAGE) */
 
 static void parsec_taskpool_release_resources(void);
@@ -177,7 +186,7 @@ static void* __parsec_thread_init( __parsec_temporary_thread_initialization_t* s
 {
     parsec_execution_stream_t* es;
     int pi;
-    
+
     /* don't use PARSEC_THREAD_IS_MASTER, it is too early and we cannot yet allocate the es struct */
     if( (0 != startup->virtual_process->vp_id) || (0 != startup->th_id) || parsec_runtime_bind_main_thread ) {
         /* Bind to the specified CORE */
@@ -338,7 +347,7 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
     char **env_variable, *env_name, *env_value;
     char *parsec_enable_profiling = NULL;  /* profiling file prefix when PARSEC_PROF_TRACE is on */
     int slow_option_warning = 0;
-
+    
     PARSEC_PAPI_SDE_INIT();
     
     parsec_installdirs_open();
@@ -790,7 +799,7 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
     parsec_mca_param_reg_int_name("profile", "rusage", "Report 'getrusage' satistics.\n"
             "0: no report, 1: per process report, 2: per thread report (if available).\n",
             false, false, parsec_want_rusage, &parsec_want_rusage);
-    parsec_rusage(false);
+    parsec_rusage(false, context->my_rank);
 
     AYU_INIT();
 
@@ -919,7 +928,7 @@ int parsec_fini( parsec_context_t** pcontext )
     context->__parsec_internal_finalization_in_progress = 1;
     parsec_barrier_wait( &(context->barrier) );
 
-    parsec_rusage(true);
+    parsec_rusage(true, context->my_rank);
 
     PINS_THREAD_FINI(context->virtual_processes[0]->execution_streams[0]);
 
