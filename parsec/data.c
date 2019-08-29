@@ -39,6 +39,8 @@ static void parsec_data_copy_destruct(parsec_data_copy_t* obj)
 
     /* If the copy is still attached to a data we should detach it first */
     if( NULL != obj->original) {
+        int32_t lock = obj->original->lock;
+        //        assert( (0 == obj->device_index) || (parsec_tid == lock) );
         parsec_data_copy_detach(obj->original, obj, obj->device_index);
         assert( NULL == obj->original );
     }
@@ -171,14 +173,13 @@ parsec_data_copy_attach(parsec_data_t* data,
  * be safely removed.
  */
 int parsec_data_copy_detach(parsec_data_t* data,
-                           parsec_data_copy_t* copy,
-                           uint8_t device)
+                            parsec_data_copy_t* copy,
+                            uint8_t device)
 {
     parsec_data_copy_t* obj;
-
+    
     obj = data->device_copies[device];
     if( obj != copy ) {
-        parsec_atomic_unlock(&data->lock);
         return PARSEC_ERR_NOT_FOUND;
     }
     data->device_copies[device] = copy->older;
@@ -336,7 +337,7 @@ int parsec_data_start_transfer_ownership_to_copy(parsec_data_t* data,
     case DATA_COHERENCY_SHARED:
         for( i = 0; i < parsec_nb_devices; i++ ) {
             if( NULL == data->device_copies[i] ) continue;
-            if( DATA_COHERENCY_OWNED == data->device_copies[i]->coherency_state
+            if( DATA_COHERENCY_OWNED == data->device_copies[i]->coherency_state 
              && data->device_copies[i]->version > copy->version ) {
                 assert( (int)i == valid_copy );
                 transfer_required = 1;

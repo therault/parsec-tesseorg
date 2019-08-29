@@ -88,8 +88,8 @@ parsec_data_copy_attach(parsec_data_t* data,
                        uint8_t device);
 PARSEC_DECLSPEC int
 parsec_data_copy_detach(parsec_data_t* data,
-                       parsec_data_copy_t* copy,
-                       uint8_t device);
+                        parsec_data_copy_t* copy,
+                        uint8_t device);
 
 PARSEC_DECLSPEC int
 parsec_data_transfer_ownership_to_copy(parsec_data_t* map,
