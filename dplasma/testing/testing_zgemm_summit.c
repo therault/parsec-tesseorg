@@ -10,12 +10,25 @@
 #include "common.h"
 #include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
 
+#include <signal.h>
+
 static int check_solution( parsec_context_t *parsec, int loud,
                            PLASMA_enum transA, PLASMA_enum transB,
                            parsec_complex64_t alpha, int Am, int An, int Aseed,
                                                     int Bm, int Bn, int Bseed,
                            parsec_complex64_t beta,  int M,  int N,  int Cseed,
                            two_dim_block_cyclic_t *dcCfinal );
+
+static char *gdb_message = NULL;
+
+void catch_error(int s)
+{
+    volatile int loop = 1;
+    write(2, gdb_message, strlen(gdb_message));
+    while(loop) {
+        sleep(1);
+    }
+}
 
 int main(int argc, char ** argv)
 {
@@ -29,20 +42,28 @@ int main(int argc, char ** argv)
     int tB = PlasmaNoTrans;
     parsec_complex64_t alpha =  0.51;
     parsec_complex64_t beta  = -0.42;
+    struct timeval tv1, tv2, tv3;
+    int watchdog;
 
+    gettimeofday(&tv1, NULL);
+    
 #if defined(PRECISION_z) || defined(PRECISION_c)
     alpha -= I * 0.32;
     beta  += I * 0.21;
 #endif
 
-    if(0){
-        volatile int loop = 1;
+    if(0) {
         char hostname[512];
         gethostname(hostname, 512);
-        fprintf(stderr, "ssh -t %s gdb -p %d\n", hostname, getpid());
-        while(loop) {
-            sleep(1);
-        }
+        asprintf(&gdb_message, "ssh -t %s gdb -p %d -x ~/gdb\n", hostname, getpid());
+        signal(SIGSEGV, catch_error);
+        signal(SIGABRT, catch_error);
+    }
+    if(0) {
+        char hostname[512];
+        gethostname(hostname, 512);
+        asprintf(&gdb_message, "ssh -t %s gdb -p %d -x ~/gdb\n", hostname, getpid());
+        fprintf(stderr, "%s", gdb_message);
     }
     
     /* Set defaults for non argv iparams */
@@ -55,6 +76,12 @@ int main(int argc, char ** argv)
     parsec = setup_parsec(argc, argv, iparam);
     PASTE_CODE_IPARAM_LOCALS(iparam);
 
+    if(rank==0) {
+        gettimeofday(&tv2, NULL);
+        timersub(&tv2, &tv1, &tv3);
+        fprintf(stderr, "INIT 1 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
+    }
+
     PASTE_CODE_FLOPS(FLOPS_ZGEMM, ((DagDouble_t)M,(DagDouble_t)N,(DagDouble_t)K));
 
     LDA = max(LDA, max(M, K));
@@ -65,7 +92,15 @@ int main(int argc, char ** argv)
         two_dim_block_cyclic, (&dcC, matrix_ComplexDouble, matrix_Tile,
                                nodes, rank, MB, NB, LDC, N, 0, 0,
                                M, N, SMB, SNB, P));
-
+    if(1) {
+        watchdog = (int)(5.0 * flops / 7e12 / ((double)P * (double)Q * (double)gpus)) + 60;
+        if( rank == 0 ) {
+            fprintf(stderr, "Watchdog of %d seconds between two runs (flops are %g, P*Q*G = %d)\n", watchdog, flops, P*Q*gpus);
+        }
+    } else {
+        watchdog = -1;
+    }
+    
     /* initializing matrix structure */
     if(!check)
     {
@@ -78,6 +113,12 @@ int main(int argc, char ** argv)
                                    nodes, rank, MB, NB, LDB, N, 0, 0,
                                    K, N, SMB, SNB, P));
 
+        if(rank==0) {
+            gettimeofday(&tv2, NULL);
+            timersub(&tv2, &tv1, &tv3);
+            fprintf(stderr, "INIT 2 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
+        }
+
         /* matrix generation */
         if(loud > 2) printf("+++ Generate matrices ... ");
         dplasma_zplrnt( parsec, 0, (parsec_tiled_matrix_dc_t *)&dcA, Aseed);
@@ -85,8 +126,16 @@ int main(int argc, char ** argv)
         dplasma_zplrnt( parsec, 0, (parsec_tiled_matrix_dc_t *)&dcC, Cseed);
         if(loud > 2) printf("Done\n");
 
+        if(rank==0) {
+            gettimeofday(&tv2, NULL);
+            timersub(&tv2, &tv1, &tv3);
+            fprintf(stderr, "INIT 3 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
+        }
+
         int t;
         for ( t = 0; t < 5; ++t) {
+            if(watchdog > 0 ) alarm(watchdog);
+
             /* Create PaRSEC */
             PASTE_CODE_ENQUEUE_KERNEL(parsec, zgemm_summit,
                                       (tA, tB, alpha,
@@ -98,15 +147,29 @@ int main(int argc, char ** argv)
 
             /* lets rock! */
             PASTE_CODE_PROGRESS_KERNEL(parsec, zgemm);
-
+            fflush(stdout);
+            fflush(stderr);
             dplasma_zgemm_summit_Destruct( PARSEC_zgemm_summit );
             parsec_devices_reset_load(parsec);
+            parsec_devices_release_memory();
+        }
+
+        if(rank==0) {
+            gettimeofday(&tv2, NULL);
+            timersub(&tv2, &tv1, &tv3);
+            fprintf(stderr, "INIT 4 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
         }
 
         parsec_data_free(dcA.mat);
         parsec_tiled_matrix_dc_destroy( (parsec_tiled_matrix_dc_t*)&dcA);
         parsec_data_free(dcB.mat);
         parsec_tiled_matrix_dc_destroy( (parsec_tiled_matrix_dc_t*)&dcB);
+
+        if(rank==0) {
+            gettimeofday(&tv2, NULL);
+            timersub(&tv2, &tv1, &tv3);
+            fprintf(stderr, "INIT 5 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
+        }
     } else {
         if( (rank ==0) && (nodes > 1) ) {
             fprintf(stderr, "Current check only supports single node runs");
@@ -183,6 +246,12 @@ int main(int argc, char ** argv)
     parsec_tiled_matrix_dc_destroy( (parsec_tiled_matrix_dc_t*)&dcC);
 
     cleanup_parsec(parsec, iparam);
+
+    if(rank==0) {
+        gettimeofday(&tv2, NULL);
+        timersub(&tv2, &tv1, &tv3);
+        fprintf(stderr, "INIT 6 %d.%06d (s)\n", (int)tv3.tv_sec, (int)tv3.tv_usec);
+    }
 
     return info_solution;
 }
