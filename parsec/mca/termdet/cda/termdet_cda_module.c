@@ -16,7 +16,6 @@
 #include "parsec/utils/debug.h"
 #include "parsec/mca/termdet/termdet.h"
 #include "parsec/mca/termdet/cda/termdet_cda.h"
-#include "parsec/remote_dep.h"
 #include "parsec/class/dequeue.h"
 
 #undef assert

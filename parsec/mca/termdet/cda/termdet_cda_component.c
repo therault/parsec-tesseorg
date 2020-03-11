@@ -18,7 +18,6 @@
 #include "parsec/parsec_config.h"
 #include "parsec.h"
 #include "parsec/parsec_internal.h"
-#include "parsec/remote_dep.h"
 
 #include "parsec/mca/termdet/termdet.h"
 #include "parsec/mca/termdet/cda/termdet_cda.h"
@@ -41,8 +40,9 @@ const parsec_termdet_base_component_t parsec_termdet_cda_component = {
     {
         PARSEC_TERMDET_BASE_VERSION_2_0_0,
 
-        /* Component name and version */
+        /* Component name, option and version */
         "cda",
+        "",
         PARSEC_VERSION_MAJOR,
         PARSEC_VERSION_MINOR,
 

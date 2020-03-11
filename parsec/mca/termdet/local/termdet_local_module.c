@@ -16,7 +16,6 @@
 #include "parsec/utils/debug.h"
 #include "parsec/mca/termdet/termdet.h"
 #include "parsec/mca/termdet/local/termdet_local.h"
-#include "parsec/remote_dep.h"
 
 /**
  * Module functions
