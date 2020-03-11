@@ -114,6 +114,7 @@ typedef void (*parsec_destruct_fn_t)(parsec_taskpool_t* tp);
 #define PARSEC_TASKPOOL_TYPE_PTG       0x0001
 #define PARSEC_TASKPOOL_TYPE_COMPOUND  0x0002
 #define PARSEC_TASKPOOL_TYPE_DTD       0x0004
+#define PARSEC_TASKPOOL_TYPE_TTG       0x0008
 
 #define PARSEC_TASKPOOL_NOID           (~(uint32_t)0)
 
@@ -342,35 +343,35 @@ parsec_dependency_t *parsec_hash_find_deps(const parsec_taskpool_t *tp,
                                            parsec_execution_stream_t *es,
                                            const parsec_task_t* task);
 typedef int (parsec_update_dependency_fn_t)(parsec_taskpool_t *tp,
-                                            const parsec_task_t* restrict task,
+                                            const parsec_task_t* task,
                                             parsec_dependency_t *deps,
-                                            const parsec_task_t* restrict origin,
-                                            const parsec_flow_t* restrict origin_flow,
-                                            const parsec_flow_t* restrict dest_flow);
+                                            const parsec_task_t* origin,
+                                            const parsec_flow_t* origin_flow,
+                                            const parsec_flow_t* dest_flow);
 int parsec_update_deps_with_mask(parsec_taskpool_t *tp,
-                                 const parsec_task_t* restrict task,
+                                 const parsec_task_t* task,
                                  parsec_dependency_t *deps,
-                                 const parsec_task_t* restrict origin,
-                                 const parsec_flow_t* restrict origin_flow,
-                                 const parsec_flow_t* restrict dest_flow);
+                                 const parsec_task_t* origin,
+                                 const parsec_flow_t* origin_flow,
+                                 const parsec_flow_t* dest_flow);
 int parsec_update_deps_with_mask_count_task(parsec_taskpool_t *tp,
-                                            const parsec_task_t* restrict task,
+                                            const parsec_task_t* task,
                                             parsec_dependency_t *deps,
-                                            const parsec_task_t* restrict origin,
-                                            const parsec_flow_t* restrict origin_flow,
-                                            const parsec_flow_t* restrict dest_flow);
+                                            const parsec_task_t* origin,
+                                            const parsec_flow_t* origin_flow,
+                                            const parsec_flow_t* dest_flow);
 int parsec_update_deps_with_counter(parsec_taskpool_t *tp,
-                                    const parsec_task_t* restrict task,
+                                    const parsec_task_t* task,
                                     parsec_dependency_t *deps,
-                                    const parsec_task_t* restrict origin,
-                                    const parsec_flow_t* restrict origin_flow,
-                                    const parsec_flow_t* restrict dest_flow);
+                                    const parsec_task_t* origin,
+                                    const parsec_flow_t* origin_flow,
+                                    const parsec_flow_t* dest_flow);
 int parsec_update_deps_with_counter_count_task(parsec_taskpool_t *tp,
-                                               const parsec_task_t* restrict task,
+                                               const parsec_task_t* task,
                                                parsec_dependency_t *deps,
-                                               const parsec_task_t* restrict origin,
-                                               const parsec_flow_t* restrict origin_flow,
-                                               const parsec_flow_t* restrict dest_flow);
+                                               const parsec_task_t* origin,
+                                               const parsec_flow_t* origin_flow,
+                                               const parsec_flow_t* dest_flow);
     
 typedef struct __parsec_internal_incarnation_s {
     int32_t                     type;
