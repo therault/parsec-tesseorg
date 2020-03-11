@@ -108,15 +108,20 @@ typedef struct parsec_termdet_fourcounter_monitor_s {
 } parsec_termdet_fourcounter_monitor_t;
 
 
-static void parsec_termdet_fourcounter_msg_down(const parsec_termdet_fourcounter_msg_down_t *msg, int src, parsec_taskpool_t *tp);
-static void parsec_termdet_fourcounter_msg_up(const parsec_termdet_fourcounter_msg_up_t *msg, int src, parsec_taskpool_t *tp);
+static void parsec_termdet_fourcounter_msg_down(parsec_termdet_fourcounter_msg_down_t *msg, int src, parsec_taskpool_t *tp);
+static void parsec_termdet_fourcounter_msg_up(parsec_termdet_fourcounter_msg_up_t *msg, int src, parsec_taskpool_t *tp);
 
-int parsec_termdet_fourcounter_msg_dispatch(int src, parsec_taskpool_t *tp, const void *msg, size_t size)
+int parsec_termdet_fourcounter_msg_dispatch(parsec_comm_engine_t *ce, long unsigned int tag,  void *msg, long unsigned int size, int src,  void *module)
 {
     parsec_termdet_fourcounter_msg_type_t t = *(parsec_termdet_fourcounter_msg_type_t*)msg;
-    const parsec_termdet_fourcounter_msg_down_t *down_msg = (const parsec_termdet_fourcounter_msg_down_t*)msg;
-    const parsec_termdet_fourcounter_msg_up_t *up_msg = (const parsec_termdet_fourcounter_msg_up_t*)msg;
+    parsec_termdet_fourcounter_msg_down_t *down_msg = (parsec_termdet_fourcounter_msg_down_t*)msg;
+    parsec_termdet_fourcounter_msg_up_t *up_msg = (parsec_termdet_fourcounter_msg_up_t*)msg;
+    parsec_taskpool_t *tp = NULL;
     (void)size;
+    (void)tag;
+    (void)module;
+    (void)ce;
+    tp = parsec_taskpool_lookup(down_msg->tp_id);
     assert(NULL != tp);
     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tReceived %d bytes from %d relative to taskpool %d",
                          size, src, tp->taskpool_id);
@@ -272,6 +277,7 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
 
     if( parsec_termdet_fourcounter_topology_is_root(tp) ) {
         msg_down.msg_type = PARSEC_TERMDET_FOURCOUNTER_MSG_TYPE_DOWN;
+        msg_down.tp_id = tp->taskpool_id;
         if( parsec_termdet_fourcounter_topology_nb_children(tp) == 0 ) {
             /* Special case of singleton: don't do two waves */
             assert(tpm->acc_sent == tpm->acc_received);
@@ -287,10 +293,7 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
                                  tpm->last_acc_sent_at_root, tpm->acc_sent, tpm->last_acc_received_at_root, tpm->acc_received);
             tpm->stats_nb_sent_msg++;
             tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_down_t) + sizeof(int);
-            parsec_comm_send_message(parsec_termdet_fourcounter_topology_child(tp, i),
-                                     parsec_termdet_fourcounter_msg_tag,
-                                     tp,
-                                     &msg_down, sizeof(parsec_termdet_fourcounter_msg_down_t));
+            parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), &msg_down, sizeof(parsec_termdet_fourcounter_msg_down_t));
         }
         tpm->last_acc_sent_at_root = tpm->acc_sent;
         tpm->last_acc_received_at_root = tpm->acc_received;
@@ -309,16 +312,14 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
         tpm->state = PARSEC_TERMDET_FOURCOUNTER_IDLE_WAITING_FOR_PARENT;
         PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tProcess changed state for IDLE_WAITING_FOR_PARENT");
         msg_up.msg_type = PARSEC_TERMDET_FOURCOUNTER_MSG_TYPE_UP;
+        msg_up.tp_id = tp->taskpool_id;
         msg_up.nb_sent = tpm->acc_sent;
         msg_up.nb_received = tpm->acc_received;
         PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tSending UP message with nb_sent / nb_received of %d/%d to rank %d",
                              msg_up.nb_sent, msg_up.nb_received, parsec_termdet_fourcounter_topology_parent(tp));
         tpm->stats_nb_sent_msg++;
         tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_up_t) + sizeof(int);
-        parsec_comm_send_message(parsec_termdet_fourcounter_topology_parent(tp),
-                                 parsec_termdet_fourcounter_msg_tag,
-                                 tp,
-                                 &msg_up, sizeof(parsec_termdet_fourcounter_msg_up_t));
+        parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_parent(tp), &msg_up, sizeof(parsec_termdet_fourcounter_msg_up_t));
     }
 }
 
@@ -536,7 +537,7 @@ static int parsec_termdet_fourcounter_incoming_message_end(parsec_taskpool_t *tp
     return PARSEC_SUCCESS;
 }
 
-static void parsec_termdet_fourcounter_msg_down(const parsec_termdet_fourcounter_msg_down_t *msg, int src, parsec_taskpool_t *tp)
+static void parsec_termdet_fourcounter_msg_down(parsec_termdet_fourcounter_msg_down_t *msg, int src, parsec_taskpool_t *tp)
 {
     int i;
     parsec_termdet_fourcounter_monitor_t *tpm;
@@ -560,10 +561,7 @@ static void parsec_termdet_fourcounter_msg_down(const parsec_termdet_fourcounter
                              msg->result, parsec_termdet_fourcounter_topology_child(tp, i));
         tpm->stats_nb_sent_msg++;
         tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_down_t) + sizeof(int);
-        parsec_comm_send_message(parsec_termdet_fourcounter_topology_child(tp, i),
-                                 parsec_termdet_fourcounter_msg_tag,
-                                 tp,
-                                 msg, sizeof(parsec_termdet_fourcounter_msg_down_t));
+        parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), msg, sizeof(parsec_termdet_fourcounter_msg_down_t));
     }
 
     if(msg->result) {
@@ -592,7 +590,7 @@ static void parsec_termdet_fourcounter_msg_down(const parsec_termdet_fourcounter
     }
 }
 
-static void parsec_termdet_fourcounter_msg_up(const parsec_termdet_fourcounter_msg_up_t *msg, int src, parsec_taskpool_t *tp)
+static void parsec_termdet_fourcounter_msg_up(parsec_termdet_fourcounter_msg_up_t *msg, int src, parsec_taskpool_t *tp)
 {
     parsec_termdet_fourcounter_monitor_t *tpm;
 

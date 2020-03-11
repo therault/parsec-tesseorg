@@ -68,7 +68,6 @@ mca_base_component_t *termdet_fourcounter_static_component(void)
 
 /* set to 1 when the callback is registered -- workaround current MCA interface limitation */
 static int parsec_termdet_fourcounter_msg_cb_registered = 0;
-int parsec_termdet_fourcounter_msg_tag = -127; 
 
 static int termdet_fourcounter_component_query(mca_base_module_t **module, int *priority)
 {
@@ -78,10 +77,8 @@ static int termdet_fourcounter_component_query(mca_base_module_t **module, int *
     *module = (mca_base_module_t *)ptr;
 
     if( 0 == parsec_termdet_fourcounter_msg_cb_registered ) {
-        parsec_comm_register_callback(&parsec_termdet_fourcounter_msg_tag,
-                                      PARSEC_TERMDET_FOURCOUNTER_MAX_MSG_SIZE,
-                                      1,
-                                      parsec_termdet_fourcounter_msg_dispatch);
+        parsec_ce.tag_register(PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_msg_dispatch, ptr,
+                               PARSEC_TERMDET_FOURCOUNTER_MAX_MSG_SIZE);
         parsec_termdet_fourcounter_msg_cb_registered = 1;
     }
     
@@ -91,8 +88,7 @@ static int termdet_fourcounter_component_query(mca_base_module_t **module, int *
 static int termdet_fourcounter_component_close()
 {
     if( 1 == parsec_termdet_fourcounter_msg_cb_registered ) {
-        parsec_comm_unregister_callback(parsec_termdet_fourcounter_msg_tag);
-        parsec_termdet_fourcounter_msg_tag = -127;
+        parsec_ce.tag_unregister(PARSEC_TERMDET_FOURCOUNTER_MSG_TAG);
         parsec_termdet_fourcounter_msg_cb_registered = 0;
     }
     return MCA_SUCCESS;

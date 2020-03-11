@@ -27,14 +27,15 @@
 
 BEGIN_C_DECLS
 
+#define PARSEC_TERMDET_FOURCOUNTER_MSG_TAG 8080 /** How to get a unique TAG? */
+
 /**
  * Globally exported variable
  */
 PARSEC_DECLSPEC extern const parsec_termdet_base_component_t parsec_termdet_fourcounter_component;
 PARSEC_DECLSPEC extern const parsec_termdet_module_t parsec_termdet_fourcounter_module;
 
-extern int parsec_termdet_fourcounter_msg_tag; 
-extern int parsec_termdet_fourcounter_msg_dispatch(int src, parsec_taskpool_t *tp, const void *msg, size_t size);
+int parsec_termdet_fourcounter_msg_dispatch(parsec_comm_engine_t *ce, long unsigned int tag,  void *msg, long unsigned int size, int src,  void *module);
 
 typedef enum {
     PARSEC_TERMDET_FOURCOUNTER_MSG_TYPE_DOWN,
@@ -43,12 +44,14 @@ typedef enum {
 
 typedef struct {
     parsec_termdet_fourcounter_msg_type_t msg_type;
+    uint32_t tp_id;
     uint32_t nb_sent;
     uint32_t nb_received;
 } parsec_termdet_fourcounter_msg_up_t;
 
 typedef struct {
     parsec_termdet_fourcounter_msg_type_t msg_type;
+    uint32_t tp_id;
     uint32_t result;
 } parsec_termdet_fourcounter_msg_down_t;
 
