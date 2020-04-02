@@ -27,7 +27,7 @@
 
 BEGIN_C_DECLS
 
-#define PARSEC_TERMDET_FOURCOUNTER_MSG_TAG 8080 /** How to get a unique TAG? */
+#define PARSEC_TERMDET_FOURCOUNTER_MSG_TAG 9 /** How to get a unique TAG? */
 
 /**
  * Globally exported variable
