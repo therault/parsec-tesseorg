@@ -59,22 +59,20 @@ static uint32_t tree_dist(int n, int l, int nodes)
 static uint32_t tree_dist_rank_of_key(parsec_data_collection_t *desc, parsec_data_key_t k)
 {
     tree_dist_t *tree = (tree_dist_t*)desc;
-    int n, l;
-    assert(k < tree->allocated_nodes);
-    assert(NULL != tree->nodes[k]);
-    return tree_dist(tree->nodes[k]->n, tree->nodes[k]->l, tree->super.nodes);
+    tree_dist_node_t *node = lookup_or_create_node(tree, k);
+    assert(NULL != node);
+    return node->n % tree->super.nodes;
 }
 
 static uint32_t tree_dist_rank_of(parsec_data_collection_t *desc, ...)
 {
     va_list ap;
     int n, l;
-    int pn, pl;
     va_start(ap, desc);
     n = va_arg(ap, int);
     l = va_arg(ap, int);
     va_end(ap);
-    return tree_dist(n, l, tree->super.nodes);
+    return tree_dist_rank_of_key(desc, tree_dist_data_key(desc, n, l));
 }
 
 static parsec_data_t* tree_dist_data_of_key(parsec_data_collection_t *desc, parsec_data_key_t key)
