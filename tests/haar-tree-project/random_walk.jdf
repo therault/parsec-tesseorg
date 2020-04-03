@@ -5,7 +5,7 @@ extern "C" %{
 
 struct __parsec_random_walk_WALK_task_s;
 
-static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const assignment_t *_as);
+static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const parsec_assignment_t *_as);
 
 static int my_random_walk_startup(parsec_execution_stream_t * es,
                                   struct __parsec_random_walk_WALK_task_s * this_task);
@@ -48,7 +48,7 @@ END
 
 extern "C" %{
 
-static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const assignment_t *_as)
+static parsec_key_t random_walk_make_key(const parsec_taskpool_t* __tp, const parsec_assignment_t *_as)
 {
     (void)__tp;
     const struct __parsec_random_walk_WALK_assignment_s * assignments = (const struct __parsec_random_walk_WALK_assignment_s *)_as;
