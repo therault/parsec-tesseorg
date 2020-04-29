@@ -293,7 +293,7 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
                                  tpm->last_acc_sent_at_root, tpm->acc_sent, tpm->last_acc_received_at_root, tpm->acc_received);
             tpm->stats_nb_sent_msg++;
             tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_down_t) + sizeof(int);
-            parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), &msg_down, sizeof(parsec_termdet_fourcounter_msg_down_t));
+            parsec_ce.send_am(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), &msg_down, sizeof(parsec_termdet_fourcounter_msg_down_t));
         }
         tpm->last_acc_sent_at_root = tpm->acc_sent;
         tpm->last_acc_received_at_root = tpm->acc_received;
@@ -319,7 +319,7 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
                              msg_up.nb_sent, msg_up.nb_received, parsec_termdet_fourcounter_topology_parent(tp));
         tpm->stats_nb_sent_msg++;
         tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_up_t) + sizeof(int);
-        parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_parent(tp), &msg_up, sizeof(parsec_termdet_fourcounter_msg_up_t));
+        parsec_ce.send_am(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_parent(tp), &msg_up, sizeof(parsec_termdet_fourcounter_msg_up_t));
     }
 }
 
@@ -561,7 +561,7 @@ static void parsec_termdet_fourcounter_msg_down(parsec_termdet_fourcounter_msg_d
                              msg->result, parsec_termdet_fourcounter_topology_child(tp, i));
         tpm->stats_nb_sent_msg++;
         tpm->stats_nb_sent_bytes += sizeof(parsec_termdet_fourcounter_msg_down_t) + sizeof(int);
-        parsec_ce.send_active_message(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), msg, sizeof(parsec_termdet_fourcounter_msg_down_t));
+        parsec_ce.send_am(&parsec_ce, PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_topology_child(tp, i), msg, sizeof(parsec_termdet_fourcounter_msg_down_t));
     }
 
     if(msg->result) {
