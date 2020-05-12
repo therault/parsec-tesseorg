@@ -3711,9 +3711,11 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
     coutput("  if(1 == parsec_atomic_fetch_dec_int32(&__parsec_tp->sync_point)) {\n"
             "    /* Last initialization task complete. Update the number of tasks. */\n");
     if(!need_to_count_tasks) {
-        if( NULL != jdf_property_get_string(jdf->global_properties, JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME, NULL) ) {
+        jdf_expr_t *expr;
+        jdf_def_list_t* property;
+        if( NULL != (expr = jdf_find_property(jdf->global_properties, JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME, &property) ) ) {
             coutput("    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, %s(__parsec_tp));\n",
-                    jdf_property_get_string(jdf->global_properties, JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME, NULL));
+                    expr->jdf_c_code.fname);
         } else {
             assert(NULL != jdf_property_get_string(jdf->global_properties, JDF_PROP_DYNAMIC_JDF, NULL));
             /* The startup tasks are going to count the real number of tasks as they discover them.
