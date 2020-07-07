@@ -593,7 +593,7 @@ static void remote_dep_mpi_recv_activate(parsec_execution_stream_t* es,
 #endif
 
     deps->taskpool->tdm.module->incoming_message_start(deps->taskpool, deps->from, packed_buffer, position,
-                                                       length, deps, MPI_COMM_NULL);
+                                                       length, deps);
 
     for(k = 0; deps->incoming_mask>>k; k++) {
         if(!(deps->incoming_mask & (1U<<k))) continue;
@@ -1681,7 +1681,7 @@ static int remote_dep_mpi_pack_dep(int peer,
     /* And now pack the updated message (msg->length and msg->output_mask) itself. */
     //MPI_Pack(msg, dep_count, dep_dtt, packed_buffer, length, &saved_position, dep_comm);
     parsec_ce.pack(&parsec_ce, msg, dep_count, packed_buffer, length, &saved_position);
-    deps->taskpool->tdm.module->outgoing_message_pack(deps->taskpool, peer, packed_buffer, &saved_position, length, MPI_COMM_NULL);
+    deps->taskpool->tdm.module->outgoing_message_pack(deps->taskpool, peer, packed_buffer, &saved_position, length);
     msg->length = dsize;
     return 0;
 }

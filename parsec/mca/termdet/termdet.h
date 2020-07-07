@@ -17,7 +17,6 @@
 #include "parsec/mca/mca.h"
 
 #include <stdio.h>
-#include <mpi.h>
 
 BEGIN_C_DECLS
 
@@ -189,8 +188,7 @@ typedef int (*parsec_termdet_outgoing_message_pack_fn_t)(parsec_taskpool_t *tp,
                                                          int dst_rank,
                                                          char *packed_buffer,
                                                          int  *position,
-                                                         int   buffer_size,
-                                                         MPI_Comm comm);
+                                                         int   buffer_size);
 
 /**
  * @brief Signals that an application message is being sent, in relation to a 
@@ -246,8 +244,7 @@ typedef int (*parsec_termdet_incoming_message_start_fn_t)(parsec_taskpool_t *tp,
                                                           char *packed_buffer,
                                                           int  *position,
                                                           int   buffer_size,
-                                                          const parsec_remote_deps_t *msg,
-                                                          MPI_Comm comm);
+                                                          const parsec_remote_deps_t *msg);
 
 /**
  * @brief Signals that an application message has been received, in

@@ -34,8 +34,7 @@ static int parsec_termdet_fourcounter_outgoing_message_pack(parsec_taskpool_t *t
                                                             int dst_rank,
                                                             char *packed_buffer,
                                                             int *position,
-                                                            int buffer_size,
-                                                            MPI_Comm comm);
+                                                            int buffer_size);
 static int parsec_termdet_fourcounter_outgoing_message_start(parsec_taskpool_t *tp,
                                                             int dst_rank,
                                                             parsec_remote_deps_t *remote_deps);
@@ -44,8 +43,7 @@ static int parsec_termdet_fourcounter_incoming_message_start(parsec_taskpool_t *
                                                              char *packed_buffer,
                                                              int *position,
                                                              int buffer_size,
-                                                             const parsec_remote_deps_t *msg,
-                                                             MPI_Comm comm);
+                                                             const parsec_remote_deps_t *msg);
 static int parsec_termdet_fourcounter_incoming_message_end(parsec_taskpool_t *tp,
                                                            const parsec_remote_deps_t *msg);
 static int parsec_termdet_fourcounter_write_stats(parsec_taskpool_t *tp, FILE *fp);
@@ -462,8 +460,7 @@ static int parsec_termdet_fourcounter_outgoing_message_pack(parsec_taskpool_t *t
                                                             int dst_rank,
                                                             char *packed_buffer,
                                                             int *position,
-                                                            int buffer_size,
-                                                            MPI_Comm comm)
+                                                            int buffer_size)
 {
     assert( tp->tdm.module != NULL );
     assert( tp->tdm.module == &parsec_termdet_fourcounter_module.module );
@@ -473,7 +470,6 @@ static int parsec_termdet_fourcounter_outgoing_message_pack(parsec_taskpool_t *t
     (void)packed_buffer;
     (void)position;
     (void)buffer_size;
-    (void)comm;
     return PARSEC_SUCCESS;
 }
 
@@ -482,8 +478,7 @@ static int parsec_termdet_fourcounter_incoming_message_start(parsec_taskpool_t *
                                                              char *packed_buffer,
                                                              int *position,
                                                              int buffer_size,
-                                                             const parsec_remote_deps_t *msg,
-                                                             MPI_Comm comm)
+                                                             const parsec_remote_deps_t *msg)
 {
     parsec_termdet_fourcounter_monitor_t *tpm;
     assert( tp->tdm.module != NULL );
@@ -512,7 +507,6 @@ static int parsec_termdet_fourcounter_incoming_message_start(parsec_taskpool_t *
     (void)position;
     (void)buffer_size;
     (void)msg;
-    (void)comm;
     
     return PARSEC_SUCCESS;
 }
