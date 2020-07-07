@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     int rank, world;
     two_dim_block_cyclic_t fakeDesc;
     parsec_random_walk_taskpool_t *rwalk;
-    parsec_arena_t arena;
+    parsec_arena_datatype_t adt;
     int pargc = 0, i, dashdash = -1;
     char **pargv;
     int ret, ch;
@@ -90,11 +90,10 @@ int main(int argc, char *argv[])
     two_dim_block_cyclic_init(&fakeDesc, matrix_RealFloat, matrix_Tile,
                               world, rank, 1, 1, world, world, 0, 0, world, world, 1, 1, 1);
 
-    parsec_arena_construct( &arena,
-                            parsec_datadist_getsizeoftype(matrix_RealFloat),
-                           PARSEC_ARENA_ALIGNMENT_SSE,
-                           parsec_datatype_float_t
-                         );    
+    parsec_arena_datatype_construct( &adt,
+                                     parsec_datadist_getsizeoftype(matrix_RealFloat),
+                                     PARSEC_ARENA_ALIGNMENT_SSE,
+                                     parsec_datatype_float_t );    
     
     if(alrm > 0) {
         alarm(alrm);
@@ -106,15 +105,15 @@ int main(int argc, char *argv[])
     }
     
     rwalk = parsec_random_walk_new(world, (parsec_data_collection_t*)&fakeDesc, depth, prob_branch, verbose);
-    rwalk->arenas[PARSEC_random_walk_DEFAULT_ARENA] = &arena;
+    rwalk->arenas_datatypes[PARSEC_random_walk_DEFAULT_ARENA] = adt;
     rc = parsec_enqueue(parsec, &rwalk->super);
     PARSEC_CHECK_ERROR(rc, "parsec_enqueue");
     rc = parsec_context_start(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_start");
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
-        
-    rwalk->arenas[PARSEC_random_walk_DEFAULT_ARENA] = NULL;
+
+    parsec_matrix_del2arena( &rwalk->arenas_datatypes[PARSEC_random_walk_DEFAULT_ARENA] );
     parsec_taskpool_free(&rwalk->super);
     ret = 0;
 

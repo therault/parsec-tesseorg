@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
-    project = parsec_project_new(treeA, world, (parsec_data_collection_t*)&fakeDesc, 1e-3, be_verbose);
+    project = parsec_project_new(treeA, world, (parsec_data_collection_t*)&fakeDesc, 1e-3, be_verbose, 1.0);
     project->arenas_datatypes[PARSEC_project_DEFAULT_ARENA] = adt;
     PARSEC_OBJ_RETAIN(adt.arena);
     rc = parsec_context_add_taskpool(parsec, &project->super);
@@ -256,7 +256,7 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
         
-    project->arenas[PARSEC_project_DEFAULT_ARENA] = NULL;
+    project->arenas_datatypes[PARSEC_project_DEFAULT_ARENA].arena = NULL;
     parsec_taskpool_free(&project->super);
     ret = 0;
 #if 0
@@ -316,9 +316,7 @@ int main(int argc, char *argv[])
 #endif  /* defined(HAVE_MPI) */
     parsec_matrix_del2arena( & adt );
 
-    parsec_taskpool_free(&project->super);
-
-    walker->arenas[PARSEC_walk_DEFAULT_ARENA] = NULL;
+    walker->arenas_datatypes[PARSEC_walk_DEFAULT_ARENA].arena = NULL;
     parsec_taskpool_free(&walker->super);
 #endif
 

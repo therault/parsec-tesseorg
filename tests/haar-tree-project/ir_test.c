@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
     two_dim_block_cyclic_t fakeDesc;
     parsec_random_walk_taskpool_t *rwalk;
     parsec_project_taskpool_t *proj1, *proj2;
-    parsec_arena_t arena;
+    parsec_arena_datatype_t adt;
     int pargc = 0, i, dashdash = -1;
     char **pargv;
     int ret, ch;
@@ -174,12 +174,6 @@ int main(int argc, char *argv[])
     two_dim_block_cyclic_init(&fakeDesc, matrix_RealFloat, matrix_Tile,
                               world, rank, 1, 1, world, world, 0, 0, world, world, 1, 1, 1);
 
-    parsec_arena_construct( &arena,
-                            parsec_datadist_getsizeoftype(matrix_RealFloat),
-                           PARSEC_ARENA_ALIGNMENT_SSE,
-                           parsec_datatype_float_t
-                         );    
-    
     if(alrm > 0) {
         alarm(alrm);
     }
@@ -201,21 +195,20 @@ int main(int argc, char *argv[])
     }
 
     treeA = tree_dist_create_empty(rank, world);
-    parsec_arena_construct( &arena,
-                           2 * parsec_datadist_getsizeoftype(matrix_RealFloat),
-                           PARSEC_ARENA_ALIGNMENT_SSE,
-                           parsec_datatype_float_t
-                         );
+    parsec_arena_datatype_construct( &adt,
+                                     2 * parsec_datadist_getsizeoftype(matrix_RealFloat),
+                                     PARSEC_ARENA_ALIGNMENT_SSE,
+                                     parsec_datatype_float_t);
 
     MPI_Barrier(MPI_COMM_WORLD);
  
     rwalk = parsec_random_walk_new(world, (parsec_data_collection_t*)&fakeDesc, depth, prob_branch, verbose);
-    rwalk->arenas[PARSEC_random_walk_DEFAULT_ARENA] = &arena;
+    rwalk->arenas_datatypes[PARSEC_random_walk_DEFAULT_ARENA] = adt;
     rc = parsec_enqueue(parsec, &rwalk->super);
     PARSEC_CHECK_ERROR(rc, "parsec_enqueue");
 #if 0
     proj1 = parsec_project_new(treeA, world, (parsec_data_collection_t*)&fakeDesc, 1e-13, verbose, 0.33333);
-    proj1->arenas[PARSEC_project_DEFAULT_ARENA] = &arena;
+    proj1->arenas_datatypes[PARSEC_project_DEFAULT_ARENA] = adt;
     rc = parsec_enqueue(parsec, &proj1->super);
     PARSEC_CHECK_ERROR(rc, "parsec_enqueue");
     proj2 = parsec_project_new(treeA, world, (parsec_data_collection_t*)&fakeDesc, 1e-13, verbose, 0.66666);
@@ -235,8 +228,9 @@ int main(int argc, char *argv[])
 
     printf("Injection rate at rank %d: %lu messages sent in %g seconds : %g msg/s\n", rank, ir_nb_sent, ir_delta, ir_nb_sent / ir_delta);
 #endif
-    
-    rwalk->arenas[PARSEC_random_walk_DEFAULT_ARENA] = NULL;
+    parsec_matrix_del2arena( & adt );
+
+    rwalk->arenas_datatypes[PARSEC_random_walk_DEFAULT_ARENA].arena = NULL;
     parsec_taskpool_free(&rwalk->super);
     ret = 0;
 
