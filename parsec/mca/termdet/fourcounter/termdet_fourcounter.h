@@ -25,9 +25,9 @@
 #include "parsec/mca/mca.h"
 #include "parsec/mca/termdet/termdet.h"
 
-BEGIN_C_DECLS
+#include "parsec/parsec_remote_dep.h"
 
-#define PARSEC_TERMDET_FOURCOUNTER_MSG_TAG 9 /** How to get a unique TAG? */
+BEGIN_C_DECLS
 
 /**
  * Globally exported variable
