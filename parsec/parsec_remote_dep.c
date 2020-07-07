@@ -591,6 +591,10 @@ static void remote_dep_mpi_recv_activate(parsec_execution_stream_t* es,
            deps->from, tmp, deps->msg.deps, deps->incoming_mask,
            deps->msg.length, *position, length, deps->max_priority);
 #endif
+
+    deps->taskpool->tdm.module->incoming_message_start(deps->taskpool, deps->from, packed_buffer, position,
+                                                       length, deps, MPI_COMM_NULL);
+
     for(k = 0; deps->incoming_mask>>k; k++) {
         if(!(deps->incoming_mask & (1U<<k))) continue;
         /* Check for CTL and data that do not carry payload */
@@ -1564,6 +1568,8 @@ remote_dep_release_incoming(parsec_execution_stream_t* es,
     if(0 != origin->incoming_mask)  /* not done receiving */
         return origin;
 
+    origin->taskpool->tdm.module->incoming_message_end(origin->taskpool, origin);
+
     /**
      * All incoming data are now received, start the propagation. We first
      * release the local dependencies, thus we must ensure the communication
@@ -1631,6 +1637,8 @@ static int remote_dep_mpi_pack_dep(int peer,
 
     //MPI_Pack_size(dep_count, dep_dtt, dep_comm, &dsize);
     dsize = dep_count;
+    dsize += deps->taskpool->tdm.module->outgoing_message_piggyback_size;
+
     if( (length - (*position)) < dsize ) {  /* no room. bail out */
         PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Can't pack at %d/%d. Bail out!", *position, length);
         return 1;
@@ -1673,6 +1681,7 @@ static int remote_dep_mpi_pack_dep(int peer,
     /* And now pack the updated message (msg->length and msg->output_mask) itself. */
     //MPI_Pack(msg, dep_count, dep_dtt, packed_buffer, length, &saved_position, dep_comm);
     parsec_ce.pack(&parsec_ce, msg, dep_count, packed_buffer, length, &saved_position);
+    deps->taskpool->tdm.module->outgoing_message_pack(deps->taskpool, peer, packed_buffer, &saved_position, length, MPI_COMM_NULL);
     msg->length = dsize;
     return 0;
 }
