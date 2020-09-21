@@ -161,9 +161,9 @@ static int remote_dep_ce_init(parsec_context_t* context);
 static int remote_dep_ce_fini(parsec_context_t* context);
 
 #ifdef PARSEC_PROF_TRACE
-parsec_thread_profiling_t* MPIctl_prof;
-parsec_thread_profiling_t* MPIsnd_prof;
-parsec_thread_profiling_t* MPIrcv_prof;
+parsec_profiling_stream_t* MPIctl_prof;
+parsec_profiling_stream_t* MPIsnd_prof;
+parsec_profiling_stream_t* MPIrcv_prof;
 int MPI_Activate_sk, MPI_Activate_ek;
 int MPI_Data_ctl_sk, MPI_Data_ctl_ek;
 int MPI_Data_plds_sk, MPI_Data_plds_ek;
@@ -207,9 +207,9 @@ static void remote_dep_mpi_profiling_init(void)
                                             parsec_profile_remote_dep_mpi_info_to_string,
                                             &put_cb_trace_sk, &put_cb_trace_ek);
 
-    MPIctl_prof = parsec_profiling_thread_init( 2*1024*1024, "MPI ctl");
-    MPIsnd_prof = parsec_profiling_thread_init( 2*1024*1024, "MPI isend");
-    MPIrcv_prof = parsec_profiling_thread_init( 2*1024*1024, "MPI irecv");
+    MPIctl_prof = parsec_profiling_stream_init( 2*1024*1024, "MPI ctl");
+    MPIsnd_prof = parsec_profiling_stream_init( 2*1024*1024, "MPI isend");
+    MPIrcv_prof = parsec_profiling_stream_init( 2*1024*1024, "MPI irecv");
     parsec_comm_es.es_profile = MPIctl_prof;
 }
 
