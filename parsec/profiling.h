@@ -207,12 +207,12 @@ parsec_profiling_stream_init( size_t length, const char *format, ...);
  * for the calling thread. The function returns the old bound profiling_stream
  * if any.
  *
- * @param[in] new: the new profiling_stream to bind on the calling thread
+ * @param[in] n  : the new profiling_stream to bind on the calling thread
  * @return         the old profiling_stream that was bound to the calling thread
  *                 (NULL initially).
  * @remark not thread safe
  */
-parsec_profiling_stream_t *parsec_profiling_set_default_thread( parsec_profiling_stream_t *new );
+parsec_profiling_stream_t *parsec_profiling_set_default_thread( parsec_profiling_stream_t *n );
 
 
 /**
