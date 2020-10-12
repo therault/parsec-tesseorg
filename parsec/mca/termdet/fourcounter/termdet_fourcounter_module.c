@@ -109,18 +109,21 @@ typedef struct parsec_termdet_fourcounter_monitor_s {
 static void parsec_termdet_fourcounter_msg_down(parsec_termdet_fourcounter_msg_down_t *msg, int src, parsec_taskpool_t *tp);
 static void parsec_termdet_fourcounter_msg_up(parsec_termdet_fourcounter_msg_up_t *msg, int src, parsec_taskpool_t *tp);
 
-int parsec_termdet_fourcounter_msg_dispatch(parsec_comm_engine_t *ce, long unsigned int tag,  void *msg, long unsigned int size, int src,  void *module)
+parsec_list_t parsec_termdet_fourcounter_delayed_messages;
+
+static int parsec_termdet_fourcounter_msg_dispatch_taskpool(parsec_taskpool_t *tp, parsec_comm_engine_t *ce,
+                                                            long unsigned int tag,  void *msg,
+                                                            long unsigned int size, int src,  void *module)
 {
     parsec_termdet_fourcounter_msg_type_t t = *(parsec_termdet_fourcounter_msg_type_t*)msg;
     parsec_termdet_fourcounter_msg_down_t *down_msg = (parsec_termdet_fourcounter_msg_down_t*)msg;
     parsec_termdet_fourcounter_msg_up_t *up_msg = (parsec_termdet_fourcounter_msg_up_t*)msg;
-    parsec_taskpool_t *tp = NULL;
     (void)size;
     (void)tag;
     (void)module;
     (void)ce;
-    tp = parsec_taskpool_lookup(down_msg->tp_id);
-    assert(NULL != tp);
+
+    parsec_list_unlock(&parsec_termdet_fourcounter_delayed_messages);
     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tReceived %d bytes from %d relative to taskpool %d",
                          size, src, tp->taskpool_id);
     
@@ -142,6 +145,42 @@ int parsec_termdet_fourcounter_msg_dispatch(parsec_comm_engine_t *ce, long unsig
     assert(0);
     return PARSEC_ERROR;
 }
+
+int parsec_termdet_fourcounter_msg_dispatch(parsec_comm_engine_t *ce, long unsigned int tag,  void *msg, long unsigned int size, int src,  void *module)
+{
+    parsec_termdet_fourcounter_delayed_msg_t *delayed_msg;
+    parsec_termdet_fourcounter_msg_down_t *down_msg = (parsec_termdet_fourcounter_msg_down_t*)msg;
+    parsec_taskpool_t *tp = parsec_taskpool_lookup(down_msg->tp_id);
+
+    if( (NULL == tp) || (NULL == tp->tdm.monitor) ||
+        (((parsec_termdet_fourcounter_monitor_t*)tp->tdm.monitor)->state == PARSEC_TERMDET_FOURCOUNTER_NOT_READY) ) {
+        parsec_list_lock(&parsec_termdet_fourcounter_delayed_messages);
+        /* We re-check: somebody may have already inserted the
+         * taskpool when we didn't have the lock */
+        tp = parsec_taskpool_lookup(down_msg->tp_id);
+        if ((NULL == tp) || (NULL == tp->tdm.monitor) ||
+            (((parsec_termdet_fourcounter_monitor_t *) tp->tdm.monitor)->state ==
+             PARSEC_TERMDET_FOURCOUNTER_NOT_READY)) {
+            delayed_msg = (parsec_termdet_fourcounter_delayed_msg_t *) malloc(
+                    sizeof(parsec_termdet_fourcounter_delayed_msg_t));
+            PARSEC_LIST_ITEM_SINGLETON(delayed_msg);
+            assert(size <= PARSEC_TERMDET_FOURCOUNTER_MAX_MSG_SIZE);
+            delayed_msg->ce = ce;
+            delayed_msg->module = module;
+            delayed_msg->tag = tag;
+            delayed_msg->size = size;
+            delayed_msg->src = src;
+            memcpy(delayed_msg->msg, msg, size);
+            parsec_list_nolock_push_back(&parsec_termdet_fourcounter_delayed_messages, &delayed_msg->list_item);
+            parsec_list_unlock(&parsec_termdet_fourcounter_delayed_messages);
+            return PARSEC_SUCCESS;
+        }
+        parsec_list_unlock(&parsec_termdet_fourcounter_delayed_messages);
+    }
+
+    return parsec_termdet_fourcounter_msg_dispatch_taskpool(tp, ce, tag,  msg, size, src,  module);
+}
+
 
 static int parsec_termdet_fourcounter_topology_nb_children(parsec_taskpool_t *tp)
 {
@@ -247,6 +286,10 @@ static parsec_termdet_taskpool_state_t parsec_termdet_fourcounter_taskpool_state
 static int parsec_termdet_fourcounter_taskpool_ready(parsec_taskpool_t *tp)
 {
     parsec_termdet_fourcounter_monitor_t *tpm;
+    parsec_list_item_t *item, *next;
+    parsec_termdet_fourcounter_delayed_msg_t *delayed_msg;
+    parsec_termdet_fourcounter_msg_down_t *down_msg;
+
     assert( tp->tdm.module != NULL );
     assert( tp->tdm.module == &parsec_termdet_fourcounter_module.module );
     assert( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED );
@@ -259,6 +302,23 @@ static int parsec_termdet_fourcounter_taskpool_ready(parsec_taskpool_t *tp)
                                                                         * we sent the UP message */
     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tProcess changed state for BUSY (taskpool ready)");
     parsec_atomic_rwlock_wrunlock(&tpm->rw_lock);
+
+    parsec_list_lock(&parsec_termdet_fourcounter_delayed_messages);
+    for(item = PARSEC_LIST_ITERATOR_FIRST(&parsec_termdet_fourcounter_delayed_messages);
+        item != PARSEC_LIST_ITERATOR_END(&parsec_termdet_fourcounter_delayed_messages);
+        item = next) {
+        next = PARSEC_LIST_ITEM_NEXT(item);
+        delayed_msg = (parsec_termdet_fourcounter_delayed_msg_t*)item;
+        down_msg = (parsec_termdet_fourcounter_msg_down_t*)delayed_msg->msg;
+        if(down_msg->tp_id == tp->taskpool_id) {
+            parsec_list_nolock_remove(&parsec_termdet_fourcounter_delayed_messages, item);
+            parsec_termdet_fourcounter_msg_dispatch_taskpool(tp, delayed_msg->ce, delayed_msg->tag,
+                                                            delayed_msg->msg, delayed_msg->size,
+                                                            delayed_msg->src, delayed_msg->module);
+        }
+    }
+    parsec_list_unlock(&parsec_termdet_fourcounter_delayed_messages);
+
     return PARSEC_SUCCESS;
 }
 
@@ -298,7 +358,6 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
         if( msg_down.result ) {
             PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tTermination detected on root decision");
             gettimeofday(&tpm->stats_time_end, NULL);
-            parsec_termdet_fourcounter_write_stats(tp, stdout);
             tp->tdm.monitor = PARSEC_TERMDET_FOURCOUNTER_TERMINATED;
             tp->tdm.callback(tp);
             free(tpm);
@@ -411,6 +470,7 @@ static int parsec_termdet_fourcounter_taskpool_addto_nb_tasks(parsec_taskpool_t 
         return tp->tdm.counters.nb_tasks;
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_TASKS %d -> %d", tp->tdm.counters.nb_tasks, tp->tdm.counters.nb_tasks + v);
     tp->tdm.counters.nb_tasks += v;
     ret = tp->tdm.counters.nb_tasks;
     parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
@@ -430,6 +490,7 @@ static int parsec_termdet_fourcounter_taskpool_addto_nb_pa(parsec_taskpool_t *tp
         return tp->tdm.counters.nb_pending_actions;
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_PA %d -> %d", tp->tdm.counters.nb_pending_actions, tp->tdm.counters.nb_pending_actions + v);
     tp->tdm.counters.nb_pending_actions += v;
     ret = tp->tdm.counters.nb_pending_actions;
     parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
@@ -561,7 +622,6 @@ static void parsec_termdet_fourcounter_msg_down(parsec_termdet_fourcounter_msg_d
     if(msg->result) {
         assert(tpm->state == PARSEC_TERMDET_FOURCOUNTER_IDLE_WAITING_FOR_PARENT);
         gettimeofday(&tpm->stats_time_end, NULL);
-        parsec_termdet_fourcounter_write_stats(tp, stdout);
         tp->tdm.monitor = PARSEC_TERMDET_FOURCOUNTER_TERMINATED;
         PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tTermination detected on DOWN(true) message");
         parsec_atomic_rwlock_wrunlock(&tpm->rw_lock);

@@ -79,7 +79,9 @@ static int termdet_fourcounter_component_query(mca_base_module_t **module, int *
     if( 0 == parsec_termdet_fourcounter_msg_cb_registered ) {
         int rc = parsec_ce.tag_register(PARSEC_TERMDET_FOURCOUNTER_MSG_TAG, parsec_termdet_fourcounter_msg_dispatch, ptr,
                                         PARSEC_TERMDET_FOURCOUNTER_MAX_MSG_SIZE);
-        parsec_termdet_fourcounter_msg_cb_registered = 1;
+        (void)rc;
+        PARSEC_OBJ_CONSTRUCT(&parsec_termdet_fourcounter_delayed_messages, parsec_list_t);
+        parsec_termdet_fourcounter_msg_cb_registered++;
     }
     
     return MCA_SUCCESS;
@@ -87,9 +89,10 @@ static int termdet_fourcounter_component_query(mca_base_module_t **module, int *
 
 static int termdet_fourcounter_component_close()
 {
-    if( 1 == parsec_termdet_fourcounter_msg_cb_registered ) {
+    parsec_termdet_fourcounter_msg_cb_registered--;
+    if( 0 == parsec_termdet_fourcounter_msg_cb_registered ) {
         parsec_ce.tag_unregister(PARSEC_TERMDET_FOURCOUNTER_MSG_TAG);
-        parsec_termdet_fourcounter_msg_cb_registered = 0;
+        PARSEC_OBJ_DESTRUCT(&parsec_termdet_fourcounter_delayed_messages);
     }
     return MCA_SUCCESS;
 }

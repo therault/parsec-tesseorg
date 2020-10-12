@@ -55,7 +55,22 @@ typedef struct {
     uint32_t result;
 } parsec_termdet_fourcounter_msg_down_t;
 
+// This needs to be kept in sync with all possible messages
+#define TERMDET_FOURCOUNTER_MAX_MSG_SIZE (sizeof(parsec_termdet_fourcounter_msg_down_t))
+
+typedef struct {
+    parsec_list_item_t list_item;
+    unsigned char msg[TERMDET_FOURCOUNTER_MAX_MSG_SIZE];
+    parsec_comm_engine_t *ce;
+    void *module;
+    long unsigned int tag;
+    long unsigned int size;
+    int src;
+} parsec_termdet_fourcounter_delayed_msg_t;
+
 #define PARSEC_TERMDET_FOURCOUNTER_MAX_MSG_SIZE sizeof(parsec_termdet_fourcounter_msg_up_t)
+
+extern parsec_list_t parsec_termdet_fourcounter_delayed_messages;
 
 /* static accessor */
 mca_base_component_t *termdet_fourcounter_static_component(void);
