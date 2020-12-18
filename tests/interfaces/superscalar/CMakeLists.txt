@@ -20,7 +20,6 @@ parsec_addtest_executable(C dtd_test_data_flush SOURCES dtd_test_data_flush.c ${
 parsec_addtest_executable(C dtd_test_global_id_for_dc_assumed SOURCES dtd_test_global_id_for_dc_assumed.c ${COMMON_DATA})
 parsec_addtest_executable(C dtd_test_explicit_task_creation SOURCES dtd_test_explicit_task_creation.c ${COMMON_DATA})
 parsec_addtest_executable(C dtd_test_tp_enqueue_dequeue SOURCES dtd_test_tp_enqueue_dequeue.c)
-parsec_addtest_executable(C dtd_test_interleave_actions dtd_test_interleave_actions.c)
 
 #
 # Shared Memory Testings
@@ -38,5 +37,4 @@ if( MPI_C_FOUND )
   parsec_addtest_cmd(unit_dtd_task_inserting_task_mpi ${MPI_TEST_CMD_LIST} 4 ./dtd_test_task_inserting_task)
   parsec_addtest_cmd(unit_dtd_task_insertion_mpi ${MPI_TEST_CMD_LIST} 4 ./dtd_test_task_insertion)
   parsec_addtest_cmd(unit_dtd_war_mpi ${MPI_TEST_CMD_LIST} 4 ./dtd_test_war)
-  parsec_addtest_cmd(unit_dtd_interleave_actions_mpi ${MPI_TEST_CMD_LIST} 4 ./dtd_test_interleave_actions)
 endif( MPI_C_FOUND )

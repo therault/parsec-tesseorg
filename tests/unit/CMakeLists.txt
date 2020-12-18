@@ -23,7 +23,7 @@ parsec_addtest_executable(C list_inline SOURCES list.c)
 parsec_addtest_executable(C hash_inline SOURCES hash.c)
 set_property(TARGET rwlock_inline lifo_inline list_inline hash_inline
   APPEND PROPERTY COMPILE_DEFINITIONS BUILDING_PARSEC)
-set_property(TARGET atomics_inline rwlock_inline lifo_inline list_inline hash_inline
+set_property(TARGET rwlock_inline lifo_inline list_inline hash_inline
   APPEND PROPERTY COMPILE_OPTIONS ${PARSEC_ATOMIC_SUPPORT_OPTIONS})
 
 include(Testings.cmake)
