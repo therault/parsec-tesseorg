@@ -2,9 +2,11 @@
 # Shared Memory Testings
 #
 
-parsec_addtest_cmd(unit_startup1_shm ${SHM_TEST_CMD_LIST} ./startup -i=10 -j=10 -k=10 -v=5)
-parsec_addtest_cmd(unit_startup2_shm ${SHM_TEST_CMD_LIST} ./startup -i=10 -j=20 -k=30 -v=5)
-parsec_addtest_cmd(unit_startup3_shm ${SHM_TEST_CMD_LIST} ./startup -i=30 -j=30 -k=30 -v=5)
+if(PARSEC_HAVE_RANDOM)
+  parsec_addtest_cmd(unit_startup1_shm ${SHM_TEST_CMD_LIST} ./startup -i=10 -j=10 -k=10 -v=5)
+  parsec_addtest_cmd(unit_startup2_shm ${SHM_TEST_CMD_LIST} ./startup -i=10 -j=20 -k=30 -v=5)
+  parsec_addtest_cmd(unit_startup3_shm ${SHM_TEST_CMD_LIST} ./startup -i=30 -j=30 -k=30 -v=5)
+endif(PARSEC_HAVE_RANDOM)
 parsec_addtest_cmd(unit_reduce_shm ${SHM_TEST_CMD_LIST} ./reduce)
 parsec_addtest_cmd(unit_strange_shm ${SHM_TEST_CMD_LIST} ./strange)
 parsec_addtest_cmd(unit_touch_shm  ${SHM_TEST_CMD_LIST} ./touch_ex -v=5)
