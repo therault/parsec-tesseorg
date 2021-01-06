@@ -32,7 +32,8 @@ function(parsec_addtest_executable lang target)
   target_link_libraries(${target}
     PRIVATE
       parsec
-      $<$<STREQUAL:Fortran,${lang}>:parsec_fortran>)
+      $<$<STREQUAL:Fortran,${lang}>:parsec_fortran>
+      m)
   if(NOT ${PARSEC_ADDTEST_NODEFAULTBUILD})
     add_dependencies(parsec_build_tests ${target})
   endif()
