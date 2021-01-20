@@ -272,8 +272,15 @@ struct dep_cmd_item_s {
 void* remote_dep_dequeue_main(parsec_context_t* context);
 int remote_dep_dequeue_new_taskpool(parsec_taskpool_t* tp);
 
+int remote_dep_dequeue_init(parsec_context_t* context);
+int remote_dep_dequeue_fini(parsec_context_t* context);
 int remote_dep_dequeue_on(parsec_context_t* context);
 int remote_dep_dequeue_off(parsec_context_t* context);
+int remote_dep_dequeue_new_taskpool(parsec_taskpool_t *tp);
+int remote_dep_dequeue_send(parsec_execution_stream_t* es, int rank,
+                            parsec_remote_deps_t* deps);
+int remote_dep_dequeue_progress(parsec_execution_stream_t *es, int cycles);
+
 #   define remote_dep_init(ctx) remote_dep_dequeue_init(ctx)
 #   define remote_dep_fini(ctx) remote_dep_dequeue_fini(ctx)
 #   define remote_dep_on(ctx)   remote_dep_dequeue_on(ctx)
