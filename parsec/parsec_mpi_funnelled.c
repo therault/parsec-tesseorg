@@ -653,6 +653,8 @@ mpi_no_thread_tag_register(parsec_ce_tag_t tag,
         return PARSEC_EXISTS;
     }
 
+    pthread_mutex_lock(&array_of_requests_mtx);
+
     size_of_total_reqs += EACH_STATIC_REQ_RANGE;
 
     array_of_indices = realloc(array_of_indices, size_of_total_reqs * sizeof(int));
@@ -717,6 +719,8 @@ mpi_no_thread_tag_register(parsec_ce_tag_t tag,
     assert((mpi_funnelled_static_req_idx + MAX_DYNAMIC_REQ_RANGE) == size_of_total_reqs);
 
     mpi_funnelled_last_active_req += EACH_STATIC_REQ_RANGE;
+
+    pthread_mutex_unlock(&array_of_requests_mtx);
 
     return PARSEC_SUCCESS;
 }
