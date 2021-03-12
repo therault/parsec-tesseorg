@@ -35,6 +35,7 @@ typedef unsigned long remote_dep_datakey_t;
 #define PARSEC_ACTION_RECV_INIT_REMOTE_DEPS      0x40000000
 #define PARSEC_ACTION_RELEASE_REMOTE_DEPS        (PARSEC_ACTION_SEND_INIT_REMOTE_DEPS | PARSEC_ACTION_SEND_REMOTE_DEPS)
 
+typedef
 enum {
     REMOTE_DEP_ACTIVATE_TAG = 2,
     REMOTE_DEP_GET_DATA_TAG,
@@ -136,6 +137,7 @@ typedef struct {
     uint32_t     elem_size;
 } parsec_remote_dep_context_t;
 
+extern
 parsec_remote_dep_context_t parsec_remote_dep_context;
 
 void remote_deps_allocation_init(int np, int max_deps);
