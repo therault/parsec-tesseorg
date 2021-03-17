@@ -19,9 +19,8 @@
 
 int32_t count = 0;
 
-enum regions {
-               TILE_FULL,
-             };
+/* IDs for the Arena Datatypes */
+static int TILE_FULL;
 
 int
 call_to_kernel_type_read( parsec_execution_stream_t *es,
@@ -60,6 +59,7 @@ int main(int argc, char ** argv)
 
     int i, j;
     int no_of_tasks, no_of_read_tasks = 5, key;
+    parsec_arena_datatype_t *adt;
 
 #if defined(PARSEC_HAVE_MPI)
     {
@@ -85,7 +85,8 @@ int main(int argc, char ** argv)
 
     parsec_taskpool_t *dtd_tp = parsec_dtd_taskpool_new();
 
-    parsec_matrix_add2arena_rect( &parsec_dtd_arenas_datatypes[TILE_FULL],
+    adt = parsec_dtd_create_arena_datatype(parsec, &TILE_FULL);
+    parsec_matrix_add2arena_rect( adt,
                                   parsec_datatype_int32_t,
                                   nb, 1, nb);
 
@@ -134,8 +135,9 @@ int main(int argc, char ** argv)
     parsec_dtd_data_collection_fini( A );
     free_data(dcA);
 
-    parsec_type_free(&parsec_dtd_arenas_datatypes[TILE_FULL].opaque_dtt);
-    PARSEC_OBJ_RELEASE(parsec_dtd_arenas_datatypes[TILE_FULL].arena);
+    parsec_matrix_del2arena(adt);
+    PARSEC_OBJ_RELEASE(adt->arena);
+    parsec_dtd_destroy_arena_datatype(parsec, TILE_FULL);
 
     parsec_fini(&parsec);
 

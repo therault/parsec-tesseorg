@@ -65,7 +65,6 @@ int parsec_dtd_window_size             = 8000;   /**< Default window size */
 int parsec_dtd_threshold_size          = 4000;   /**< Default threshold size of tasks for master thread to wait on */
 static int parsec_dtd_task_hash_table_size = 1<<16; /**< Default task hash table size */
 static int parsec_dtd_tile_hash_table_size = 1<<16; /**< Default tile hash table size */
-static int parsec_dtd_no_of_arenas_datatypes = 16;
 
 int parsec_dtd_dump_traversal_info = 60; /**< Level for printing traversal info */
 int parsec_dtd_dump_function_info  = 50; /**< Level for printing function_structure info */
@@ -73,8 +72,6 @@ int insert_task_trace_keyin = -1;
 int insert_task_trace_keyout = -1;
 int hashtable_trace_keyin = -1;
 int hashtable_trace_keyout = -1;
-
-parsec_arena_datatype_t *parsec_dtd_arenas_datatypes;
 
 extern parsec_sched_module_t *parsec_current_scheduler;
 
@@ -443,8 +440,6 @@ parsec_dtd_lazy_init(void)
                               PARSEC_OBJ_CLASS(parsec_dtd_tile_t), sizeof(parsec_dtd_tile_t),
                               offsetof(parsec_dtd_tile_t, mempool_owner),
                               1/* no. of threads*/ );
-
-    parsec_dtd_arenas_datatypes = (parsec_arena_datatype_t *) calloc(parsec_dtd_no_of_arenas_datatypes, sizeof(parsec_arena_datatype_t));
 }
 
 /* **************************************************************************** */
@@ -460,9 +455,6 @@ void parsec_dtd_fini(void)
 #if defined(PARSEC_DEBUG_PARANOID)
     assert(parsec_dtd_taskpool_mempool != NULL);
 #endif
-    free(parsec_dtd_arenas_datatypes); parsec_dtd_arenas_datatypes = NULL;
-    parsec_dtd_no_of_arenas_datatypes = 0;
-
     parsec_mempool_destruct( parsec_dtd_tile_mempool );
     free( parsec_dtd_tile_mempool );
 
@@ -1845,6 +1837,7 @@ static int datatype_lookup_of_dtd_task(parsec_execution_stream_t *es,
                                        const parsec_task_t *this_task,
                                        uint32_t *flow_mask, parsec_dep_data_description_t *data)
 {
+    parsec_arena_datatype_t *adt;
     (void)es;
     data->count = 1;
     data->displ = 0;
@@ -1852,8 +1845,10 @@ static int datatype_lookup_of_dtd_task(parsec_execution_stream_t *es,
     int i;
     for( i = 0; i < this_task->task_class->nb_flows; i++) {
         if((*flow_mask) & (1U<<i)) {
-            data->arena  = parsec_dtd_arenas_datatypes[(FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index].arena;
-            data->layout = parsec_dtd_arenas_datatypes[(FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index].opaque_dtt;
+            adt = parsec_hash_table_nolock_find(&this_task->taskpool->context->dtd_arena_datatypes_hash_table,
+                                                (FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index);
+            data->arena  = adt->arena;
+            data->layout = adt->opaque_dtt;
             (*flow_mask) &= ~(1U<<i);
             return PARSEC_HOOK_RETURN_NEXT;
         }
@@ -1951,7 +1946,6 @@ parsec_dtd_create_task_class( parsec_dtd_taskpool_t *__tp, parsec_dtd_funcptr_t*
     dtd_tc->dep_in_index       = 0;
     dtd_tc->dep_out_index      = 0;
     dtd_tc->count_of_params    = count_of_params;
-    dtd_tc->size_of_param      = size_of_param;
     dtd_tc->fpointer           = fpointer;
     dtd_tc->ref_count          = 1;
 
@@ -3002,4 +2996,39 @@ parsec_taskpool_t *
 parsec_dtd_get_taskpool(parsec_task_t *this_task)
 {
     return this_task->taskpool;
+}
+
+parsec_arena_datatype_t *parsec_dtd_create_arena_datatype(parsec_context_t *ctx, int *id)
+{
+    parsec_arena_datatype_t *new_adt;
+    int my_id = parsec_atomic_fetch_inc_int32(&ctx->dtd_arena_datatypes_next_id);
+    if( (my_id & PARSEC_GET_REGION_INFO) != my_id) {
+        return NULL;
+    }
+#if defined(PARSEC_DEBUG_PARANOID)
+    new_adt = parsec_hash_table_nolock_find(&ctx->dtd_arena_datatypes_hash_table, my_id);
+    if(NULL != new_adt)
+        return NULL;
+#endif
+    new_adt = calloc(sizeof(parsec_arena_datatype_t), 1);
+    if(NULL == new_adt)
+        return NULL;
+    new_adt->ht_item.key = my_id;
+    parsec_hash_table_nolock_insert(&ctx->dtd_arena_datatypes_hash_table, &new_adt->ht_item);
+    *id = my_id;
+    return new_adt;
+}
+
+parsec_arena_datatype_t *parsec_dtd_get_arena_datatype(parsec_context_t *ctx, int id)
+{
+    return parsec_hash_table_nolock_find(&ctx->dtd_arena_datatypes_hash_table, id);
+}
+
+int parsec_dtd_destroy_arena_datatype(parsec_context_t *ctx, int id)
+{
+    parsec_arena_datatype_t *adt = parsec_hash_table_nolock_remove(&ctx->dtd_arena_datatypes_hash_table, id);
+    if(NULL == adt)
+        return PARSEC_ERR_VALUE_OUT_OF_BOUNDS;
+    free(adt);
+    return PARSEC_SUCCESS;
 }
