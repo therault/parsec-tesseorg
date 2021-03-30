@@ -78,7 +78,8 @@ struct parsec_data_copy_s {
                                                       *   can be done on these pointers. */
     parsec_data_status_t      data_transfer_status;   /** three status */
     struct parsec_task_s     *push_task;     /** the task who actually do the PUSH */
-    data_copy_delete_fn      *delete_fn;
+    data_copy_delete_fn      *delete_fn;     /** the function called to free the device_private pointer */
+    void                     *delete_arg;    /** the argument that will be passed to delete_fn */
 };
 PARSEC_DECLSPEC PARSEC_OBJ_CLASS_DECLARATION(parsec_data_copy_t);
 
