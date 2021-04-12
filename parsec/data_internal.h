@@ -26,8 +26,6 @@
  */
 extern uint32_t parsec_supported_number_of_devices;
 
-typedef void (data_copy_delete_fn)(void*);
-
 /**
  * This structure is the keeper of all the information regarding
  * each unique data that can be handled by the system. It contains
@@ -78,7 +76,6 @@ struct parsec_data_copy_s {
                                                       *   can be done on these pointers. */
     parsec_data_status_t      data_transfer_status;   /** three status */
     struct parsec_task_s     *push_task;     /** the task who actually do the PUSH */
-    data_copy_delete_fn      *delete_fn;
 };
 PARSEC_DECLSPEC PARSEC_OBJ_CLASS_DECLARATION(parsec_data_copy_t);
 
