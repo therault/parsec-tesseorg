@@ -30,8 +30,6 @@ static void parsec_data_copy_construct(parsec_data_copy_t* obj)
     obj->arena_chunk          = NULL;
     obj->data_transfer_status = PARSEC_DATA_STATUS_NOT_TRANSFER;
     obj->push_task            = NULL;
-    obj->delete_fn            = NULL;
-    obj->delete_arg           = NULL;
     PARSEC_DEBUG_VERBOSE(20, parsec_debug_output, "Allocate data copy %p", obj);
 }
 
