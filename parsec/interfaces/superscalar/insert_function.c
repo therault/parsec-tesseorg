@@ -552,7 +552,7 @@ parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
     rqtp.tv_sec = 0;
 
     int unit_waited = 0;
-    while(tp->nb_pending_actions > 1) {
+    while(tp->tdm.counters.nb_pending_actions > 1) {
         unit_waited++;
         if(100 == unit_waited) {
             rqtp.tv_nsec = exponential_backoff(unit_waited);

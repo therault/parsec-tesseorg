@@ -302,6 +302,7 @@ static int parsec_termdet_fourcounter_taskpool_ready(parsec_taskpool_t *tp)
                                                                         * we sent the UP message */
     PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tProcess changed state for BUSY (taskpool ready)");
     parsec_atomic_rwlock_wrunlock(&tpm->rw_lock);
+    parsec_mfence();
 
     parsec_list_lock(&parsec_termdet_fourcounter_delayed_messages);
     for(item = PARSEC_LIST_ITERATOR_FIRST(&parsec_termdet_fourcounter_delayed_messages);

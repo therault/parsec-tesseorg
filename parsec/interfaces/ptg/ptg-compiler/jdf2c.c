@@ -3734,9 +3734,9 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
         coutput("    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, __parsec_tp->initial_number_tasks);\n");
     }
     coutput("    parsec_mfence();\n"
-            "    __parsec_tp->super.super.tdm.module->taskpool_ready(&__parsec_tp->super.super);\n"
             "    parsec_taskpool_enable((parsec_taskpool_t*)__parsec_tp, &__parsec_tp->startup_queue,\n"
-            "                           (parsec_task_t*)this_task, es, __parsec_tp->super.super.tdm.counters.nb_pending_actions);\n");
+            "                           (parsec_task_t*)this_task, es, __parsec_tp->super.super.tdm.counters.nb_pending_actions);\n"
+	    "    __parsec_tp->super.super.tdm.module->taskpool_ready(&__parsec_tp->super.super);\n");
     if( profile_enabled(f->properties) ) {
         coutput("#if defined(PARSEC_PROF_TRACE) && defined(PARSEC_PROF_TRACE_PTG_INTERNAL_INIT)\n"
                 "    PARSEC_PROFILING_TRACE(es->es_profile,\n"
@@ -4557,7 +4557,6 @@ static void jdf_generate_constructor( const jdf_t* jdf )
             "  __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, 1);\n"
             "  __parsec_tp->super.super.tdm.module->taskpool_set_nb_pa(&__parsec_tp->super.super, PARSEC_%s_NB_TASK_CLASSES);  /* for the startup tasks */\n"
             "  __parsec_tp->super.super.taskpool_type = PARSEC_TASKPOOL_TYPE_PTG;\n"
-            "  __parsec_tp->super.super.nb_pending_actions = 1 + __parsec_tp->super.super.nb_task_classes;  /* for the startup tasks */\n"
             "  __parsec_tp->sync_point = __parsec_tp->super.super.nb_task_classes;\n"
             "  __parsec_tp->initial_number_tasks = 0;\n"
             "  __parsec_tp->startup_queue = NULL;\n"
