@@ -38,6 +38,7 @@
 #include "parsec/scheduling.h"
 #include "parsec/parsec_remote_dep.h"
 #include "parsec/mca/device/device.h"
+#include "parsec/mca/mca_repository.h"
 #include "parsec/constants.h"
 #include "parsec/vpmap.h"
 #include "parsec/utils/mca_param.h"
@@ -82,6 +83,9 @@ parsec_mempool_t *parsec_dtd_taskpool_mempool = NULL;
 
 /* Global mempool for all tiles */
 parsec_mempool_t *parsec_dtd_tile_mempool = NULL;
+
+/* Default termination detection module used by DTD taskpools */
+static parsec_termdet_module_t *termdet_local_module      = NULL;
 
 /**
  * All the static functions should be declared before being defined.
@@ -526,7 +530,7 @@ parsec_execute_and_come_back( parsec_taskpool_t *tp,
     /* we wait for all tasks inserted in the taskpool but not for the communication
      * invoked by those tasks.
      */
-    while(tp->tdm.counters.nb_tasks > (unsigned int)task_threshold_count) {
+    while(tp->nb_tasks > (unsigned int)task_threshold_count) {
         if( misses_in_a_row > 1 ) {
             rqtp.tv_nsec = exponential_backoff(misses_in_a_row);
             nanosleep(&rqtp, NULL);
@@ -552,7 +556,7 @@ parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
     rqtp.tv_sec = 0;
 
     int unit_waited = 0;
-    while(tp->tdm.counters.nb_pending_actions > 1) {
+    while(tp->nb_pending_actions > 1) {
         unit_waited++;
         if(100 == unit_waited) {
             rqtp.tv_nsec = exponential_backoff(unit_waited);
@@ -1181,7 +1185,7 @@ int parsec_dtd_update_runtime_task( parsec_taskpool_t *tp, int32_t count )
     int remaining = tp->tdm.module->taskpool_addto_nb_pa( tp, count );
     parsec_dtd_taskpool_t *dtd_tp = (parsec_dtd_taskpool_t *)tp;
 
-    if( 0 == remaining && 1 == tp->tdm.counters.nb_tasks ) {
+    if( 0 == remaining && 1 == tp->nb_tasks ) {
         remaining = tp->tdm.module->taskpool_addto_nb_tasks( tp, -1 );
         assert( 0 == remaining );
         dtd_tp->enqueue_flag = 0;
@@ -1229,8 +1233,6 @@ parsec_dtd_taskpool_new(void)
     __tp->super.on_enqueue_data    = NULL;
     __tp->super.on_complete        = NULL;
     __tp->super.on_complete_data   = NULL;
-    __tp->super.tdm.module->taskpool_set_nb_tasks(&__tp->super, 0);
-    __tp->super.tdm.module->taskpool_set_nb_pa(&__tp->super, 0);
     __tp->super.taskpool_type      = PARSEC_TASKPOOL_TYPE_DTD;  /* Indicating this is a taskpool for dtd tasks */
     __tp->super.nb_task_classes    = 0;
     __tp->super.update_nb_runtime_task = parsec_dtd_update_runtime_task;
@@ -1263,8 +1265,22 @@ parsec_dtd_taskpool_new(void)
 
     (void)parsec_taskpool_reserve_id((parsec_taskpool_t *) __tp);
     asprintf(&__tp->super.taskpool_name, "DTD Taskpool %d", __tp->super.taskpool_id);
+
+    if( NULL == termdet_local_component ) {
+        termdet_local_component = mca_component_open_byname("termdet", "local");
+        assert(NULL != termdet_local_component);
+        termdet_local_module = (parsec_termdet_module_t*)mca_component_query(termdet_local_component);
+        assert(NULL != termdet_local_module);
+    }
+    __tp->super.tdm.module = &termdet_local_module->module;
+    __tp->super.tdm.module->monitor_taskpool(&__tp->super, parsec_taskpool_termination_detected);
+    __tp->super.tdm.module->taskpool_set_nb_tasks(&__tp->super, 0);
+    __tp->super.tdm.module->taskpool_set_nb_pa(&__tp->super, 0);
+
     (void)parsec_taskpool_enable((parsec_taskpool_t *)__tp, NULL, NULL, NULL,
-                                  __tp->super.tdm.counters.nb_pending_actions);
+                                  __tp->super.nb_pending_actions);
+
+    __tp->super.tdm.module->taskpool_ready(&__tp->super);
 
 #if defined(PARSEC_PROF_TRACE) /* TODO: should not be per taskpool */
     if(parsec_dtd_profile_verbose) {

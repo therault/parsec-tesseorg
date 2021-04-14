@@ -249,8 +249,8 @@ static void parsec_termdet_fourcounter_monitor_taskpool(parsec_taskpool_t *tp,
     tpm->stats_nb_sent_bytes = 0;
     tpm->stats_nb_recv_bytes = 0;
 
-    tp->tdm.counters.nb_tasks = 0;
-    tp->tdm.counters.nb_pending_actions = 0;
+    tp->nb_tasks = 0;
+    tp->nb_pending_actions = 0;
 
     parsec_atomic_rwlock_init(&tpm->rw_lock);
     gettimeofday(&tpm->stats_time_start, NULL);
@@ -384,8 +384,8 @@ static void parsec_termdet_fourcounter_send_up_messages(parsec_termdet_fourcount
 static void parsec_termdet_fourcounter_check_state_message_received(parsec_termdet_fourcounter_monitor_t *tpm,
                                                                     parsec_taskpool_t *tp)
 {
-    if(tp->tdm.counters.nb_tasks == 0 &&
-       tp->tdm.counters.nb_pending_actions == 0 &&
+    if(tp->nb_tasks == 0 &&
+       tp->nb_pending_actions == 0 &&
        tpm->state == PARSEC_TERMDET_FOURCOUNTER_IDLE_WAITING_FOR_CHILDREN &&
        tpm->nb_child_left == 0) {
         parsec_termdet_fourcounter_send_up_messages(tpm, tp);
@@ -395,7 +395,7 @@ static void parsec_termdet_fourcounter_check_state_message_received(parsec_termd
 static void parsec_termdet_fourcounter_check_state_workload_changed(parsec_termdet_fourcounter_monitor_t *tpm,
                                                                     parsec_taskpool_t *tp)
 {
-    if(tp->tdm.counters.atomic == 0) {
+    if(tp->nb_tasks == 0 && tp->nb_pending_actions == 0) {
         /* We are now IDLE */
         gettimeofday(&tpm->stats_time_last_idle, NULL);
         if( tpm->state == PARSEC_TERMDET_FOURCOUNTER_BUSY_WAITING_FOR_PARENT) {
@@ -433,8 +433,8 @@ static int parsec_termdet_fourcounter_taskpool_set_nb_tasks(parsec_taskpool_t *t
     assert( v >= 0 );
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
-    if( (int)tp->tdm.counters.nb_tasks != v) {
-        tp->tdm.counters.nb_tasks = v;
+    if( (int)tp->nb_tasks != v) {
+        tp->nb_tasks = v;
         parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
     }
     if( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED )
@@ -451,8 +451,8 @@ static int parsec_termdet_fourcounter_taskpool_set_nb_pa(parsec_taskpool_t *tp, 
     assert( v >= 0 );
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
-    if( (int)tp->tdm.counters.nb_pending_actions != v) {
-        tp->tdm.counters.nb_pending_actions = v;
+    if( (int)tp->nb_pending_actions != v) {
+        tp->nb_pending_actions = v;
         parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
     }
     if( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED )
@@ -468,12 +468,12 @@ static int parsec_termdet_fourcounter_taskpool_addto_nb_tasks(parsec_taskpool_t 
     assert( tp->tdm.module == &parsec_termdet_fourcounter_module.module );
     assert( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED );
     if(v == 0)
-        return tp->tdm.counters.nb_tasks;
+        return tp->nb_tasks;
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
-    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_TASKS %d -> %d", tp->tdm.counters.nb_tasks, tp->tdm.counters.nb_tasks + v);
-    tp->tdm.counters.nb_tasks += v;
-    ret = tp->tdm.counters.nb_tasks;
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_TASKS %d -> %d", tp->nb_tasks, tp->nb_tasks + v);
+    tp->nb_tasks += v;
+    ret = tp->nb_tasks;
     parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
     if( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED )
         parsec_atomic_rwlock_wrunlock(&tpm->rw_lock);
@@ -488,12 +488,12 @@ static int parsec_termdet_fourcounter_taskpool_addto_nb_pa(parsec_taskpool_t *tp
     assert( tp->tdm.module == &parsec_termdet_fourcounter_module.module );
     assert( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED );
     if(v == 0)
-        return tp->tdm.counters.nb_pending_actions;
+        return tp->nb_pending_actions;
     tpm = (parsec_termdet_fourcounter_monitor_t *)tp->tdm.monitor;
     parsec_atomic_rwlock_wrlock(&tpm->rw_lock);
-    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_PA %d -> %d", tp->tdm.counters.nb_pending_actions, tp->tdm.counters.nb_pending_actions + v);
-    tp->tdm.counters.nb_pending_actions += v;
-    ret = tp->tdm.counters.nb_pending_actions;
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-4C:\tNB_PA %d -> %d", tp->nb_pending_actions, tp->nb_pending_actions + v);
+    tp->nb_pending_actions += v;
+    ret = tp->nb_pending_actions;
     parsec_termdet_fourcounter_check_state_workload_changed(tpm, tp);
     if( tp->tdm.monitor != PARSEC_TERMDET_FOURCOUNTER_TERMINATED )
         parsec_atomic_rwlock_wrunlock(&tpm->rw_lock);

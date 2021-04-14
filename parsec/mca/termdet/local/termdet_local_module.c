@@ -106,62 +106,80 @@ static int parsec_termdet_local_taskpool_ready(parsec_taskpool_t *tp)
     return PARSEC_SUCCESS;
 }
 
-static int parsec_termdet_local_taskpool_set_nb_tasks(parsec_taskpool_t *tp, int v)
+static int32_t parsec_termdet_local_taskpool_set_nb_tasks(parsec_taskpool_t *tp, int32_t v)
 {
-    parsec_task_counter_t nc, oc = tp->tdm.counters;
-    
-    if((int)oc.nb_tasks != v)
-        nc = PARSEC_TASK_COUNTER_SET_NB_TASKS(tp->tdm.counters, v);
-    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nc.atomic == 0 ) {
+    int32_t ov, nbpa = 1; // By default we are not the one to discover nbpa gets to 0
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tNB_TASKS -> %d", v);
+    if(tp->nb_tasks != v) {
+        do {
+            ov = tp->nb_tasks;
+        } while(! parsec_atomic_cas_int32(&tp->nb_tasks, ov, v));
+        if( ov == 0 && v > 0 ) {
+            nbpa = parsec_atomic_fetch_inc_int32(&tp->nb_pending_actions) + 1;
+        } else if( ov > 0 && v == 0 ) {
+            nbpa = parsec_atomic_fetch_dec_int32(&tp->nb_pending_actions) - 1;
+        }
+    }
+    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nbpa == 0 ) {
+        PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tnbpa == 0, Call callback");
         if( parsec_atomic_cas_ptr(&tp->tdm.monitor, PARSEC_TERMDET_LOCAL_BUSY, PARSEC_TERMDET_LOCAL_TERMINATED) ) {
             tp->tdm.callback(tp);
         }
     }
-    return nc.nb_tasks;
+    return tp->nb_tasks;
 }
 
-static int parsec_termdet_local_taskpool_set_nb_pa(parsec_taskpool_t *tp, int v)
+static int32_t parsec_termdet_local_taskpool_set_nb_pa(parsec_taskpool_t *tp, int32_t v)
 {
-    parsec_task_counter_t nc, oc = tp->tdm.counters;
-    
-    if((int)oc.nb_pending_actions != v)
-        nc = PARSEC_TASK_COUNTER_SET_NB_PA(tp->tdm.counters, v);
-    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nc.atomic == 0 ) {
+    int32_t ov;
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tNB_PA -> %d", v);
+    do {
+        ov = tp->nb_pending_actions;
+    } while(!parsec_atomic_cas_int32(&tp->nb_pending_actions, ov, v));
+    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && v == 0 ) {
+        PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tnbpa == 0, Call callback");
         if( parsec_atomic_cas_ptr(&tp->tdm.monitor, PARSEC_TERMDET_LOCAL_BUSY, PARSEC_TERMDET_LOCAL_TERMINATED) ) {
             tp->tdm.callback(tp);
         }
     }
-    return nc.nb_pending_actions;
+    return v;
 }
 
-static int parsec_termdet_local_taskpool_addto_nb_tasks(parsec_taskpool_t *tp, int v)
+static int32_t parsec_termdet_local_taskpool_addto_nb_tasks(parsec_taskpool_t *tp, int32_t v)
 {
-    parsec_task_counter_t nc, oc = tp->tdm.counters;
-    
+    int32_t ov, nbpa = 1; // By default we are not the one to discover that nbpa is 0
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tNB_TASKS %d -> %d", tp->nb_tasks, tp->nb_tasks + v);
     if(v == 0)
-        return oc.nb_tasks;
-    nc = PARSEC_TASK_COUNTER_ADDTO_NB_TASKS(tp->tdm.counters, v);
-    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nc.atomic == 0 ) {
+        return tp->nb_tasks;
+    ov = parsec_atomic_fetch_add_int32(&tp->nb_tasks, v);
+    if(ov == 0 && v > 0)
+        nbpa = parsec_atomic_fetch_inc_int32(&tp->nb_pending_actions) + 1;
+    else if(ov + v == 0)
+        nbpa = parsec_atomic_fetch_dec_int32(&tp->nb_pending_actions) - 1;
+    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nbpa == 0 ) {
+        PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tnbpa == 0, Call callback");
         if( parsec_atomic_cas_ptr(&tp->tdm.monitor, PARSEC_TERMDET_LOCAL_BUSY, PARSEC_TERMDET_LOCAL_TERMINATED) ) {
             tp->tdm.callback(tp);
         }
     }
-    return nc.nb_tasks;
+    return ov+v;
 }
 
-static int parsec_termdet_local_taskpool_addto_nb_pa(parsec_taskpool_t *tp, int v)
+static int32_t parsec_termdet_local_taskpool_addto_nb_pa(parsec_taskpool_t *tp, int32_t v)
 {
-    parsec_task_counter_t nc, oc = tp->tdm.counters;
-    
+    int32_t ov;
+    PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tNB_PA %d -> %d", tp->nb_pending_actions,
+                         tp->nb_pending_actions + v);
     if(v == 0)
-        return oc.nb_pending_actions;
-    nc = PARSEC_TASK_COUNTER_ADDTO_NB_PA(tp->tdm.counters, v);
-    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && nc.atomic == 0 ) {
+        return tp->nb_pending_actions;
+    ov = parsec_atomic_fetch_add_int32(&tp->nb_pending_actions, v);
+    if( tp->tdm.monitor == PARSEC_TERMDET_LOCAL_BUSY && ov+v == 0 ) {
+        PARSEC_DEBUG_VERBOSE(10, parsec_debug_output, "TERMDET-LOCAL:\tnbpa == 0, Call callback");
         if( parsec_atomic_cas_ptr(&tp->tdm.monitor, PARSEC_TERMDET_LOCAL_BUSY, PARSEC_TERMDET_LOCAL_TERMINATED) ) {
             tp->tdm.callback(tp);
         }
     }
-    return nc.nb_pending_actions;
+    return ov+v;
 }
 
 static int parsec_termdet_local_outgoing_message_start(parsec_taskpool_t *tp,

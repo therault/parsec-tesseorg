@@ -323,31 +323,9 @@ typedef struct parsec_termdet_module_s {
     parsec_termdet_base_module_t           module;
 } parsec_termdet_module_t;
 
-typedef union {
-    struct {
-        volatile uint32_t nb_tasks;            /**< A placeholder for the upper level to count (if necessary) the tasks
-                                                *   in the taskpool. This value is checked upon each task completion by
-                                                *   the runtime, to see if the taskpool is completed (a nb_tasks equal
-                                                *   to zero signal a completed taskpool). However, in order to prevent
-                                                *   multiple completions of the taskpool due to multiple tasks completing
-                                                *   simultaneously, the runtime reuse this value (once set to zero), for
-                                                *   internal purposes (in which case it is atomically set to
-                                                *   PARSEC_RUNTIME_RESERVED_NB_TASKS).
-                                                */
-        volatile uint32_t nb_pending_actions;  /**< Internal counter of pending actions tracking all runtime
-                                                *   activities (such as communications, data movement, and
-                                                *   so on). Also, its value is increase by one for all the tasks
-                                                *   in the taskpool. This extra reference will be removed upon
-                                                *   completion of all tasks.
-                                                */
-    };
-    volatile int64_t atomic;
-} parsec_task_counter_t;
-
 typedef struct parsec_termdet_monitor_s {
     const parsec_termdet_base_module_t *module;              /**< The module used for this taskpool */
     parsec_termdet_termination_detected_function_t callback; /**< All modules need to remember the callback */
-    parsec_task_counter_t               counters;
     void                               *monitor;             /**< The taskpool-specific data for this module */
 } parsec_termdet_monitor_t;
 
@@ -357,45 +335,6 @@ typedef struct parsec_termdet_monitor_s {
 #define PARSEC_TERMDET_BASE_VERSION_2_0_0 \
     MCA_BASE_VERSION_2_0_0, \
     "termdet", 2, 0, 0
-
-#define PARSEC_TASK_COUNTER_SET_NB_TASKS(_tc, _v) ({                    \
-            parsec_task_counter_t ov, nv;                               \
-            do {                                                        \
-                ov = (_tc);                                             \
-                nv = ov;                                                \
-                nv.nb_tasks = _v;                                       \
-            } while( !parsec_atomic_cas_int64( &( (_tc).atomic ), ov.atomic, nv.atomic ) ); \
-            PARSEC_DEBUG_VERBOSE(30, parsec_debug_output, "SET_NB_TASKS %d (%08x.%08x) %s:%d\n", (_v), nv.nb_pending_actions, nv.nb_tasks, __FILE__, __LINE__); \
-            nv; })
-#define PARSEC_TASK_COUNTER_SET_NB_PA(_tc, _v) ({                       \
-            parsec_task_counter_t ov, nv;                               \
-            do {                                                        \
-                ov = (_tc);                                             \
-                nv = ov;                                                \
-                nv.nb_pending_actions = _v;                             \
-            } while( !parsec_atomic_cas_int64( &( (_tc).atomic ), ov.atomic, nv.atomic ) ); \
-            PARSEC_DEBUG_VERBOSE(30, parsec_debug_output, "SET_NB_PA %d (%08x.%08x) %s:%d\n", (_v), nv.nb_pending_actions, nv.nb_tasks, __FILE__, __LINE__); \
-            nv; })
-#define PARSEC_TASK_COUNTER_ADDTO_NB_TASKS(_tc, _v) ({                  \
-            parsec_task_counter_t ov, nv;                               \
-            do {                                                        \
-                ov = (_tc);                                             \
-                nv = ov;                                                \
-                nv.nb_tasks += _v;                                      \
-            } while( !parsec_atomic_cas_int64( &( (_tc).atomic ), ov.atomic, nv.atomic ) ); \
-            PARSEC_DEBUG_VERBOSE(30, parsec_debug_output, "ADDTO_NB_TASKS %d -> %d (%08x.%08x) %s:%d\n", ov.nb_tasks, nv.nb_tasks, nv.nb_pending_actions, nv.nb_tasks, __FILE__, __LINE__); \
-            nv; })
-#define PARSEC_TASK_COUNTER_ADDTO_NB_PA(_tc, _v) ({                     \
-            parsec_task_counter_t ov, nv;                               \
-            do {                                                        \
-                ov = (_tc);                                             \
-                nv = ov;                                                \
-                nv.nb_pending_actions += _v;                            \
-            } while( !parsec_atomic_cas_int64( &( (_tc).atomic ), ov.atomic, nv.atomic ) ); \
-            PARSEC_DEBUG_VERBOSE(30, parsec_debug_output, "ADDTO_NB_PA %d -> %d (%08x.%08x) %s:%d\n", ov.nb_pending_actions, nv.nb_pending_actions, nv.nb_pending_actions, nv.nb_tasks, __FILE__, __LINE__); \
-            nv; })
-
-
 
 /** @} */
 

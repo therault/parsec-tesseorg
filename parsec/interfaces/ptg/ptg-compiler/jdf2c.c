@@ -3735,7 +3735,7 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
     }
     coutput("    parsec_mfence();\n"
             "    parsec_taskpool_enable((parsec_taskpool_t*)__parsec_tp, &__parsec_tp->startup_queue,\n"
-            "                           (parsec_task_t*)this_task, es, __parsec_tp->super.super.tdm.counters.nb_pending_actions);\n"
+            "                           (parsec_task_t*)this_task, es, __parsec_tp->super.super.nb_pending_actions);\n"
 	    "    __parsec_tp->super.super.tdm.module->taskpool_ready(&__parsec_tp->super.super);\n");
     if( profile_enabled(f->properties) ) {
         coutput("#if defined(PARSEC_PROF_TRACE) && defined(PARSEC_PROF_TRACE_PTG_INTERNAL_INIT)\n"
@@ -3746,7 +3746,7 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
                 "#endif /* defined(PARSEC_PROF_TRACE) && defined(PARSEC_PROF_TRACE_PTG_INTERNAL_INIT) */\n");
     }
     if( f->flags & JDF_FUNCTION_FLAG_CAN_BE_STARTUP ) {
-        coutput("    if( 1 >= __parsec_tp->super.super.tdm.counters.nb_pending_actions ) {\n"
+        coutput("    if( 1 >= __parsec_tp->super.super.nb_pending_actions ) {\n"
                 "        /* if no tasks will be generated let's prevent the runtime from calling the hook and instead go directly to complete the task */\n"
                 "        this_task->status = PARSEC_TASK_STATUS_COMPLETE;\n"
                 "    }\n");
@@ -3874,8 +3874,8 @@ static void jdf_generate_release_task_fct(const jdf_t *jdf, jdf_function_entry_t
         }
     }
     if( f->user_defines & JDF_HAS_UD_NB_LOCAL_TASKS ) {
-        coutput("    if( PARSEC_UNDETERMINED_NB_TASKS == __parsec_tp->super.super.tdm.counters.nb_tasks ||\n"
-                "        0 == __parsec_tp->super.super.tdm.counters.nb_tasks ) {\n"
+        coutput("    if( PARSEC_UNDETERMINED_NB_TASKS == __parsec_tp->super.super.nb_tasks ||\n"
+                "        0 == __parsec_tp->super.super.nb_tasks ) {\n"
                 "        /* don't spend time counting */\n"
                 "        return parsec_release_task_to_mempool(es, this_task);\n"
                 "    }\n");

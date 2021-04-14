@@ -48,7 +48,6 @@ static int parsec_composed_taskpool_cb( parsec_taskpool_t* o, void* cbdata )
     } else {
         PARSEC_DEBUG_VERBOSE(30, parsec_debug_output, "Compound taskpool completed %p",
                              compound);
-        parsec_taskpool_termination_detected(&compound->super);
     }
     return 0;
 }
