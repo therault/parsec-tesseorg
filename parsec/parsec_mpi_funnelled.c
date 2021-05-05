@@ -183,7 +183,7 @@ static MPI_Comm dep_self = MPI_COMM_NULL;
 
 static mpi_funnelled_callback_t *array_of_callbacks;
 static MPI_Request           *array_of_requests;
-static pthread_mutex_t        array_of_requests_mtx = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+static pthread_mutex_t        array_of_requests_mtx;
 static int                   *array_of_indices;
 static MPI_Status            *array_of_statuses;
 
@@ -434,6 +434,14 @@ static int mpi_funneled_init_once(parsec_context_t* context)
     int mpi_tag_ub_exists, *ub;
 
     assert(-1 == MAX_MPI_TAG);
+
+
+    pthread_mutexattr_t mutex_attr;
+
+    pthread_mutexattr_init(&mutex_attr);
+    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&array_of_requests_mtx, &mutex_attr);
+    pthread_mutexattr_destroy(&mutex_attr);
 
     assert(MPI_COMM_NULL == dep_self);
     MPI_Comm_dup(MPI_COMM_SELF, &dep_self);
