@@ -108,7 +108,7 @@ set(SOURCES
   datarepo.c
   ${EXTRA_SOURCES}
   ${MCA_EXTRA_SOURCES}
-)
+        termdet.c)
 
 if( NOT MPI_C_FOUND )
   list(APPEND SOURCES datatype/datatype.c)

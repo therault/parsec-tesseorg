@@ -84,9 +84,6 @@ parsec_mempool_t *parsec_dtd_taskpool_mempool = NULL;
 /* Global mempool for all tiles */
 parsec_mempool_t *parsec_dtd_tile_mempool = NULL;
 
-/* Default termination detection module used by DTD taskpools */
-static parsec_termdet_module_t *termdet_local_module      = NULL;
-
 /**
  * All the static functions should be declared before being defined.
  */
@@ -1266,13 +1263,7 @@ parsec_dtd_taskpool_new(void)
     (void)parsec_taskpool_reserve_id((parsec_taskpool_t *) __tp);
     asprintf(&__tp->super.taskpool_name, "DTD Taskpool %d", __tp->super.taskpool_id);
 
-    if( NULL == termdet_local_component ) {
-        termdet_local_component = mca_component_open_byname("termdet", "local");
-        assert(NULL != termdet_local_component);
-        termdet_local_module = (parsec_termdet_module_t*)mca_component_query(termdet_local_component);
-        assert(NULL != termdet_local_module);
-    }
-    __tp->super.tdm.module = &termdet_local_module->module;
+    parsec_termdet_open_module(&__tp->super, "local");
     __tp->super.tdm.module->monitor_taskpool(&__tp->super, parsec_taskpool_termination_detected);
     __tp->super.tdm.module->taskpool_set_nb_tasks(&__tp->super, 0);
     __tp->super.tdm.module->taskpool_set_nb_pa(&__tp->super, 0);

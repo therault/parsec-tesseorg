@@ -275,16 +275,33 @@ typedef int (*parsec_termdet_incoming_message_end_fn_t)(parsec_taskpool_t *tp,
 int parsec_termdet_open_dyn_module(parsec_taskpool_t *tp);
 
 /**
- * @brief convenience function to close the termination detection component
- *        that was selected by open_dyn_module.
+ * @brief convenience function to select a specific termination detection module
  *
- * @details this functions uses the MCA mechanism to close the component that
- *          was opened by open_dyn_module; it unregisters the callback messages
+ * @details this functions uses the MCA mechanism to select the specified module
+ *       and assign it to the taskpool
+ *   @param[INOUT] tp the taskpool in which to load the module
+ *   @param[IN] name the name of the termdet module to select
+ *   @return PARSEC_SUCCESS except if a fatal error occurs. If only the
+ *           local termination detection module can be loaded, a warning
+ *           will be issued, as it is assumed that a global termination
+ *           detection is expected by the user.
+ */
+int parsec_termdet_open_module(parsec_taskpool_t *tp, char *name);
+
+/**
+ * @brief convenience function to close the termination detection component
+ *        that were selected by open_dyn_module or open_module.
+ *
+ * @details this functions uses the MCA mechanism to close the components that
+ *          were opened by open_dyn_module or open_module; it unregisters the callback messages
  *          and makes the module opened by open_dyn_module un-operable. It needs
  *          only to be called at cleaning time once.
  *   @return PARSEC_SUCCESS except if a fatal error occurs.
  */
-int parsec_termdet_close_dyn_module(void);
+int parsec_termdet_close_modules(void);
+
+int parsec_termdet_init(void);
+int parsec_termdet_fini(void);
 
 /**
  * @brief prints out statistics on the run

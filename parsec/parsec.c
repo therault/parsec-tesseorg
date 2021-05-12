@@ -80,7 +80,6 @@ size_t parsec_task_startup_chunk = 256;
 parsec_data_allocate_t parsec_data_allocate = malloc;
 parsec_data_free_t     parsec_data_free = free;
 void (*parsec_weaksym_exit)(int status) = _Exit;
-mca_base_component_t *termdet_local_component = NULL;
 
 #if defined(PARSEC_PROF_TRACE)
 #if defined(PARSEC_PROF_TRACE_SCHEDULING_EVENTS)
@@ -829,6 +828,8 @@ parsec_context_t* parsec_init( int nb_cores, int* pargc, char** pargv[] )
 
     PARSEC_AYU_INIT();
 
+    parsec_termdet_init();
+
     if( parsec_cmd_line_is_taken(cmd_line, "help") ||
         parsec_cmd_line_is_taken(cmd_line, "h")) {
         if( 0 == context->my_rank ) {
@@ -1079,11 +1080,6 @@ int parsec_fini( parsec_context_t** pcontext )
     parsec_context_t* context = *pcontext;
     int nb_total_comp_threads, p;
 
-    if( NULL != termdet_local_component) {
-        mca_component_close(termdet_local_component);
-        termdet_local_component = NULL;
-    }
-    
     /* if dtd environment is set-up, we clean */
     if( __parsec_dtd_is_initialized ) {
         parsec_dtd_fini();
@@ -1153,7 +1149,9 @@ int parsec_fini( parsec_context_t** pcontext )
     parsec_profiling_dbp_dump();
 #endif  /* PARSEC_PROF_TRACE */
 
-    (void) parsec_termdet_close_dyn_module();
+    (void) parsec_termdet_close_modules();
+    (void) parsec_termdet_fini();
+
     (void) parsec_remote_dep_fini(context);
 
     parsec_remove_scheduler( context );

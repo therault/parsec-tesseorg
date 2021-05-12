@@ -441,8 +441,6 @@ struct parsec_data_pair_s {
 PARSEC_DECLSPEC extern size_t parsec_task_startup_iter;
 PARSEC_DECLSPEC extern size_t parsec_task_startup_chunk;
 
-PARSEC_DECLSPEC extern mca_base_component_t *termdet_local_component;
-
 /**
  * Global configuration variable controlling the getrusage report.
  */
