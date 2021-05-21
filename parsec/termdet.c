@@ -113,7 +113,8 @@ static int parsec_termdet_close_module(void *item, void *data)
 {
     parsec_hash_table_t *ht = (parsec_hash_table_t*)data;
     parsec_termdet_opened_module_t *omod = (parsec_termdet_opened_module_t *)item;
-    omod->component->mca_close_component();
+    if(NULL != omod->component->mca_close_component )
+        omod->component->mca_close_component();
     parsec_hash_table_nolock_remove(ht, omod->ht_item.key);
     free(omod->name);
     free(omod);

@@ -3716,7 +3716,7 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
         jdf_expr_t *expr;
         jdf_def_list_t* property;
         if( NULL != (expr = jdf_find_property(jdf->global_properties, JDF_PROP_UD_NB_LOCAL_TASKS_FN_NAME, &property) ) ) {
-            coutput("    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, %s(__parsec_tp));\n",
+            coutput("    __parsec_tp->super.super.tdm.module->taskpool_addto_nb_tasks(&__parsec_tp->super.super, %s(__parsec_tp));\n",
                     expr->jdf_c_code.fname);
         } else {
             assert((f->user_defines & JDF_HAS_USER_TRIGGERED_TERMDET) ||
@@ -3726,15 +3726,14 @@ static void jdf_generate_internal_init(const jdf_t *jdf, const jdf_function_entr
              * we use sync_point to find when all the startup tasks are done. */
             coutput("    __parsec_tp->sync_point = PARSEC_%s_NB_TASK_CLASSES\n;"
 #ifdef TERMDET_XP_IDLE_ON_NBTASKS
-                    "    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, 1);\n",
+                    "    __parsec_tp->super.super.tdm.module->taskpool_addto_nb_tasks(&__parsec_tp->super.super, 1);\n",
 #else
-                    "    __parsec_tp->super.super.tdm.module->taskpool_addto_nb_pa(&__parsec_tp->super.super, 1);\n"
-                    "    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, 0);\n",
+                    "    __parsec_tp->super.super.tdm.module->taskpool_addto_nb_pa(&__parsec_tp->super.super, 1);\n",
 #endif
                     jdf_basename);
         }
     } else {
-        coutput("    __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, __parsec_tp->initial_number_tasks);\n");
+        coutput("    __parsec_tp->super.super.tdm.module->taskpool_addto_nb_tasks(&__parsec_tp->super.super, __parsec_tp->initial_number_tasks);\n");
     }
     coutput("    parsec_mfence();\n"
             "    parsec_taskpool_enable((parsec_taskpool_t*)__parsec_tp, &__parsec_tp->startup_queue,\n"
@@ -4557,8 +4556,7 @@ static void jdf_generate_constructor( const jdf_t* jdf )
             "  /* Twice the size to hold the startup tasks function_t */\n"
             "  __parsec_tp->super.super.task_classes_array = (const parsec_task_class_t**)\n"
             "              calloc((2 * PARSEC_%s_NB_TASK_CLASSES + 1), sizeof(parsec_task_class_t*));\n"
-            "  __parsec_tp->super.super.tdm.module->taskpool_set_nb_tasks(&__parsec_tp->super.super, 1);\n"
-            "  __parsec_tp->super.super.tdm.module->taskpool_set_nb_pa(&__parsec_tp->super.super, PARSEC_%s_NB_TASK_CLASSES);  /* for the startup tasks */\n"
+            "  __parsec_tp->super.super.tdm.module->taskpool_addto_nb_pa(&__parsec_tp->super.super, PARSEC_%s_NB_TASK_CLASSES);  /* for the startup tasks */\n"
             "  __parsec_tp->super.super.taskpool_type = PARSEC_TASKPOOL_TYPE_PTG;\n"
             "  __parsec_tp->sync_point = __parsec_tp->super.super.nb_task_classes;\n"
             "  __parsec_tp->initial_number_tasks = 0;\n"
