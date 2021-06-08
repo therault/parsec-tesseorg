@@ -307,7 +307,8 @@ if __name__ == '__main__':
                     begin_date = container_endstate["M%dT%d"%(ev.node_id,ev.stream_id)]
                 else:
                     begin_date = ev['begin']
-                key = "tpid=%d:tcid=%d:tid=%d"%(ev.taskpool_id,ev.tcid,ev.id)
+                #key = "tpid=%d:tcid=%d:tid=%d"%(ev.taskpool_id,ev.tcid,ev.id)
+                key = "tpid=%d:tid=%d"%(ev.taskpool_id,ev.id)
                 if args.DAG:
                     dag_info[key] = { 'container': paje_container_aliases["M%dT%d"%(ev.node_id,ev.stream_id)],
                                       'start': float(ev.begin), 'end': float(ev.end), 'rank': ev.node_id }
@@ -337,7 +338,7 @@ if __name__ == '__main__':
                 PajeSetState.PajeEvent(Time=float(send.end), Type=paje_st, Container=paje_container_aliases["M%dMPI"%(send.node_id)],
                                            Value=paje_entity_waiting, task_name="Waiting")
                 recvs = store.events[ ( (store.events.type == rcv_type) &
-                                        (store.events.tcid  == send['tcid']) &
+                                        #(store.events.tcid  == send['tcid']) &
                                         (store.events.tpid  == send['tpid']) &
                                         (store.events.tid   == send['tid']) ) ]
                 for rrecv in recvs.iterrows():
