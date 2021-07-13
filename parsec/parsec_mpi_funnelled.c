@@ -562,6 +562,13 @@ mpi_funnelled_init(parsec_context_t *context)
     parsec_ce.capabilites.sided   = 2;
     parsec_ce.capabilites.supports_noncontiguous_datatype = 1;
 
+    int thread_provided;
+    MPI_Query_thread(&thread_provided);
+
+    if (MPI_THREAD_MULTIPLE == thread_provided) {
+        parsec_ce.capabilites.multithreaded = 1;
+    }
+
     /* Register for internal GET and PUT AMs */
     parsec_ce.tag_register(MPI_FUNNELLED_GET_TAG_INTERNAL,
                            mpi_funnelled_internal_get_am_callback,
