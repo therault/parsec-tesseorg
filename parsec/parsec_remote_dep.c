@@ -22,7 +22,7 @@ int parsec_comm_gets      = 0;
 int parsec_comm_puts_max  = DEP_NB_CONCURENT * MAX_PARAM_COUNT;
 int parsec_comm_puts      = 0;
 
-static bool parsec_remote_dep_use_get = true;
+static int parsec_remote_dep_use_get = 0;
 
 /**
  * Number of data movements to be extracted at each step. Bigger the number
@@ -287,6 +287,9 @@ static void remote_dep_mpi_params(parsec_context_t* context) {
 #endif
     parsec_mca_param_reg_int_name("runtime", "comm_aggregate", "Aggregate multiple dependencies in the same short message (1=true,0=false).",
                                   false, false, parsec_param_enable_aggregate, &parsec_param_enable_aggregate);
+
+    parsec_mca_param_reg_int_name("runtime", "comm_get", "Use the PUT protocol (0) or the GET protocol (1) for transfering payload data.",
+                                  false, false, parsec_remote_dep_use_get, &parsec_remote_dep_use_get);
 }
 
 void
