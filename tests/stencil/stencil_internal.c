@@ -5,6 +5,8 @@
  */
 #include "stencil_internal.h"
 
+DTYPE * restrict weight_1D;
+
 /**
  * @brief stencil_1D init operator
  *
