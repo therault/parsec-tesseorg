@@ -147,7 +147,7 @@ if( BUILD_PARSEC )
     PUBLIC
     ${PARSEC_ATOMIC_SUPPORT_LIBS}
     Threads::Threads
-    $<$<BOOL:${HWLOC_FOUND}>:HWLOC::HWLOC>)
+    $<$<BOOL:${HWLOC_FOUND}>:hwloc>)
   set_target_properties(parsec-base-obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   if(NOT TARGET parsec-base)
@@ -189,7 +189,7 @@ if( BUILD_PARSEC )
     ${CMAKE_DL_LIBS}
     $<$<BOOL:${PARSEC_SHM_OPEN_IN_LIBRT}>:rt>
     PUBLIC
-    $<$<BOOL:${HWLOC_FOUND}>:HWLOC::HWLOC>
+    $<$<BOOL:${HWLOC_FOUND}>:hwloc>
     $<$<BOOL:${PARSEC_HAVE_OTF2}>:otf2>
     $<$<BOOL:${MPI_C_FOUND}>:MPI::MPI_C>
     INTERFACE
