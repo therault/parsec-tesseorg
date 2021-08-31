@@ -148,11 +148,12 @@ if( BUILD_PARSEC )
     ${PARSEC_ATOMIC_SUPPORT_LIBS}
     Threads::Threads
     $<$<BOOL:${HWLOC_FOUND}>:HWLOC::HWLOC>)
-  set_target_properties(parsec-base-obj PROPERTIES POSITION_INDEPENDENT_CODE ${BUILD_SHARED_LIBS})
+  set_target_properties(parsec-base-obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   if(NOT TARGET parsec-base)
     add_library(parsec-base STATIC)
     target_link_libraries(parsec-base PUBLIC parsec-base-obj)
+    set_target_properties(parsec-base PROPERTIES POSITION_INDEPENDENT_CODE ON)
   endif(NOT TARGET parsec-base)
 
   # As suggested @ https://crascit.com/2016/01/31/enhanced-source-file-handling-with-target_sources/
@@ -199,7 +200,7 @@ if( BUILD_PARSEC )
     target_link_libraries(parsec
                           PUBLIC ${CUDA_LIBRARIES})
   endif( ${PARSEC_HAVE_CUDA} )
-  set_target_properties(parsec PROPERTIES POSITION_INDEPENDENT_CODE ${BUILD_SHARED_LIBS})
+  set_target_properties(parsec PROPERTIES POSITION_INDEPENDENT_CODE ON)
   # For now make sure that the installed shared libraries have the right
   # version (same version as the major of the build version). Thus, every
   # change in the high-level API (and ABI) should be reflected on the
@@ -223,6 +224,7 @@ if( BUILD_PARSEC )
       EXPORT parsec-targets
       DESTINATION ${PARSEC_INSTALL_LIBDIR})
   #install(FILES papi_sde_interface.h DESTINATION ${PARSEC_INSTALL_LIBDIR}/parsec)
+    set_target_properties(parsec-papi-sde PROPERTIES POSITION_INDEPENDENT_CODE ON)
   endif( PARSEC_PAPI_SDE )
 
 #
