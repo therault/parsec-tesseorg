@@ -198,6 +198,10 @@ static int count_internal_tag = 0;
 parsec_list_t mpi_funnelled_dynamic_req_fifo; /* ordered non threaded fifo */
 parsec_mempool_t *mpi_funnelled_dynamic_req_mempool = NULL;
 
+/* profiling events */
+static int mpi_isend_enter_key, mpi_isend_exit_key;
+static int mpi_irecv_enter_key, mpi_irecv_exit_key;
+
 /* This structure is used to save all the information necessary to
  * invoke a callback after a MPI_Request is satisfied
  */
@@ -264,9 +268,11 @@ mpi_funnelled_internal_get_am_callback(parsec_comm_engine_t *ce,
     assert(mpi_funnelled_last_active_req >= mpi_funnelled_static_req_idx);
 
     MPI_Request req;
+    parsec_profiling_ts_trace(mpi_isend_enter_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
     MPI_Isend(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
               src, handshake_info->tag, dep_comm,
               &req);
+    parsec_profiling_ts_trace(mpi_isend_exit_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
 
     pthread_mutex_lock(&array_of_requests_mtx);
 
@@ -342,8 +348,10 @@ mpi_funnelled_internal_put_am_callback(parsec_comm_engine_t *ce,
     MPI_Type_size(remote_memory_handle->datatype, &_size);
 
     MPI_Request req;
+    parsec_profiling_ts_trace(mpi_irecv_enter_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
     MPI_Irecv(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
               src, handshake_info->tag, dep_comm, &req);
+    parsec_profiling_ts_trace(mpi_irecv_exit_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
 
     int post_in_static_array = 1;
     mpi_funnelled_dynamic_req_t *item;
@@ -474,6 +482,9 @@ static int mpi_funneled_init_once(parsec_context_t* context)
                              " which might be too small should you have more than %d pending remote dependencies",
                              MAX_MPI_TAG, (unsigned int)MAX_MPI_TAG, MAX_MPI_TAG / MAX_DEP_OUT_COUNT);
     }
+
+    parsec_profiling_add_dictionary_keyword("MPI_Isend", "#000000", 0, "", &mpi_isend_enter_key, &mpi_isend_exit_key);
+    parsec_profiling_add_dictionary_keyword("MPI_Irecv", "#000000", 0, "", &mpi_irecv_enter_key, &mpi_irecv_exit_key);
 
     (void)context;
     return 0;
@@ -902,9 +913,11 @@ mpi_no_thread_put(parsec_comm_engine_t *ce,
     if(post_in_static_array) {
         request = &array_of_requests[mpi_funnelled_last_active_req];
         cb = &array_of_callbacks[mpi_funnelled_last_active_req];
+        parsec_profiling_ts_trace(mpi_isend_enter_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
         MPI_Isend((char *)source_memory_handle->mem + ldispl, source_memory_handle->count,
                   source_memory_handle->datatype, remote, tag, dep_comm,
                   request);
+        parsec_profiling_ts_trace(mpi_isend_exit_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
         mpi_funnelled_last_active_req++;
     } else {
         item = (mpi_funnelled_dynamic_req_t *)parsec_thread_mempool_allocate(mpi_funnelled_dynamic_req_mempool->thread_mempools);
@@ -990,9 +1003,12 @@ mpi_no_thread_get(parsec_comm_engine_t *ce,
     assert(mpi_funnelled_last_active_req >= mpi_funnelled_static_req_idx);
 
     MPI_Request req;
+    parsec_profiling_ts_trace(mpi_irecv_enter_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
     MPI_Irecv((char*)source_memory_handle->mem + ldispl, source_memory_handle->count, source_memory_handle->datatype,
               remote, tag, dep_comm,
               &req);
+    parsec_profiling_ts_trace(mpi_irecv_exit_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
+
     int post_in_static_array = 1;
     mpi_funnelled_dynamic_req_t *item;
     pthread_mutex_lock(&array_of_requests_mtx);
@@ -1114,9 +1130,11 @@ mpi_no_thread_push_posted_req(parsec_comm_engine_t *ce)
     if(item->post_isend) {
         pthread_mutex_unlock(&array_of_requests_mtx);
         mpi_funnelled_mem_reg_handle_t *ldata = (mpi_funnelled_mem_reg_handle_t *) item->cb.cb_type.onesided.lreg;
+        parsec_profiling_ts_trace(mpi_isend_enter_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
         MPI_Isend((char *)ldata->mem + item->cb.cb_type.onesided.ldispl, ldata->count,
                   ldata->datatype, item->cb.cb_type.onesided.remote, item->cb.cb_type.onesided.size, dep_comm,
                   &item->request);
+        parsec_profiling_ts_trace(mpi_isend_exit_key, 0, PROFILE_OBJECT_ID_NULL, NULL);
         pthread_mutex_lock(&array_of_requests_mtx);
     }
 
