@@ -253,7 +253,6 @@ mpi_funnelled_internal_get_am_callback(parsec_comm_engine_t *ce,
     //assert(mpi_funnelled_last_active_req < size_of_total_reqs);
 
     mpi_funnelled_callback_t *cb;
-    MPI_Request *request;
 
     mpi_funnelled_handshake_info_t *handshake_info = (mpi_funnelled_handshake_info_t *) msg;
 
@@ -264,13 +263,18 @@ mpi_funnelled_internal_get_am_callback(parsec_comm_engine_t *ce,
 
     assert(mpi_funnelled_last_active_req >= mpi_funnelled_static_req_idx);
 
+    MPI_Request req;
+    MPI_Isend(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
+              src, handshake_info->tag, dep_comm,
+              &req);
+
     pthread_mutex_lock(&array_of_requests_mtx);
 
     int post_in_static_array = mpi_funnelled_last_active_req < size_of_total_reqs;
     mpi_funnelled_dynamic_req_t *item;
 
     if(post_in_static_array) {
-        request = &array_of_requests[mpi_funnelled_last_active_req];
+        array_of_requests[mpi_funnelled_last_active_req] = req;
         cb = &array_of_callbacks[mpi_funnelled_last_active_req];
         mpi_funnelled_last_active_req++;
 
@@ -278,13 +282,10 @@ mpi_funnelled_internal_get_am_callback(parsec_comm_engine_t *ce,
         item = (mpi_funnelled_dynamic_req_t *)parsec_thread_mempool_allocate(mpi_funnelled_dynamic_req_mempool->thread_mempools);
         //item->post_isend = 1;
         item->post_isend = 0;
-        request = &item->request;
+        item->request = req;
         cb = &item->cb;
     }
 
-    MPI_Isend(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
-              src, handshake_info->tag, dep_comm,
-              request);
     /* we(the remote side) requested the source to forward us callback data that will be passed
      * to the callback function to notify upper level that the data has reached. We are copying
      * the callback data sent from the source.
@@ -329,7 +330,6 @@ mpi_funnelled_internal_put_am_callback(parsec_comm_engine_t *ce,
     (void) ce; (void) tag; (void)msg_size; (void)cb_data;
 
     mpi_funnelled_callback_t *cb;
-    MPI_Request *request;
 
     mpi_funnelled_handshake_info_t *handshake_info = (mpi_funnelled_handshake_info_t *) msg;
 
@@ -341,6 +341,10 @@ mpi_funnelled_internal_put_am_callback(parsec_comm_engine_t *ce,
     int _size;
     MPI_Type_size(remote_memory_handle->datatype, &_size);
 
+    MPI_Request req;
+    MPI_Irecv(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
+              src, handshake_info->tag, dep_comm, &req);
+
     int post_in_static_array = 1;
     mpi_funnelled_dynamic_req_t *item;
     pthread_mutex_lock(&array_of_requests_mtx);
@@ -349,7 +353,7 @@ mpi_funnelled_internal_put_am_callback(parsec_comm_engine_t *ce,
     }
 
     if(post_in_static_array) {
-        request = &array_of_requests[mpi_funnelled_last_active_req];
+        array_of_requests[mpi_funnelled_last_active_req] = req;
         cb = &array_of_callbacks[mpi_funnelled_last_active_req];
         mpi_funnelled_last_active_req++;
     } else {
@@ -359,12 +363,9 @@ mpi_funnelled_internal_put_am_callback(parsec_comm_engine_t *ce,
          */
         item = (mpi_funnelled_dynamic_req_t *)parsec_thread_mempool_allocate(mpi_funnelled_dynamic_req_mempool->thread_mempools);
         item->post_isend = 0;
-        request = &item->request;
+        item->request = req;
         cb = &item->cb;
     }
-
-    MPI_Irecv(remote_memory_handle->mem, remote_memory_handle->count, remote_memory_handle->datatype,
-              src, handshake_info->tag, dep_comm, request);
 
     /* we(the remote side) requested the source to forward us callback data that will be passed
      * to the callback function to notify upper level that the data has reached. We are copying
@@ -952,7 +953,6 @@ mpi_no_thread_get(parsec_comm_engine_t *ce,
     (void)r_tag; (void)r_cb_data;
 
     mpi_funnelled_callback_t *cb;
-    MPI_Request *request;
 
     int tag = next_tag(1);
 
@@ -989,6 +989,10 @@ mpi_no_thread_get(parsec_comm_engine_t *ce,
 
     assert(mpi_funnelled_last_active_req >= mpi_funnelled_static_req_idx);
 
+    MPI_Request req;
+    MPI_Irecv((char*)source_memory_handle->mem + ldispl, source_memory_handle->count, source_memory_handle->datatype,
+              remote, tag, dep_comm,
+              &req);
     int post_in_static_array = 1;
     mpi_funnelled_dynamic_req_t *item;
     pthread_mutex_lock(&array_of_requests_mtx);
@@ -997,19 +1001,15 @@ mpi_no_thread_get(parsec_comm_engine_t *ce,
     }
 
     if(post_in_static_array) {
-        request = &array_of_requests[mpi_funnelled_last_active_req];
+        array_of_requests[mpi_funnelled_last_active_req] = req;
         cb = &array_of_callbacks[mpi_funnelled_last_active_req];
         mpi_funnelled_last_active_req++;
     } else {
         item = (mpi_funnelled_dynamic_req_t *)parsec_thread_mempool_allocate(mpi_funnelled_dynamic_req_mempool->thread_mempools);
         item->post_isend = 0;
-        request = &item->request;
+        item->request = req;
         cb = &item->cb;
     }
-
-    MPI_Irecv((char*)source_memory_handle->mem + ldispl, source_memory_handle->count, source_memory_handle->datatype,
-              remote, tag, dep_comm,
-              request);
 
     cb->cb_type.onesided.fct = l_cb;
     cb->storage1 = mpi_funnelled_last_active_req;
@@ -1102,8 +1102,24 @@ mpi_no_thread_push_posted_req(parsec_comm_engine_t *ce)
     assert(mpi_funnelled_last_active_req < size_of_total_reqs);
 
     pthread_mutex_lock(&array_of_requests_mtx);
+
+    /* make sure no one has allocated the slot before we took the lock */
+    if (mpi_funnelled_last_active_req >= size_of_total_reqs) {
+        pthread_mutex_unlock(&array_of_requests_mtx);
+        return 0;
+    }
     mpi_funnelled_dynamic_req_t *item;
     item = (mpi_funnelled_dynamic_req_t *) parsec_list_nolock_pop_front(&mpi_funnelled_dynamic_req_fifo);
+
+    if(item->post_isend) {
+        pthread_mutex_unlock(&array_of_requests_mtx);
+        mpi_funnelled_mem_reg_handle_t *ldata = (mpi_funnelled_mem_reg_handle_t *) item->cb.cb_type.onesided.lreg;
+        MPI_Isend((char *)ldata->mem + item->cb.cb_type.onesided.ldispl, ldata->count,
+                  ldata->datatype, item->cb.cb_type.onesided.remote, item->cb.cb_type.onesided.size, dep_comm,
+                  &item->request);
+        pthread_mutex_lock(&array_of_requests_mtx);
+    }
+
 
     MPI_Request tmp = array_of_requests[mpi_funnelled_last_active_req];
     array_of_requests[mpi_funnelled_last_active_req] = item->request;
@@ -1134,13 +1150,6 @@ mpi_no_thread_push_posted_req(parsec_comm_engine_t *ce)
         assert(0);
     }
 
-    if(item->post_isend) {
-        mpi_funnelled_mem_reg_handle_t *ldata = (mpi_funnelled_mem_reg_handle_t *) item->cb.cb_type.onesided.lreg;
-        MPI_Isend((char *)ldata->mem + item->cb.cb_type.onesided.ldispl, ldata->count,
-                  ldata->datatype, item->cb.cb_type.onesided.remote, item->cb.cb_type.onesided.size, dep_comm,
-                  &array_of_requests[mpi_funnelled_last_active_req]);
-    }
-
     mpi_funnelled_last_active_req++;
     pthread_mutex_unlock(&array_of_requests_mtx);
 
@@ -1159,11 +1168,14 @@ mpi_no_thread_progress(parsec_comm_engine_t *ce)
 
     do {
         pthread_mutex_lock(&array_of_requests_mtx);
-        MPI_Testsome(mpi_funnelled_last_active_req, array_of_requests,
+        int last_active_req = mpi_funnelled_last_active_req;
+        MPI_Request *requests = array_of_requests;
+        pthread_mutex_unlock(&array_of_requests_mtx);
+
+        MPI_Testsome(last_active_req, requests,
                      &outcount, array_of_indices, array_of_statuses);
 
         if(0 == outcount) {
-            pthread_mutex_unlock(&array_of_requests_mtx);
             goto feed_more_work;  /* can we push some more work? */
         }
         /* Trigger the callbacks */
@@ -1181,6 +1193,7 @@ mpi_no_thread_progress(parsec_comm_engine_t *ce)
             ret++;
         }
 
+        pthread_mutex_lock(&array_of_requests_mtx);
         for( idx = outcount-1; idx >= 0; idx-- ) {
             pos = array_of_indices[idx];
             if(MPI_REQUEST_NULL != array_of_requests[pos])
