@@ -168,6 +168,13 @@ sched_lfq_select(parsec_execution_stream_t *es,
 {
     parsec_task_t *task = NULL;
     int i;
+
+    if(NULL != (task = PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->priv_task)) {
+        PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->priv_task = NULL;
+        *distance = 0;
+        return task;
+    }
+
     task = (parsec_task_t*)parsec_hbbuffer_pop_best(PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->task_queue,
                                                                        parsec_execution_context_priority_comparator);
     if( NULL != task ) {
@@ -198,6 +205,14 @@ static int sched_lfq_schedule(parsec_execution_stream_t* es,
                               parsec_task_t* new_context,
                               int32_t distance)
 {
+    if( NULL == PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->priv_task ) {
+        parsec_list_item_t *next = parsec_list_item_ring_chop((parsec_list_item_t *)new_context);
+        PARSEC_LIST_ITEM_SINGLETON(new_context);
+        PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->priv_task = new_context;
+        if(NULL == next)
+            return 0;
+        new_context = (parsec_task_t *)next;
+    }
     parsec_hbbuffer_push_all(PARSEC_MCA_SCHED_LOCAL_QUEUES_OBJECT(es)->task_queue,
                              (parsec_list_item_t*)new_context,
                              distance);

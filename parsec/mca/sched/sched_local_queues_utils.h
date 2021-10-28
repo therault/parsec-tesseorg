@@ -22,6 +22,7 @@
 #include "parsec/hbbuffer.h"
 
 typedef struct {
+    parsec_task_t      *priv_task;                  /* A private task, that we will run on this core next */
     parsec_dequeue_t   *system_queue;               /* The overflow queue itself. */
 #if defined(PARSEC_PAPI_SDE)
     int                 local_system_queue_balance; /* A local sum of how many elements have been pushed / poped
