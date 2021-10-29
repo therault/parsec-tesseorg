@@ -2047,18 +2047,20 @@ remote_dep_dequeue_nothread_progress(parsec_execution_stream_t* es,
     }
     /* Extract the head of the list and point the array to the correct value */
     if(NULL == (item = (dep_cmd_item_t*)parsec_list_nolock_pop_front(&dep_cmd_fifo)) ) {
-        do {
-            ret = remote_dep_mpi_progress(es);
-        } while(ret);
+        if (context->nb_nodes > 1) {
+            do {
+                ret = remote_dep_mpi_progress(es);
+            } while(ret);
 
-        if( !ret
-         && ((comm_yield == 2)
-          || (comm_yield == 1
-           && !parsec_list_nolock_is_empty(&dep_activates_fifo)
-           && !parsec_list_nolock_is_empty(&dep_put_fifo))) ) {
-            struct timespec ts;
-            ts.tv_sec = 0; ts.tv_nsec = comm_yield_ns;
-            nanosleep(&ts, NULL);
+            if( !ret
+             && ((comm_yield == 2)
+              || (comm_yield == 1
+               && !parsec_list_nolock_is_empty(&dep_activates_fifo)
+               && !parsec_list_nolock_is_empty(&dep_put_fifo))) ) {
+                struct timespec ts;
+                ts.tv_sec = 0; ts.tv_nsec = comm_yield_ns;
+                nanosleep(&ts, NULL);
+            }
         }
         goto check_pending_queues;
     }
