@@ -201,7 +201,7 @@ int __parsec_execute( parsec_execution_stream_t* es,
  */
 int parsec_taskpool_update_runtime_nbtask(parsec_taskpool_t *tp, int32_t nb_tasks)
 {
-    tp->tdm.module->taskpool_addto_nb_pa(tp, nb_tasks);
+    tp->update_nb_runtime_task(tp, nb_tasks);
     return 0;
 }
 
@@ -545,43 +545,11 @@ static int __parsec_taskpool_wait( parsec_taskpool_t* tp, parsec_execution_strea
         }
     }
 
-    parsec_rusage_per_es(es, true);
-
-    /* We're all done ? */
-    parsec_barrier_wait( &(parsec_context->barrier) );
-
-#if defined(PARSEC_SIM)
-    if( PARSEC_THREAD_IS_MASTER(es) ) {
-        parsec_vp_t *vp;
-        int32_t my_vpid, my_idx;
-        int largest_date = 0;
-        for(my_vpid = 0; my_vpid < parsec_context->nb_vp; my_vpid++) {
-            vp = parsec_context->virtual_processes[my_vpid];
-            for(my_idx = 0; my_idx < vp->nb_cores; my_idx++) {
-                if( vp->execution_streams[my_idx]->largest_simulation_date > largest_date )
-                    largest_date = vp->execution_streams[my_idx]->largest_simulation_date;
-            }
-        }
-        parsec_context->largest_simulation_date = largest_date;
-    }
-    parsec_barrier_wait( &(parsec_context->barrier) );
-    es->largest_simulation_date = 0;
-#endif
-
-    if( !PARSEC_THREAD_IS_MASTER(es) ) {
-        my_barrier_counter++;
-        goto wait_for_the_next_round;
-    }
-
     finalize_progress:
     // final select end - can we mark this as special somehow?
     // actually, it will already be obviously special, since it will be the only select
     // that has no context
     PARSEC_PINS(es, SELECT_END, NULL);
-
-    if( parsec_context->__parsec_internal_finalization_in_progress ) {
-        PARSEC_PINS_THREAD_FINI(es);
-    }
 
     return nbiterations;
 }

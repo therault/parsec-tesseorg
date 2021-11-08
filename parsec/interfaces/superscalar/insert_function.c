@@ -516,7 +516,7 @@ parsec_execute_and_come_back( parsec_taskpool_t *tp,
     /* we wait for all tasks inserted in the taskpool but not for the communication
      * invoked by those tasks.
      */
-    while(tp->nb_tasks > (unsigned int)task_threshold_count) {
+    while(tp->nb_tasks > task_threshold_count) {
         if( misses_in_a_row > 1 ) {
             rqtp.tv_nsec = exponential_backoff(misses_in_a_row);
             nanosleep(&rqtp, NULL);
@@ -1163,13 +1163,14 @@ int parsec_dtd_update_runtime_task( parsec_taskpool_t *tp, int32_t count )
     int remaining = tp->tdm.module->taskpool_addto_nb_pa( tp, count );
     parsec_dtd_taskpool_t *dtd_tp = (parsec_dtd_taskpool_t *)tp;
 
-    if( 0 == remaining && 1 == tp->nb_tasks ) {
+    if( 1 == remaining && 1 == tp->nb_tasks ) {
         remaining = tp->tdm.module->taskpool_addto_nb_tasks( tp, -1 );
         assert( 0 == remaining );
         dtd_tp->enqueue_flag = 0;
     }
 
-    parsec_dtd_taskpool_release( tp ); /* we're done in all cases */
+    if(tp->tdm.module->taskpool_state(tp) == PARSEC_TERM_TP_TERMINATED)
+        parsec_dtd_taskpool_release( tp ); /* we're done in all cases */
     return remaining;
 }
 
@@ -3002,7 +3003,7 @@ parsec_arena_datatype_t *parsec_dtd_create_arena_datatype(parsec_context_t *ctx,
 {
     parsec_arena_datatype_t *new_adt;
     int my_id = parsec_atomic_fetch_inc_int32(&ctx->dtd_arena_datatypes_next_id);
-    if( (my_id & PARSEC_GET_REGION_INFO) != my_id) {
+    if( (my_id & GET_REGION_INFO) != my_id) {
         return NULL;
     }
 #if defined(PARSEC_DEBUG_PARANOID)

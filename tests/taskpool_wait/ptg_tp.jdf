@@ -4,15 +4,15 @@ extern "C" %{
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  */
-
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
 %}
 
 descA  [type = "two_dim_block_cyclic_t *"]
 delta  [type = "int"]
 
 T(m, n)
- m = 0 .. descA->mt-1
- n = 0 .. descA->nt-1
+ m = 0 .. descA->super.mt-1
+ n = 0 .. descA->super.nt-1
 
 :descA(m, n)
 
@@ -20,11 +20,11 @@ RW A <- descA(m, n)
      -> descA(m, n)
 
 BODY
-  printf( "Rank: %d, core %d: entering PTG task (%d, %d) of TP %s (0x%x), sleeping for %d seconds\n",
+  printf( "Rank: %d, core %d: entering PTG task (%d, %d) of TP %s (%d/%p), sleeping for %d seconds\n",
           this_task->taskpool->context->my_rank, es->core_id,
-          m, n, this_task->taskpool->taskpool_name, this_task->taskpool, delta );
+          m, n, this_task->taskpool->taskpool_name, this_task->taskpool->taskpool_id, this_task->taskpool, delta );
   sleep(delta);
-  printf( "Rank: %d, core %d: leaving DTD task (%d, %d) of TP %s (0x%x), slept %d seconds\n",
+  printf( "Rank: %d, core %d: leaving PTG task (%d, %d) of TP %s (%d/%p), slept %d seconds\n",
           this_task->taskpool->context->my_rank, es->core_id,
-          m, n, this_task->taskpool->taskpool_name, this_task->taskpool, delta );
+          m, n, this_task->taskpool->taskpool_name, this_task->taskpool->taskpool_id, this_task->taskpool, delta );
 END
