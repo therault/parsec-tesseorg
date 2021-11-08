@@ -311,6 +311,24 @@ int parsec_context_test( parsec_context_t* context );
 int parsec_context_wait(parsec_context_t* context);
 
 /**
+ * @brief Complete the execution of a given PaRSEC taskpool
+ *
+ * @details
+ * Progress the execution context until the given taskpool reaches termination.
+ * Upon return from this function, all resources (threads and accelerators)
+ * associated with the corresponding context are left in a mode where they are
+ * active iff more taskpools are still active. The taskpool must be ready and
+ * registered with a started context.
+ *
+ * @param[inout] tp the taskpool to complete.
+ *
+ * @return * A negative number to signal an error. Any other value, aka. a positive
+ *           number (including 0), to signal successful completion of all work
+ *           associated with the taskpool.
+ */
+int parsec_taskpool_wait(parsec_taskpool_t* tp);
+
+/**
  * @brief taskpool-callback type definition
  *
  * @details

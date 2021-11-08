@@ -235,8 +235,6 @@ struct parsec_dtd_taskpool_s {
     parsec_mempool_t            *hash_table_bucket_mempool;
     parsec_hash_table_t         *task_hash_table;
     parsec_hash_table_t         *function_h_table;
-    /* ring of initial ready tasks */
-    parsec_task_t              **startup_list;
     /* from here to end is for the testing interface */
     struct hook_info             actual_hook[PARSEC_DTD_NB_TASK_CLASSES];
 };

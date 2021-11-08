@@ -243,8 +243,6 @@ PARSEC_OBJ_CLASS_INSTANCE(parsec_dtd_tile_t, parsec_list_item_t,
 void parsec_dtd_taskpool_constructor(parsec_dtd_taskpool_t *tp)
 {
     int nb;
-    tp->startup_list = (parsec_task_t**)calloc( vpmap_get_nb_vp(), sizeof(parsec_task_t*));
-
     tp->function_counter = 0;
 
     tp->task_hash_table = PARSEC_OBJ_NEW(parsec_hash_table_t);
@@ -329,7 +327,6 @@ parsec_dtd_taskpool_destructor(parsec_dtd_taskpool_t *tp)
     /* dtd_taskpool specific */
     parsec_mempool_destruct(tp->hash_table_bucket_mempool);
     free(tp->hash_table_bucket_mempool);
-    free(tp->startup_list);
 
     parsec_hash_table_fini(tp->task_hash_table);
     PARSEC_OBJ_RELEASE(tp->task_hash_table);
@@ -583,15 +580,7 @@ parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
 int
 parsec_dtd_taskpool_wait(parsec_taskpool_t  *tp)
 {
-    parsec_dtd_taskpool_t *dtd_tp = (parsec_dtd_taskpool_t *)tp;
-    if( NULL == tp->context ) {  /* the taskpool is not associated with any parsec_context
-                                    so it can't be waited upon */
-        return PARSEC_NOT_SUPPORTED;
-    }
-    parsec_dtd_schedule_tasks(dtd_tp);
-    dtd_tp->wait_func(tp);
-    parsec_dtd_taskpool_wait_on_pending_action(tp);
-    return 0;
+    return parsec_taskpool_wait(tp);
 }
 
 /* This function only waits until all local tasks are done */
@@ -1240,9 +1229,6 @@ parsec_dtd_taskpool_new(void)
         if( NULL == device ) continue;
         __tp->super.devices_index_mask |= (1 << device->device_index);
     }
-    for(i = 0; i < vpmap_get_nb_vp(); i++) {
-        __tp->startup_list[i] = NULL;
-    }
 
     /* Keeping track of total tasks to be executed per taskpool for the window */
     for(i = 0; i < PARSEC_DTD_NB_TASK_CLASSES; i++) {
@@ -1338,8 +1324,9 @@ parsec_dtd_taskpool_release( parsec_taskpool_t *tp )
 
 /* **************************************************************************** */
 /**
- * This is the hook that connects the function to start initial ready
- * tasks with the context. Called internally by PaRSEC.
+ * This function only registers the taskpool with the different devices, and
+ * attaches the context to the taskpool. Called internally by PaRSEC.
+ * ready tasks are scheduled as they are discovered, during task insertion.
  *
  * @param[in]   context
  *                  PARSEC context
@@ -1375,8 +1362,6 @@ parsec_dtd_startup( parsec_context_t   *context,
             }
     }
     (void)pready_list;
-
-    parsec_dtd_schedule_tasks( dtd_tp );
 }
 
 static inline int
@@ -2242,37 +2227,6 @@ parsec_dtd_set_descendant(parsec_dtd_task_t *parent_task, uint8_t parent_flow_in
         parsec_hash_table_unlock_bucket(tp->task_hash_table, (parsec_key_t)key);
     }
 #endif
-}
-
-/* **************************************************************************** */
-/**
- * Function to push ready task in PaRSEC's scheduler
- *
- * @param[in,out]   __tp
- *                      DTD taskpool
- *
- * @ingroup         DTD_INTERFACE_INTERNAL
- */
-void
-parsec_dtd_schedule_tasks( parsec_dtd_taskpool_t *__tp )
-{
-    parsec_task_t **startup_list = __tp->startup_list;
-    parsec_list_t temp;
-
-    PARSEC_OBJ_CONSTRUCT( &temp, parsec_list_t );
-    for(int p = 0; p < vpmap_get_nb_vp(); p++) {
-        if( NULL == startup_list[p] ) continue;
-
-        /* Order the tasks by priority */
-        parsec_list_chain_sorted(&temp, (parsec_list_item_t*)startup_list[p],
-                                parsec_execution_context_priority_comparator);
-        startup_list[p] = (parsec_task_t*)parsec_list_nolock_unchain(&temp);
-        /* We should add these tasks on the system queue when there is one */
-        __parsec_schedule( __tp->super.context->virtual_processes[p]->execution_streams[0],
-                          startup_list[p], 0 );
-        startup_list[p] = NULL;
-    }
-    PARSEC_OBJ_DESTRUCT(&temp);
 }
 
 /* **************************************************************************** */
