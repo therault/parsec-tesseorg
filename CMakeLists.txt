@@ -732,7 +732,7 @@ set(CTEST_GPU_LAUNCHER_OPTIONS
       "" CACHE STRING
       "Options to pass to the CTEST_MPI_LAUNCHER to select GPU nodes")
 
-if( BUILD_TESTING )
+if( BUILD_TESTING AND "${CMAKE_SOURCE_DIR}" STREQUAL "${PROJECT_SOURCE_DIR}" )
   find_program(HOSTNAME_EXE hostname)
   MARK_AS_ADVANCED(HOSTNAME_EXE)
   # Test that the launchers work
@@ -745,7 +745,7 @@ if( BUILD_TESTING )
   endif(PARSEC_HAVE_CUDA)
   add_subdirectory(tests)
   add_subdirectory(examples)
-endif( BUILD_TESTING )
+endif( BUILD_TESTING AND "${CMAKE_SOURCE_DIR}" STREQUAL "${PROJECT_SOURCE_DIR}" )
 
 add_subdirectory(docs)
 

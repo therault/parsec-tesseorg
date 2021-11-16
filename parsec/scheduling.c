@@ -458,11 +458,53 @@ int __parsec_task_progress( parsec_execution_stream_t* es,
     return rc;
 }
 
+static int __parsec_taskpool_test( parsec_taskpool_t* tp, parsec_execution_stream_t *es )
+{
+    parsec_context_t* parsec_context = es->virtual_process->parsec_context;
+    parsec_task_t* task;
+    int nbiterations = 0, distance, rc;
+
+    assert(PARSEC_THREAD_IS_MASTER(es));
+
+    /* first select begin, right before the wait_for_the... goto label */
+    PARSEC_PINS(es, SELECT_BEGIN, NULL);
+
+    if( NULL == parsec_current_scheduler ) {
+        parsec_fatal("Main thread entered parsec_taskpool_test, while a scheduler is not selected yet!");
+        return -1;
+    }
+
+    if( tp->tdm.module->taskpool_state(tp) != PARSEC_TERM_TP_TERMINATED ) {
+        /* Here we detach all dtd taskpools registered with us */
+        parsec_detach_all_dtd_taskpool_from_context(parsec_context);
+
+#if defined(DISTRIBUTED)
+        if( (1 == parsec_communication_engine_up) &&
+            (es->virtual_process[0].parsec_context->nb_nodes == 1)  ) {
+            /* check for remote deps completion */
+            while(parsec_remote_dep_progress(es) > 0) /* nothing */;
+        }
+#endif /* defined(DISTRIBUTED) */
+
+        task = parsec_current_scheduler->module.select(es, &distance);
+
+        if( task != NULL ) {
+            rc = __parsec_task_progress(es, task, distance);
+            (void)rc;  /* for now ignore the return value */
+
+            nbiterations++;
+        }
+    }
+
+    PARSEC_PINS(es, SELECT_END, NULL);
+
+    return nbiterations;
+}
+
 static int __parsec_taskpool_wait( parsec_taskpool_t* tp, parsec_execution_stream_t *es )
 {
     uint64_t misses_in_a_row;
     parsec_context_t* parsec_context = es->virtual_process->parsec_context;
-    int32_t my_barrier_counter = parsec_context->__parsec_internal_finalization_counter;
     parsec_task_t* task;
     int nbiterations = 0, distance, rc;
     struct timespec rqtp;
@@ -470,56 +512,23 @@ static int __parsec_taskpool_wait( parsec_taskpool_t* tp, parsec_execution_strea
     rqtp.tv_sec = 0;
     misses_in_a_row = 1;
 
-    if( !PARSEC_THREAD_IS_MASTER(es) ) {
-        /* Wait until all threads are done binding themselves
-         * (see parsec_init) */
-        parsec_barrier_wait( &(parsec_context->barrier) );
-        my_barrier_counter = 1;
-    } else {
-        /* The master thread might not have to trigger the barrier if the other
-         * threads have been activated by a previous start.
-         */
-        if( PARSEC_CONTEXT_FLAG_CONTEXT_ACTIVE & parsec_context->flags ) {
-            goto skip_first_barrier;
-        }
-        parsec_context->flags |= PARSEC_CONTEXT_FLAG_CONTEXT_ACTIVE;
-    }
-
-    parsec_rusage_per_es(es, false);
+    assert(PARSEC_THREAD_IS_MASTER(es));
 
     /* first select begin, right before the wait_for_the... goto label */
     PARSEC_PINS(es, SELECT_BEGIN, NULL);
 
-    /* The main loop where all the threads will spend their time */
-    wait_for_the_next_round:
-    /* Wait until all threads are here and the main thread signal the begining of the work */
-    parsec_barrier_wait( &(parsec_context->barrier) );
-
-    if( parsec_context->__parsec_internal_finalization_in_progress ) {
-        my_barrier_counter++;
-        for(; my_barrier_counter <= parsec_context->__parsec_internal_finalization_counter; my_barrier_counter++ ) {
-            parsec_barrier_wait( &(parsec_context->barrier) );
-        }
-        goto finalize_progress;
-    }
-
     if( NULL == parsec_current_scheduler ) {
-        parsec_fatal("Main thread entered parsec_context_wait, while a scheduler is not selected yet!");
+        parsec_fatal("Main thread entered parsec_taskpool_wait, while a scheduler is not selected yet!");
         return -1;
     }
 
-    skip_first_barrier:
     while( tp->tdm.module->taskpool_state(tp) != PARSEC_TERM_TP_TERMINATED ) {
-
-        if(PARSEC_THREAD_IS_MASTER(es)) {
-            /* Here we detach all dtd taskpools registered with us */
-            parsec_detach_all_dtd_taskpool_from_context(parsec_context);
-        }
+        /* Here we detach all dtd taskpools registered with us */
+        parsec_detach_all_dtd_taskpool_from_context(parsec_context);
 
 #if defined(DISTRIBUTED)
         if( (1 == parsec_communication_engine_up) &&
-            (es->virtual_process[0].parsec_context->nb_nodes == 1) &&
-            PARSEC_THREAD_IS_MASTER(es) ) {
+            (es->virtual_process[0].parsec_context->nb_nodes == 1) ) {
             /* check for remote deps completion */
             while(parsec_remote_dep_progress(es) > 0)  {
                 misses_in_a_row = 0;
@@ -545,10 +554,6 @@ static int __parsec_taskpool_wait( parsec_taskpool_t* tp, parsec_execution_strea
         }
     }
 
-    finalize_progress:
-    // final select end - can we mark this as special somehow?
-    // actually, it will already be obviously special, since it will be the only select
-    // that has no context
     PARSEC_PINS(es, SELECT_END, NULL);
 
     return nbiterations;
@@ -840,6 +845,31 @@ int parsec_taskpool_wait( parsec_taskpool_t* tp )
     }
 
     ret = __parsec_taskpool_wait( tp, context->virtual_processes[0]->execution_streams[0] );
+
+    return ret;
+}
+
+int parsec_taskpool_test( parsec_taskpool_t* tp )
+{
+    int ret = 0;
+    parsec_context_t *context = tp->context;
+
+    if( NULL == context ) {
+        parsec_warning("taskpool is not registered with any context in parsec_taskpool_wait\n");
+        return -1;
+    }
+
+    if( !(PARSEC_CONTEXT_FLAG_CONTEXT_ACTIVE & context->flags) ) {
+        parsec_warning("taskpool is registered to non-started context in parsec_taskpool_wait\n");
+        return -1;
+    }
+
+    if( __parsec_context_cas_or_flag(context,
+                                     PARSEC_CONTEXT_FLAG_COMM_ACTIVE) ) {
+        (void)parsec_remote_dep_on(context);
+    }
+
+    ret = __parsec_taskpool_test( tp, context->virtual_processes[0]->execution_streams[0] );
 
     return ret;
 }

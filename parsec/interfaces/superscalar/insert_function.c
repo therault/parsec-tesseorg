@@ -534,26 +534,6 @@ parsec_execute_and_come_back( parsec_taskpool_t *tp,
     }
 }
 
-/* Function to wait on all pending action of a taskpool */
-static int
-parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
-{
-    struct timespec rqtp;
-    rqtp.tv_sec = 0;
-
-    int unit_waited = 0;
-    while(tp->nb_pending_actions > 1) {
-        unit_waited++;
-        if(100 == unit_waited) {
-            rqtp.tv_nsec = exponential_backoff(unit_waited);
-            nanosleep(&rqtp, NULL);
-            unit_waited = 0;
-        }
-    }
-    return 0;
-}
-
-
 /* **************************************************************************** */
 /**
  * Function to call when PaRSEC context should wait on a specific taskpool.
