@@ -333,7 +333,7 @@ int parsec_taskpool_wait(parsec_taskpool_t* tp);
  *    by executing one (or less) task
  *
  * @details
- * Try to progress the execution context until the given taskpool reaches termination.
+ * Try to progress the execution context. 
  * Upon return from this function, all resources (threads and accelerators)
  * associated with the corresponding context are left in a mode where they are
  * active. The taskpool must be ready and registered with a started context.
