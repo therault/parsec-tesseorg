@@ -300,9 +300,9 @@ vector_twoDBC_key_to_string(struct parsec_data_collection_s* desc, parsec_data_k
     int res;
     (void)desc;
 
-    res = snprintf(buffer, buffer_size, "(%llu)", datakey);
+    res = snprintf(buffer, buffer_size, "(%" PRIu64 ")", datakey);
     if (res < 0) {
-        printf("error in key_to_string for data collection (%llu) key: %llu\n", desc->dc_id, datakey);
+        printf("error in key_to_string for data collection (%" PRIu64 ") key: %" PRIu64 "\n", desc->dc_id, datakey);
     }
     return res;
 }
