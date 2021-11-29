@@ -65,7 +65,6 @@ int parsec_dtd_window_size             = 8000;   /**< Default window size */
 int parsec_dtd_threshold_size          = 4000;   /**< Default threshold size of tasks for master thread to wait on */
 static int parsec_dtd_task_hash_table_size = 1<<16; /**< Default task hash table size */
 static int parsec_dtd_tile_hash_table_size = 1<<16; /**< Default tile hash table size */
-static int parsec_dtd_no_of_arenas_datatypes = 16;
 
 int parsec_dtd_dump_traversal_info = 60; /**< Level for printing traversal info */
 int parsec_dtd_dump_function_info  = 50; /**< Level for printing function_structure info */
@@ -73,8 +72,6 @@ int insert_task_trace_keyin = -1;
 int insert_task_trace_keyout = -1;
 int hashtable_trace_keyin = -1;
 int hashtable_trace_keyout = -1;
-
-parsec_arena_datatype_t *parsec_dtd_arenas_datatypes;
 
 extern parsec_sched_module_t *parsec_current_scheduler;
 
@@ -243,8 +240,6 @@ PARSEC_OBJ_CLASS_INSTANCE(parsec_dtd_tile_t, parsec_list_item_t,
 void parsec_dtd_taskpool_constructor(parsec_dtd_taskpool_t *tp)
 {
     int nb;
-    tp->startup_list = (parsec_task_t**)calloc( vpmap_get_nb_vp(), sizeof(parsec_task_t*));
-
     tp->function_counter = 0;
 
     tp->task_hash_table = PARSEC_OBJ_NEW(parsec_hash_table_t);
@@ -329,7 +324,6 @@ parsec_dtd_taskpool_destructor(parsec_dtd_taskpool_t *tp)
     /* dtd_taskpool specific */
     parsec_mempool_destruct(tp->hash_table_bucket_mempool);
     free(tp->hash_table_bucket_mempool);
-    free(tp->startup_list);
 
     parsec_hash_table_fini(tp->task_hash_table);
     PARSEC_OBJ_RELEASE(tp->task_hash_table);
@@ -446,8 +440,6 @@ parsec_dtd_lazy_init(void)
                               PARSEC_OBJ_CLASS(parsec_dtd_tile_t), sizeof(parsec_dtd_tile_t),
                               offsetof(parsec_dtd_tile_t, mempool_owner),
                               1/* no. of threads*/ );
-
-    parsec_dtd_arenas_datatypes = (parsec_arena_datatype_t *) calloc(parsec_dtd_no_of_arenas_datatypes, sizeof(parsec_arena_datatype_t));
 }
 
 /* **************************************************************************** */
@@ -463,9 +455,6 @@ void parsec_dtd_fini(void)
 #if defined(PARSEC_DEBUG_PARANOID)
     assert(parsec_dtd_taskpool_mempool != NULL);
 #endif
-    free(parsec_dtd_arenas_datatypes); parsec_dtd_arenas_datatypes = NULL;
-    parsec_dtd_no_of_arenas_datatypes = 0;
-
     parsec_mempool_destruct( parsec_dtd_tile_mempool );
     free( parsec_dtd_tile_mempool );
 
@@ -527,7 +516,7 @@ parsec_execute_and_come_back( parsec_taskpool_t *tp,
     /* we wait for all tasks inserted in the taskpool but not for the communication
      * invoked by those tasks.
      */
-    while(tp->nb_tasks > (unsigned int)task_threshold_count) {
+    while(tp->nb_tasks > task_threshold_count) {
         if( misses_in_a_row > 1 ) {
             rqtp.tv_nsec = exponential_backoff(misses_in_a_row);
             nanosleep(&rqtp, NULL);
@@ -544,26 +533,6 @@ parsec_execute_and_come_back( parsec_taskpool_t *tp,
         }
     }
 }
-
-/* Function to wait on all pending action of a taskpool */
-static int
-parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
-{
-    struct timespec rqtp;
-    rqtp.tv_sec = 0;
-
-    int unit_waited = 0;
-    while(tp->nb_pending_actions > 1) {
-        unit_waited++;
-        if(100 == unit_waited) {
-            rqtp.tv_nsec = exponential_backoff(unit_waited);
-            nanosleep(&rqtp, NULL);
-            unit_waited = 0;
-        }
-    }
-    return 0;
-}
-
 
 /* **************************************************************************** */
 /**
@@ -583,15 +552,7 @@ parsec_dtd_taskpool_wait_on_pending_action(parsec_taskpool_t  *tp)
 int
 parsec_dtd_taskpool_wait(parsec_taskpool_t  *tp)
 {
-    parsec_dtd_taskpool_t *dtd_tp = (parsec_dtd_taskpool_t *)tp;
-    if( NULL == tp->context ) {  /* the taskpool is not associated with any parsec_context
-                                    so it can't be waited upon */
-        return PARSEC_NOT_SUPPORTED;
-    }
-    parsec_dtd_schedule_tasks(dtd_tp);
-    dtd_tp->wait_func(tp);
-    parsec_dtd_taskpool_wait_on_pending_action(tp);
-    return 0;
+    return parsec_taskpool_wait(tp);
 }
 
 /* This function only waits until all local tasks are done */
@@ -1182,13 +1143,14 @@ int parsec_dtd_update_runtime_task( parsec_taskpool_t *tp, int32_t count )
     int remaining = tp->tdm.module->taskpool_addto_nb_pa( tp, count );
     parsec_dtd_taskpool_t *dtd_tp = (parsec_dtd_taskpool_t *)tp;
 
-    if( 0 == remaining && 1 == tp->nb_tasks ) {
+    if( 1 == remaining && 1 == tp->nb_tasks ) {
         remaining = tp->tdm.module->taskpool_addto_nb_tasks( tp, -1 );
         assert( 0 == remaining );
         dtd_tp->enqueue_flag = 0;
     }
 
-    parsec_dtd_taskpool_release( tp ); /* we're done in all cases */
+    if(tp->tdm.module->taskpool_state(tp) == PARSEC_TERM_TP_TERMINATED)
+        parsec_dtd_taskpool_release( tp ); /* we're done in all cases */
     return remaining;
 }
 
@@ -1239,9 +1201,6 @@ parsec_dtd_taskpool_new(void)
         parsec_device_module_t *device = parsec_mca_device_get(i);
         if( NULL == device ) continue;
         __tp->super.devices_index_mask |= (1 << device->device_index);
-    }
-    for(i = 0; i < vpmap_get_nb_vp(); i++) {
-        __tp->startup_list[i] = NULL;
     }
 
     /* Keeping track of total tasks to be executed per taskpool for the window */
@@ -1338,8 +1297,9 @@ parsec_dtd_taskpool_release( parsec_taskpool_t *tp )
 
 /* **************************************************************************** */
 /**
- * This is the hook that connects the function to start initial ready
- * tasks with the context. Called internally by PaRSEC.
+ * This function only registers the taskpool with the different devices, and
+ * attaches the context to the taskpool. Called internally by PaRSEC.
+ * ready tasks are scheduled as they are discovered, during task insertion.
  *
  * @param[in]   context
  *                  PARSEC context
@@ -1375,8 +1335,6 @@ parsec_dtd_startup( parsec_context_t   *context,
             }
     }
     (void)pready_list;
-
-    parsec_dtd_schedule_tasks( dtd_tp );
 }
 
 static inline int
@@ -1860,6 +1818,7 @@ static int datatype_lookup_of_dtd_task(parsec_execution_stream_t *es,
                                        const parsec_task_t *this_task,
                                        uint32_t *flow_mask, parsec_dep_data_description_t *data)
 {
+    parsec_arena_datatype_t *adt;
     (void)es;
     data->count = 1;
     data->displ = 0;
@@ -1867,8 +1826,10 @@ static int datatype_lookup_of_dtd_task(parsec_execution_stream_t *es,
     int i;
     for( i = 0; i < this_task->task_class->nb_flows; i++) {
         if((*flow_mask) & (1U<<i)) {
-            data->arena  = parsec_dtd_arenas_datatypes[(FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index].arena;
-            data->layout = parsec_dtd_arenas_datatypes[(FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index].opaque_dtt;
+            adt = parsec_hash_table_nolock_find(&this_task->taskpool->context->dtd_arena_datatypes_hash_table,
+                                                (FLOW_OF(((parsec_dtd_task_t *)this_task), i))->arena_index);
+            data->arena  = adt->arena;
+            data->layout = adt->opaque_dtt;
             (*flow_mask) &= ~(1U<<i);
             return PARSEC_HOOK_RETURN_NEXT;
         }
@@ -1966,7 +1927,6 @@ parsec_dtd_create_task_class( parsec_dtd_taskpool_t *__tp, parsec_dtd_funcptr_t*
     dtd_tc->dep_in_index       = 0;
     dtd_tc->dep_out_index      = 0;
     dtd_tc->count_of_params    = count_of_params;
-    dtd_tc->size_of_param      = size_of_param;
     dtd_tc->fpointer           = fpointer;
     dtd_tc->ref_count          = 1;
 
@@ -2242,37 +2202,6 @@ parsec_dtd_set_descendant(parsec_dtd_task_t *parent_task, uint8_t parent_flow_in
         parsec_hash_table_unlock_bucket(tp->task_hash_table, (parsec_key_t)key);
     }
 #endif
-}
-
-/* **************************************************************************** */
-/**
- * Function to push ready task in PaRSEC's scheduler
- *
- * @param[in,out]   __tp
- *                      DTD taskpool
- *
- * @ingroup         DTD_INTERFACE_INTERNAL
- */
-void
-parsec_dtd_schedule_tasks( parsec_dtd_taskpool_t *__tp )
-{
-    parsec_task_t **startup_list = __tp->startup_list;
-    parsec_list_t temp;
-
-    PARSEC_OBJ_CONSTRUCT( &temp, parsec_list_t );
-    for(int p = 0; p < vpmap_get_nb_vp(); p++) {
-        if( NULL == startup_list[p] ) continue;
-
-        /* Order the tasks by priority */
-        parsec_list_chain_sorted(&temp, (parsec_list_item_t*)startup_list[p],
-                                parsec_execution_context_priority_comparator);
-        startup_list[p] = (parsec_task_t*)parsec_list_nolock_unchain(&temp);
-        /* We should add these tasks on the system queue when there is one */
-        __parsec_schedule( __tp->super.context->virtual_processes[p]->execution_streams[0],
-                          startup_list[p], 0 );
-        startup_list[p] = NULL;
-    }
-    PARSEC_OBJ_DESTRUCT(&temp);
 }
 
 /* **************************************************************************** */
@@ -3048,4 +2977,39 @@ parsec_taskpool_t *
 parsec_dtd_get_taskpool(parsec_task_t *this_task)
 {
     return this_task->taskpool;
+}
+
+parsec_arena_datatype_t *parsec_dtd_create_arena_datatype(parsec_context_t *ctx, int *id)
+{
+    parsec_arena_datatype_t *new_adt;
+    int my_id = parsec_atomic_fetch_inc_int32(&ctx->dtd_arena_datatypes_next_id);
+    if( (my_id & GET_REGION_INFO) != my_id) {
+        return NULL;
+    }
+#if defined(PARSEC_DEBUG_PARANOID)
+    new_adt = parsec_hash_table_nolock_find(&ctx->dtd_arena_datatypes_hash_table, my_id);
+    if(NULL != new_adt)
+        return NULL;
+#endif
+    new_adt = calloc(sizeof(parsec_arena_datatype_t), 1);
+    if(NULL == new_adt)
+        return NULL;
+    new_adt->ht_item.key = my_id;
+    parsec_hash_table_nolock_insert(&ctx->dtd_arena_datatypes_hash_table, &new_adt->ht_item);
+    *id = my_id;
+    return new_adt;
+}
+
+parsec_arena_datatype_t *parsec_dtd_get_arena_datatype(parsec_context_t *ctx, int id)
+{
+    return parsec_hash_table_nolock_find(&ctx->dtd_arena_datatypes_hash_table, id);
+}
+
+int parsec_dtd_destroy_arena_datatype(parsec_context_t *ctx, int id)
+{
+    parsec_arena_datatype_t *adt = parsec_hash_table_nolock_remove(&ctx->dtd_arena_datatypes_hash_table, id);
+    if(NULL == adt)
+        return PARSEC_ERR_VALUE_OUT_OF_BOUNDS;
+    free(adt);
+    return PARSEC_SUCCESS;
 }
