@@ -148,6 +148,7 @@ parsec_dtd_ordering_correctly( parsec_execution_stream_t *es,
     parsec_dtd_task_t *current_desc = NULL;
     int op_type_on_current_flow, desc_op_type, desc_flow_index;
     parsec_dtd_tile_t *tile;
+    parsec_arena_datatype_t *adt;
 
     parsec_dep_t deps;
     parsec_release_dep_fct_arg_t *arg = (parsec_release_dep_fct_arg_t *)ontask_arg;
@@ -221,8 +222,13 @@ parsec_dtd_ordering_correctly( parsec_execution_stream_t *es,
 
             /* setting data */
             data.data   = current_task->super.data[current_dep].data_out;
-            data.arena  = parsec_dtd_arenas_datatypes[FLOW_OF(current_task, current_dep)->arena_index].arena;
-            data.layout = parsec_dtd_arenas_datatypes[FLOW_OF(current_task, current_dep)->arena_index].opaque_dtt;
+            adt = parsec_dtd_get_arena_datatype(this_task->taskpool->context,
+                                            FLOW_OF(current_task, current_dep)->arena_index);
+            if( NULL != adt ) {
+                // Not all programs need to define types for each flow: they might not create a communication.
+                data.arena = adt->arena;
+                data.layout = adt->opaque_dtt;
+            }
             data.count  = 1;
             data.displ  = 0;
 
