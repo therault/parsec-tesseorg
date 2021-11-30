@@ -537,7 +537,7 @@ static int __parsec_taskpool_wait( parsec_taskpool_t* tp, parsec_execution_strea
 #endif /* defined(DISTRIBUTED) */
 
         if( misses_in_a_row > 1 ) {
-            rqtp.tv_nsec = exponential_backoff(misses_in_a_row);
+            rqtp.tv_nsec = exponential_backoff(es, misses_in_a_row);
             nanosleep(&rqtp, NULL);
         }
         misses_in_a_row++;  /* assume we fail to extract a task */
