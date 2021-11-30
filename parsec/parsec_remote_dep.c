@@ -1199,6 +1199,7 @@ remote_dep_mpi_remote_get_end_cb(parsec_comm_engine_t *ce,
                           int src,
                           void *data)
 {
+    (void)msg_size; (void)tag; (void)src; (void)data;
     /* Retreive deps from callback_data */
     //assert(msg_size == sizeof(uintptr_t));
     remote_dep_cb_data_t *cb_data = (remote_dep_cb_data_t *)*(uintptr_t*)msg;
