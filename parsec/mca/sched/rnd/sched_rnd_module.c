@@ -107,7 +107,7 @@ static int sched_rnd_schedule(parsec_execution_stream_t* es,
                 parsec_task_snprintf(tmp_str, MAX_TASK_STRLEN, (parsec_task_t*)it));
 #endif
         /* randomly assign priority */
-        (*((int*)(((uintptr_t)it)+parsec_execution_context_priority_comparator))) = rand() + distance;
+        (*((int*)(((uintptr_t)it)+parsec_execution_context_priority_comparator))) = rand_r(&es->rand_seed) + distance;
         it = (parsec_list_item_t*)((parsec_list_item_t*)it)->list_next;
     } while( it != (parsec_list_item_t*)new_context );
 
