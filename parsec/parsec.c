@@ -100,6 +100,8 @@ int parsec_want_rusage = 0;
 #include <sys/time.h>
 #include <sys/resource.h>
 
+parsec_info_t parsec_per_stream_infos;
+
 static struct rusage _parsec_rusage;
 
 static char *parsec_enable_dot = NULL;

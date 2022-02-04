@@ -24,7 +24,9 @@
 #if defined(PARSEC_HAVE_STRING_H)
 #include <string.h>
 #endif  /* defined(PARSEC_HAVE_STRING_H) */
-
+#if defined(__WINDOWS__)
+#include <windows.h>
+#endif  /* defined(__WINDOWS__) */
 int parsec_device_output = 0;
 static int parsec_device_verbose = 0;
 uint32_t parsec_nb_devices = 0;
@@ -32,8 +34,6 @@ static uint32_t parsec_nb_max_devices = 0;
 static uint32_t parsec_mca_device_are_freezed = 0;
 parsec_atomic_lock_t parsec_devices_mutex = PARSEC_ATOMIC_UNLOCKED;
 static parsec_device_module_t** parsec_devices = NULL;
-
-parsec_info_t parsec_per_device_infos;
 
 static parsec_device_module_t* parsec_device_cpus = NULL;
 static parsec_device_module_t* parsec_device_recursive = NULL;
@@ -55,22 +55,120 @@ float *parsec_device_sweight = NULL;
 float *parsec_device_dweight = NULL;
 float *parsec_device_tweight = NULL;
 
-static void parsec_device_module_constructor(parsec_object_t *obj)
-{
-    parsec_device_module_t *mod = (parsec_device_module_t*)obj;
-    PARSEC_OBJ_CONSTRUCT(&mod->infos, parsec_info_object_array_t);
-    parsec_info_object_array_init(&mod->infos, &parsec_per_device_infos);
-}
+/**
+ * Try to find the best device to execute the kernel based on the compute
+ * capability of the device.
+ *
+ * Returns:
+ *  > 1    - if the kernel should be executed by the a GPU
+ *  0 or 1 - if the kernel should be executed by some other meaning (in this case the
+ *         execution context is not released).
+ * -1      - if the kernel is scheduled to be executed on a GPU.
+ */
 
-static void parsec_device_module_destructor(parsec_object_t *obj)
+int parsec_get_best_device( parsec_task_t* this_task, double ratio )
 {
-    parsec_device_module_t *mod = (parsec_device_module_t*)obj;
-    PARSEC_OBJ_DESTRUCT(&mod->infos);
+    int i, dev_index = -1, data_index;
+    parsec_taskpool_t* tp = this_task->taskpool;
+
+    /* Select the location of the first data that is used in READ/WRITE or pick the
+     * location of one of the READ data. For now use the last one.
+     */
+    for( i = 0; i < this_task->task_class->nb_flows; i++ ) {
+        /* Make sure data_in is not NULL */
+        if( NULL == this_task->data[i].data_in ) continue;
+
+        /* Data is updated by the task, and we try to minimize the data movements */
+        if( (NULL != this_task->task_class->out[i]) &&
+            (this_task->task_class->out[i]->flow_flags & PARSEC_FLOW_ACCESS_WRITE) ) {
+
+            data_index = this_task->task_class->out[i]->flow_index;
+            /* If the data has a preferred device, try to obey it. */
+            if( this_task->data[data_index].data_in->original->preferred_device > 1 ) {  /* no CPU or recursive */
+                dev_index = this_task->data[data_index].data_in->original->preferred_device;
+                break;
+            }
+            /* Data is located on a device */
+            if( this_task->data[data_index].data_in->original->owner_device > 1 ) {  /* no CPU or recursive */
+                dev_index = this_task->data[data_index].data_in->original->owner_device;
+                break;
+            }
+            /* If we reach here, we cannot yet decide which device to run on based on the WRITE
+             * constraints, so let's pick the data for a READ flow.
+             */
+        }
+        data_index = this_task->task_class->in[i]->flow_index;
+        if( this_task->data[data_index].data_in->original->preferred_device > 1 ) {
+            dev_index = this_task->data[data_index].data_in->original->preferred_device;
+        } else if( this_task->data[data_index].data_in->original->owner_device > 1 ) {
+            dev_index  = this_task->data[data_index].data_in->original->owner_device;
+        }
+    }
+
+    /* 0 is CPU, and 1 is recursive device */
+    if( dev_index <= 1 ) {  /* This is the first time we see this data for a GPU.
+                             * Let's decide which GPU will work on it. */
+        int best_index;
+        float weight, best_weight = parsec_device_load[0] + ratio * parsec_device_sweight[0];
+
+        /* Start with a valid device for this task */
+        for(best_index = 0; best_index < parsec_mca_device_enabled(); best_index++) {
+            parsec_device_module_t *dev = parsec_mca_device_get(best_index);
+
+            /* Skip the device if it is not configured */
+            if(!(tp->devices_index_mask & (1 << best_index))) continue;
+            /* Stop on this device if there is an incarnation for it */
+            for(i = 0; NULL != this_task->task_class->incarnations[i].hook; i++)
+                if( this_task->task_class->incarnations[i].type == dev->type )
+                    break;
+            if(NULL != this_task->task_class->incarnations[i].hook)
+                break;
+        }
+
+        if(parsec_mca_device_enabled() == best_index) {
+            /* We tried all possible devices, and none of them have an implementation
+             * for this task! */
+            parsec_warning("*** Task class '%s' has no valid implementation for the available devices",
+                           this_task->task_class->name);
+            return -1;
+        }
+
+        /* Start at 2, to skip the recursive body */
+        for( dev_index = 2; dev_index < parsec_mca_device_enabled(); dev_index++ ) {
+            /* Skip the device if it is not configured */
+            if(!(tp->devices_index_mask & (1 << dev_index))) continue;
+            weight = parsec_device_load[dev_index] + ratio * parsec_device_sweight[dev_index];
+            if( best_weight > weight ) {
+                best_index = dev_index;
+                best_weight = weight;
+            }
+        }
+        // Load problem: was nothing to do here
+        parsec_device_load[best_index] += ratio * parsec_device_sweight[best_index];
+        assert( best_index != 1 );
+        dev_index = best_index;
+    }
+
+    /* Sanity check: if at least one of the data copies is not parsec
+     * managed, check that all the non-parsec-managed data copies
+     * exist on the same device */
+     for( i = 0; i < this_task->task_class->nb_flows; i++ ) {
+         /* Make sure data_in is not NULL */
+         if (NULL == this_task->data[i].data_in) continue;
+         if ((this_task->data[i].data_in->flags & PARSEC_DATA_FLAG_PARSEC_MANAGED) == 0 &&
+              this_task->data[i].data_in->device_index != dev_index) {
+             char task_str[MAX_TASK_STRLEN];
+             parsec_fatal("*** User-Managed Copy Error: Task %s is selected to run on device %d,\n"
+                          "*** but flow %d is represented by a data copy not managed by PaRSEC,\n"
+                          "*** and does not have a copy on that device\n",
+                          parsec_task_snprintf(task_str, MAX_TASK_STRLEN, this_task), dev_index, i);
+         }
+     }
+    return dev_index;
 }
 
 PARSEC_OBJ_CLASS_INSTANCE(parsec_device_module_t, parsec_object_t,
-                          parsec_device_module_constructor,
-                          parsec_device_module_destructor);
+                          NULL, NULL);
 
 int parsec_mca_device_init(void)
 {
@@ -82,6 +180,7 @@ int parsec_mca_device_init(void)
     int i, j, rc, priority;
 
     PARSEC_OBJ_CONSTRUCT(&parsec_per_device_infos, parsec_info_t);
+    PARSEC_OBJ_CONSTRUCT(&parsec_per_stream_infos, parsec_info_t);
 
     (void)parsec_mca_param_reg_int_name("device", "show_capabilities",
                                         "Show the detailed devices capabilities",
@@ -133,6 +232,7 @@ int parsec_mca_device_init(void)
                     j++;
                 }
                 modules_activated[num_modules_activated++] = modules[0];
+
 #if defined(PARSEC_PROF_TRACE)
                 strncat(modules_activated_str, device_components[i]->mca_component_name, 1023);
                 strncat(modules_activated_str, ",", 1023);
@@ -337,6 +437,7 @@ int parsec_mca_device_fini(void)
     }
 
     PARSEC_OBJ_DESTRUCT(&parsec_per_device_infos);
+    PARSEC_OBJ_DESTRUCT(&parsec_per_stream_infos);
 
     return PARSEC_SUCCESS;
 }
@@ -348,7 +449,7 @@ parsec_device_find_function(const char* function_name,
 {
     char library_name[FILENAME_MAX];
     const char **target;
-    void *dlh, *fn = NULL;
+    void *fn = NULL;
 
     for( target = paths; (NULL != target) && (NULL != *target); target++ ) {
         struct stat status;
@@ -364,7 +465,20 @@ parsec_device_find_function(const char* function_name,
         } else {
             snprintf(library_name,  FILENAME_MAX, "%s", *target);
         }
-        dlh = dlopen(library_name, RTLD_NOW | RTLD_NODELETE );
+#if defined(__WINDOWS__)
+        wchar_t wlibrary_name[FILENAME_MAX];
+        MultiByteToWideChar(CP_ACP, MB_COMPOSITE, library_name, strlen(library_name),
+                            wlibrary_name, FILENAME_MAX);
+        HMODULE dlh = LoadLibraryW(wlibrary_name);
+        if(NULL == dlh) {
+            parsec_debug_verbose(10, parsec_device_output,
+                                 "Could not find %s dynamic library (%s)", library_name, GetLastError());
+            continue;
+        }
+        fn = GetProcAddress(dlh, function_name);
+        FreeLibrary(dlh);
+#else
+        void* dlh = dlopen(library_name, RTLD_NOW | RTLD_NODELETE );
         if(NULL == dlh) {
             parsec_debug_verbose(10, parsec_device_output,
                                  "Could not find %s dynamic library (%s)", library_name, dlerror());
@@ -372,6 +486,7 @@ parsec_device_find_function(const char* function_name,
         }
         fn = dlsym(dlh, function_name);
         dlclose(dlh);
+#endif
         if( NULL != fn ) {
             parsec_debug_verbose(4, parsec_device_output,
                                  "Function %s found in shared library %s",
@@ -384,16 +499,24 @@ parsec_device_find_function(const char* function_name,
         parsec_output_verbose(10, parsec_device_output,
                               "No dynamic function %s found, trying from compile time linked in\n",
                               function_name);
-        dlh = dlopen(NULL, RTLD_NOW | RTLD_NODELETE);
+#if defined(__WINDOWS__)
+        HMODULE dlh = GetModuleHandleA(NULL);
+        if(NULL != dlh) {
+            fn = GetProcAddress(dlh, function_name);
+            FreeLibrary(dlh);
+        }
+#else
+        void* dlh = dlopen(NULL, RTLD_NOW | RTLD_NODELETE);
         if(NULL != dlh) {
             fn = dlsym(dlh, function_name);
+            dlclose(dlh);
+        }
+#endif
             if(NULL != fn) {
                 parsec_debug_verbose(4, parsec_device_output,
                                      "Function %s found in the application symbols",
                                      function_name);
             }
-            dlclose(dlh);
-        }
     }
     if(NULL == fn) {
         parsec_debug_verbose(10, parsec_device_output,
@@ -408,7 +531,7 @@ int parsec_mca_device_registration_complete(parsec_context_t* context)
     (void)context;
 
     if(parsec_mca_device_are_freezed)
-        return -1;
+        return PARSEC_NOT_SUPPORTED;
 
     if(NULL != parsec_device_load) free(parsec_device_load);
     parsec_device_load = (float*)calloc(parsec_nb_devices, sizeof(float));
@@ -450,7 +573,7 @@ int parsec_mca_device_registration_complete(parsec_context_t* context)
     }
 
     parsec_mca_device_are_freezed = 1;
-    return 0;
+    return PARSEC_SUCCESS;
 }
 
 int parsec_mca_device_registration_completed(parsec_context_t* context)
@@ -463,14 +586,15 @@ int parsec_mca_device_registration_completed(parsec_context_t* context)
 #include <sys/sysctl.h>
 #endif
 
-static int cpu_weights(parsec_device_module_t* device, int nstreams) {
+static int cpu_weights(parsec_device_module_t* device, int nstreams)
+{
     /* This is default value when it cannot be computed */
     /* Crude estimate that holds for Nehalem era Xeon processors */
     float freq = 2.5f;
     float fp_ipc = 8.f;
     float dp_ipc = 4.f;
     char cpu_model[256]="Unkown";
-    char *cpu_flags;
+    char *cpu_flags = NULL;
 
 #if defined(__linux__)
     FILE* procinfo = fopen("/proc/cpuinfo", "r");
@@ -510,30 +634,28 @@ static int cpu_weights(parsec_device_module_t* device, int nstreams) {
         parsec_warning("CPU Features cannot be autodetected on this machine (Detected OSX): %s", strerror(errno));
         goto notfound;
     }
+#else
+    goto notfound;
 #endif
     /* prefer base frequency from model name when available (avoids power
      * saving modes and dynamic frequency scaling issues) */
     sscanf(cpu_model, "%*[^@] @ %fGHz", &freq);
 
+    fp_ipc = 8;
+    dp_ipc = 4;
 #if defined(PARSEC_HAVE_BUILTIN_CPU)
     __builtin_cpu_init();
-#if defined(PARSEC_HAVE_BUILTIN_CPU512)
     if(__builtin_cpu_supports("avx512f")) {
         fp_ipc = 64;
         dp_ipc = 32;
-    } else
-#endif /* PARSEC_HAVE_BUILTIN_CPU512; */
-         if(__builtin_cpu_supports("avx2")) {
+    }
+    else if(__builtin_cpu_supports("avx2")) {
         fp_ipc = 32;
         dp_ipc = 16;
     }
     else if(__builtin_cpu_supports("avx")) {
         fp_ipc = 16;
         dp_ipc = 8;
-    }
-    else {
-        fp_ipc = 8;
-        dp_ipc = 4;
     }
 #else
     if( strstr(cpu_flags, " avx512f") ) {
@@ -547,10 +669,6 @@ static int cpu_weights(parsec_device_module_t* device, int nstreams) {
     else if( strstr(cpu_flags, " avx") ) {
         fp_ipc = 16;
         dp_ipc = 8;
-    }
-    else {
-        fp_ipc = 8;
-        dp_ipc = 4;
     }
 #endif
     free(cpu_flags);
@@ -595,6 +713,8 @@ device_taskpool_register_static(parsec_device_module_t* device, parsec_taskpool_
 
     for( i = 0; i < tp->nb_task_classes; i++ ) {
         const parsec_task_class_t* tc = tp->task_classes_array[i];
+        if(NULL == tp->task_classes_array[i])
+            continue;
         __parsec_chore_t* chores = (__parsec_chore_t*)tc->incarnations;
         for( j = 0; NULL != chores[j].hook; j++ ) {
             if( chores[j].type != device->type )
@@ -679,7 +799,7 @@ int parsec_mca_device_attach(parsec_context_t* context)
 int parsec_mca_device_add(parsec_context_t* context, parsec_device_module_t* device)
 {
     if( parsec_mca_device_are_freezed ) {
-        return PARSEC_ERROR;
+        return PARSEC_NOT_SUPPORTED;
     }
     if( NULL != device->context ) {
         /* This device already belong to a PaRSEC context */
@@ -698,6 +818,8 @@ int parsec_mca_device_add(parsec_context_t* context, parsec_device_module_t* dev
     parsec_nb_devices++;
     device->context = context;
     parsec_atomic_unlock(&parsec_devices_mutex);  /* CRITICAL SECTION: END */
+    PARSEC_OBJ_CONSTRUCT(&device->infos, parsec_info_object_array_t);
+    parsec_info_object_array_init(&device->infos, &parsec_per_device_infos, device);
     return device->device_index;
 }
 
@@ -712,6 +834,7 @@ int parsec_mca_device_remove(parsec_device_module_t* device)
 {
     int rc = PARSEC_SUCCESS;
 
+    PARSEC_OBJ_DESTRUCT(&device->infos);
     parsec_atomic_lock(&parsec_devices_mutex);  /* CRITICAL SECTION: BEGIN */
     if( NULL == device->context ) {
         rc = PARSEC_ERR_BAD_PARAM;

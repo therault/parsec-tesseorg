@@ -79,7 +79,7 @@ endif( MPI_C_FOUND )
 parsec_addtest_executable(C must_fail_too_many_in_deps NODEFAULTBUILD)
 target_ptg_sources(must_fail_too_many_in_deps PRIVATE "too_many_in_deps.jdf")
 # Avoid building these targets normally
-if(TEST must_fail_too_many_in_deps)
+if(TARGET must_fail_too_many_in_deps)
     set_target_properties(must_fail_too_many_in_deps PROPERTIES
                       EXCLUDE_FROM_ALL TRUE
                       EXCLUDE_FROM_DEFAULT_BUILD TRUE)
@@ -94,7 +94,7 @@ endif()
 parsec_addtest_executable(C must_fail_too_many_out_deps NODEFAULTBUILD)
 target_ptg_sources(must_fail_too_many_out_deps PRIVATE "too_many_out_deps.jdf")
 # Avoid building these targets normally
-if(TEST must_fail_too_many_out_deps)
+if(TARGET must_fail_too_many_out_deps)
     set_target_properties(must_fail_too_many_out_deps PROPERTIES
                       EXCLUDE_FROM_ALL TRUE
                       EXCLUDE_FROM_DEFAULT_BUILD TRUE)
@@ -109,7 +109,7 @@ endif()
 parsec_addtest_executable(C must_fail_too_many_read_flows NODEFAULTBUILD)
 target_ptg_sources(must_fail_too_many_read_flows PRIVATE "too_many_read_flows.jdf")
 # Avoid building these targets normally
-if(TEST must_fail_too_many_read_flows)
+if(TARGET must_fail_too_many_read_flows)
     set_target_properties(must_fail_too_many_read_flows PROPERTIES
                       EXCLUDE_FROM_ALL TRUE
                       EXCLUDE_FROM_DEFAULT_BUILD TRUE)
@@ -124,7 +124,7 @@ endif()
 parsec_addtest_executable(C must_fail_too_many_write_flows NODEFAULTBUILD)
 target_ptg_sources(must_fail_too_many_write_flows PRIVATE "too_many_write_flows.jdf")
 # Avoid building these targets normally
-if(TEST must_fail_too_many_write_flows)
+if(TARGET must_fail_too_many_write_flows)
     set_target_properties(must_fail_too_many_write_flows PROPERTIES
                       EXCLUDE_FROM_ALL TRUE
                       EXCLUDE_FROM_DEFAULT_BUILD TRUE)
@@ -139,7 +139,7 @@ endif()
 parsec_addtest_executable(C must_fail_too_many_local_vars NODEFAULTBUILD)
 target_ptg_sources(must_fail_too_many_local_vars PRIVATE "too_many_local_vars.jdf")
 # Avoid building these targets normally
-if(TEST must_fail_too_many_local_vars)
+if(TARGET must_fail_too_many_local_vars)
     set_target_properties(must_fail_too_many_local_vars PROPERTIES
                       EXCLUDE_FROM_ALL TRUE
                       EXCLUDE_FROM_DEFAULT_BUILD TRUE)

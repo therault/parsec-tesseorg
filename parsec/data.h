@@ -35,8 +35,10 @@ typedef uint8_t parsec_data_status_t;
 #define    PARSEC_DATA_STATUS_COMPLETE_TRANSFER     ((parsec_data_coherency_t)0x2)
 
 typedef uint8_t parsec_data_flag_t;
-#define PARSEC_DATA_FLAG_ARENA     ((parsec_data_flag_t)0x01)
-#define PARSEC_DATA_FLAG_TRANSIT   ((parsec_data_flag_t)0x02)
+#define PARSEC_DATA_FLAG_ARENA     ((parsec_data_flag_t)1<<0)
+#define PARSEC_DATA_FLAG_TRANSIT   ((parsec_data_flag_t)1<<1)
+#define PARSEC_DATA_FLAG_PARSEC_MANAGED ((parsec_data_flag_t)1<<6)
+#define PARSEC_DATA_FLAG_PARSEC_OWNED   ((parsec_data_flag_t)1<<7)
 
 /**
  * Initialize the PaRSEC data infrastructure

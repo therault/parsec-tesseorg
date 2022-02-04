@@ -599,6 +599,8 @@ parsec_release_local_OUT_dependencies(parsec_execution_stream_t* es,
 
 #define parsec_execution_context_priority_comparator offsetof(parsec_task_t, priority)
 
+extern parsec_info_t parsec_per_stream_infos;
+
 #if defined(PARSEC_SIM)
 int parsec_getsimulationdate( parsec_context_t *parsec_context );
 #endif
