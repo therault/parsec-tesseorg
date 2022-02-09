@@ -156,6 +156,8 @@ extern float *parsec_device_load;
 extern float *parsec_device_sweight;
 extern float *parsec_device_dweight;
 
+PARSEC_DECLSPEC extern int parsec_get_best_device( parsec_task_t* this_task, double ratio );
+
 /**
  * Initialize the internal structures for managing external devices such as
  * accelerators and GPU. Memory nodes can as well be managed using the same

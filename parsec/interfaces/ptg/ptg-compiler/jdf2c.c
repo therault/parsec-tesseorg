@@ -1437,6 +1437,7 @@ static void jdf_minimal_code_before_prologue(const jdf_t *jdf)
             "#include \"parsec/parsec_internal.h\"\n"
             "#include \"parsec/ayudame.h\"\n"
             "#include \"parsec/execution_stream.h\"\n"
+            "#include \"parsec/mca/device/device.h\"\n"
             "#if defined(PARSEC_HAVE_CUDA)\n"
             "#include \"parsec/mca/device/cuda/device_cuda.h\"\n"
             "#endif  /* defined(PARSEC_HAVE_CUDA) */\n"
@@ -5819,13 +5820,15 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
             "  %s           dyld_fn;\n"
             "};\n"
             "\n"
-            "static int gpu_kernel_submit_%s_%s(parsec_device_cuda_module_t *gpu_device,\n"
+            "static int gpu_kernel_submit_%s_%s(parsec_device_gpu_module_t  *gpu_device,\n"
             "                                   parsec_gpu_task_t           *gpu_task,\n"
             "                                   parsec_gpu_exec_stream_t    *gpu_stream )\n"
             "{\n"
             "  %s *this_task = (%s *)gpu_task->ec;\n"
+            "  parsec_device_cuda_module_t *cuda_device = (parsec_device_cuda_module_t*)gpu_device;\n"
+            "  parsec_cuda_exec_stream_t *cuda_stream = (parsec_cuda_exec_stream_t*)gpu_stream;\n"
             "  __parsec_%s_internal_taskpool_t *__parsec_tp = (__parsec_%s_internal_taskpool_t *)this_task->taskpool;\n"
-            "  struct parsec_body_cuda_%s_%s_s parsec_body = { gpu_device->cuda_index, gpu_stream->cuda_stream, NULL };\n"
+            "  struct parsec_body_cuda_%s_%s_s parsec_body = { cuda_device->cuda_index, cuda_stream->cuda_stream, NULL };\n"
             "%s\n"
             "  (void)gpu_device; (void)gpu_stream; (void)__parsec_tp; (void)parsec_body;\n",
             jdf_basename, f->fname,
@@ -5877,7 +5880,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
     coutput("#if defined(PARSEC_DEBUG_NOISIER)\n"
             "  {\n"
             "    char tmp[MAX_TASK_STRLEN];\n"
-            "    PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream, \"GPU[%%1d]:\\tEnqueue on device %%s priority %%d\", gpu_device->cuda_index, \n"
+            "    PARSEC_DEBUG_VERBOSE(10, parsec_cuda_output_stream, \"GPU[%%1d]:\\tEnqueue on device %%s priority %%d\", cuda_device->cuda_index, \n"
             "           parsec_task_snprintf(tmp, MAX_TASK_STRLEN, (parsec_task_t *)this_task),\n"
             "           this_task->priority );\n"
             "  }\n"
@@ -5962,13 +5965,13 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
                 "  if (dev_index < -1) {\n"
                 "    return PARSEC_HOOK_RETURN_NEXT;\n"
                 "  } else if (dev_index == -1) {\n"
-                "    dev_index = parsec_gpu_get_best_device((parsec_task_t*)this_task, ratio);\n"
+                "    dev_index = parsec_get_best_device((parsec_task_t*)this_task, ratio);\n"
                 "  } else {\n"
                 "    dev_index = (dev_index %% (parsec_mca_device_enabled()-2)) + 2;\n"
                 "  }\n",
                 device);
     } else {
-        coutput("  dev_index = parsec_gpu_get_best_device((parsec_task_t*)this_task, ratio);\n");
+        coutput("  dev_index = parsec_get_best_device((parsec_task_t*)this_task, ratio);\n");
     }
     coutput("  assert(dev_index >= 0);\n"
             "  if( dev_index < 2 ) {\n"
@@ -6053,7 +6056,7 @@ static void jdf_generate_code_hook_cuda(const jdf_t *jdf,
 
     coutput("  parsec_device_load[dev_index] += gpu_task->load;\n"
             "\n"
-            "  return parsec_gpu_kernel_scheduler( es, gpu_task, dev_index );\n"
+            "  return parsec_cuda_kernel_scheduler( es, gpu_task, dev_index );\n"
             "}\n\n");
 
     string_arena_free(sa);

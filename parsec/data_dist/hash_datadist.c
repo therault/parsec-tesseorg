@@ -199,7 +199,10 @@ static parsec_data_t* hash_data_of(    parsec_data_collection_t* dc, ... )
 static parsec_data_t* hash_data_of_key(parsec_data_collection_t* dc, parsec_data_key_t key)
 {
     parsec_hash_datadist_entry_t *e = hash_lookup( (parsec_hash_datadist_t*)dc, key );
+    parsec_data_t *dta;
     assert(e != NULL);
-    return parsec_data_create( &(e->data), dc, key,
+    dta = parsec_data_create( &(e->data), dc, key,
                               e->actual_data, e->size );
+    parsec_data_get_copy(dta, 0)->flags |= PARSEC_DATA_FLAG_PARSEC_MANAGED;
+    return dta;
 }

@@ -101,6 +101,7 @@ int parsec_want_rusage = 0;
 #include <sys/resource.h>
 
 parsec_info_t parsec_per_stream_infos;
+parsec_info_t parsec_per_device_infos;
 
 static struct rusage _parsec_rusage;
 
